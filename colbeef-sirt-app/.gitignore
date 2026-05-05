@@ -142,3 +142,8 @@ dist
 .svelte-kit
 
 # End of https://www.toptal.com/developers/gitignore/api/node
+
+### Servicio de Windows (node-windows) ###
+# Generado automaticamente al instalar el servicio en cada maquina.
+server/daemon/
+service-install.log

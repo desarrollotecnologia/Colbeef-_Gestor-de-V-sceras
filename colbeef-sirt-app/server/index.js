@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -116,8 +117,23 @@ if (isProd) {
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`Colbeef SIRT API http://localhost:${PORT}`);
+function getLanAddresses() {
+  const ifaces = os.networkInterfaces();
+  const addrs = [];
+  for (const name of Object.keys(ifaces)) {
+    for (const iface of ifaces[name] || []) {
+      if (iface.family === 'IPv4' && !iface.internal) addrs.push(iface.address);
+    }
+  }
+  return addrs;
+}
+
+app.listen(PORT, '0.0.0.0', () => {
+  const lan = getLanAddresses();
+  console.log(`Colbeef SIRT API escuchando en :${PORT}`);
+  console.log(`  - http://localhost:${PORT}`);
+  console.log(`  - http://127.0.0.1:${PORT}`);
+  for (const ip of lan) console.log(`  - http://${ip}:${PORT}`);
 });
 
 process.on('SIGINT', async () => {
