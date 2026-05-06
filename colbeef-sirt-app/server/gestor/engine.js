@@ -12,6 +12,7 @@ import {
   detectarTurnoDesdeDatos,
   detectarTurnoPorDia,
 } from './engineUtils.js';
+import ExcelJS from 'exceljs';
 import { fetchEstadoCavasRows, fetchReporteDecomisosRows, fetchDespachosCavasRows } from './sirtSync.js';
 import { loadState, saveState } from './store.js';
 
@@ -850,23 +851,173 @@ export async function prepararModuloDespachosDesdeSIRT(turno) {
   return procesarDespachos(turno || detectarTurnoPorDia());
 }
 
-export async function importarExcelAdicionales(_bytes, _nombre) {
-  return { success: true, rows: 0 };
+function detectarTipoAdicionalPorFila(fila) {
+  const colJ = String(fila[9] || '').trim().toUpperCase();
+  const colO = String(fila[14] || '').trim().toUpperCase();
+  if (colJ.includes('QUEDA EN CAVA')) return 'CANCELACION';
+  if (colO.includes('CAMBIO DE DESTINO')) return 'CAMBIO';
+  return 'ADICIONAL';
 }
 
-export async function importarAdicionales() {
+function parseDateDdMmYyyy(value) {
+  const s = String(value || '').trim();
+  const p = s.split('/');
+  if (p.length !== 3) return null;
+  const d = Number(p[0]);
+  const m = Number(p[1]) - 1;
+  const y = Number(p[2]);
+  const dt = new Date(y, m, d);
+  if (Number.isNaN(dt.getTime())) return null;
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function readHistorico(state) {
+  return (state.historicoOpl || [])
+    .map((r) => {
+      const fechaStr = String(r.fechaInicioStr || r.fechaStr || '').trim();
+      let fecha = parseDateDdMmYyyy(fechaStr);
+      if (!fecha && r.fechaHoraStr) {
+        const raw = new Date(String(r.fechaHoraStr).replace(' ', 'T'));
+        if (!Number.isNaN(raw.getTime())) fecha = new Date(raw.getFullYear(), raw.getMonth(), raw.getDate());
+      }
+      return {
+        fecha,
+        fechaStr,
+        turno: String(r.turno || '').trim(),
+        opl: String(r.opl || '').trim(),
+        total: Number(r.total || 0),
+        despachados: Number(r.despachados || 0),
+        pendientes: Number(r.pendientes || 0),
+        progreso: Number(r.progreso || 0),
+        estado: String(r.estado || '').trim(),
+        fechaHora: String(r.fechaHoraStr || ''),
+      };
+    })
+    .filter((r) => r.fecha && r.opl);
+}
+
+function filtrarHistoricoAvanzado(datos, filtro = {}) {
+  const meses = Array.isArray(filtro.meses) ? filtro.meses.map(Number) : null;
+  return datos.filter((r) => {
+    if (filtro.opl && filtro.opl !== 'Todos' && filtro.opl !== 'Todos los OPLs' && r.opl !== filtro.opl) return false;
+    if (filtro.turno && r.turno !== filtro.turno) return false;
+    if (filtro.estado && r.estado !== filtro.estado) return false;
+    if (filtro.minDespachados && r.despachados < Number(filtro.minDespachados)) return false;
+    if (filtro.maxPendientes && r.pendientes > Number(filtro.maxPendientes)) return false;
+    if (filtro.anio && r.fecha.getFullYear() !== Number(filtro.anio)) return false;
+    if (meses && meses.length > 0 && !meses.includes(r.fecha.getMonth())) return false;
+    return true;
+  });
+}
+
+function sumarDespachados(datos) {
+  return datos.reduce((s, r) => s + Number(r.despachados || 0), 0);
+}
+
+function eficienciaOps(datos) {
+  const ops = {};
+  datos.forEach((r) => {
+    const key = `${r.fechaStr}_${r.turno}`;
+    if (!ops[key]) ops[key] = r.estado;
+  });
+  const vals = Object.values(ops);
+  const completas = vals.filter((v) => v === ESTADO_COMPLETO).length;
+  const conPendientes = Math.max(0, vals.length - completas);
+  const total = completas + conPendientes;
   return {
-    success: true,
-    tipo: 'ADICIONAL',
-    procesados: 0,
-    totalAdicional: 0,
-    totalCancel: 0,
-    totalCambio: 0,
-    mensaje: 'Movimientos adicionales desde archivo deshabilitados; use SIRT.',
+    completas,
+    conPendientes,
+    pctCompletas: total > 0 ? Math.round((completas / total) * 100) : 0,
+    pctPendientes: total > 0 ? Math.round((conPendientes / total) * 100) : 0,
   };
 }
 
-/** Informe, analytics, PDF decomisos: stubs mínimos para no romper UI */
+export async function importarExcelAdicionales(bytes, nombre) {
+  const s = await loadState();
+  try {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(Buffer.from(bytes || []));
+    const ws = wb.worksheets[0];
+    if (!ws || ws.rowCount < 16) {
+      return { success: false, message: 'El archivo no tiene datos desde la fila 16.' };
+    }
+    const filas = [];
+    for (let rowNum = 16; rowNum <= ws.rowCount; rowNum++) {
+      const row = ws.getRow(rowNum);
+      const fila = [];
+      for (let c = 1; c <= 15; c++) fila.push(String(row.getCell(c).text || '').trim());
+      if (fila[1]) filas.push(fila);
+    }
+    s.adicionalesTemp = { nombre: String(nombre || ''), filas };
+    await saveState(s);
+    return { success: true, nombre: nombre || '', rows: filas.length };
+  } catch (e) {
+    return { success: false, message: e.message };
+  }
+}
+
+export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual) {
+  const s = await loadState();
+  const temp = s.adicionalesTemp?.filas || [];
+  if (!temp.length) return { success: false, message: 'No hay archivo temporal de adicionales cargado.' };
+  const filasAdicional = temp.filter((r) => detectarTipoAdicionalPorFila(r) === 'ADICIONAL');
+  const filasCancel = temp.filter((r) => detectarTipoAdicionalPorFila(r) === 'CANCELACION');
+  const filasCambio = temp.filter((r) => detectarTipoAdicionalPorFila(r) === 'CAMBIO');
+  const codigos = {};
+  s.estadoFromRow12.forEach((r) => {
+    const code = String(r[0] || '').trim();
+    if (code) codigos[code] = true;
+  });
+  const nuevas = [];
+  let ignorados = 0;
+  filasAdicional.forEach((fila) => {
+    const codigo = String(fila[1] || '').trim();
+    if (!codigo) return;
+    if (codigos[codigo]) {
+      ignorados++;
+      return;
+    }
+    codigos[codigo] = true;
+    nuevas.push(fila.slice(1, 15));
+  });
+  if (nuevas.length) {
+    s.estadoFromRow12.push(...nuevas);
+    actualizarCantidadesInicialesOPLSync(s);
+  }
+  s.adicionalesTemp = null;
+  await saveState(s);
+  if (nuevas.length > 0 && s.reporteDecomisos.length > 0) {
+    await resumirDecomisos();
+  }
+  return {
+    success: true,
+    tipo: 'ADICIONAL',
+    procesados: nuevas.length,
+    ignorados,
+    totalAdicional: filasAdicional.length,
+    totalCancel: filasCancel.length,
+    totalCambio: filasCambio.length,
+    mensaje: `Se agregaron ${nuevas.length} adicionales a Estado_Cavas.`,
+  };
+}
+
+const CAVAS_DEFAULT = [
+  { grupo: 'V. Rojas & Blancas (V.Rojas)', carros: 40, capPorCarro: 20, inventario: 0 },
+  { grupo: 'V. Rojas & Blancas (V.Blancas)', carros: 22, capPorCarro: 25, inventario: 0 },
+  { grupo: 'V. Acondicionamiento', carros: 22, capPorCarro: 25, inventario: 0 },
+  { grupo: 'Patas & Manos', carros: 80, capPorCarro: 9, inventario: 0 },
+  { grupo: 'Cabezas', carros: 80, capPorCarro: 9, inventario: 0 },
+];
+
+const PERCHEROS_DEFAULT = [
+  { cava: 'V. Rojas & Blancas', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
+  { cava: 'V. Acondicionamiento', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
+  { cava: 'Patas & Cabezas', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
+  { cava: 'Recepción', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
+  { cava: 'Retenidos', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
+];
+
 export async function getInformeDatos() {
   const s = await loadState();
   if (s.informe) return { success: true, ...s.informe };
@@ -879,8 +1030,8 @@ export async function getInformeDatos() {
     stockTotal: 100,
     danados: 2,
     novedades: [],
-    cavas: [],
-    percheros: [],
+    cavas: CAVAS_DEFAULT,
+    percheros: PERCHEROS_DEFAULT,
   };
 }
 
@@ -903,52 +1054,185 @@ export async function limpiarInformeDatos() {
 }
 
 export async function generarInformeHTML(_json) {
+  const payload = typeof _json === 'string' ? JSON.parse(_json || '{}') : _json || {};
+  const d = await getInformeDatos();
+  if (!d.success) return d;
+  const inclInv = payload.inv !== false;
+  const inclCavas = payload.cavas !== false;
+  const inclPerch = payload.percheros !== false;
+  const cavasRows = (d.cavas || []).map((c) => {
+    const cap = Number(c.carros || 0) * Number(c.capPorCarro || 0);
+    const inv = Number(c.inventario || 0);
+    const pct = cap > 0 ? Math.round((inv / cap) * 100) : 0;
+    return `<tr><td>${c.grupo}</td><td>${c.carros}</td><td>${cap}</td><td>${inv}</td><td>${pct}%</td></tr>`;
+  });
+  const novRows = (d.novedades || [])
+    .map((n) => `<tr><td>${n.cod || ''}</td><td>${n.desc || ''}</td></tr>`)
+    .join('');
+  const percRows = (d.percheros || [])
+    .map(
+      (p) =>
+        `<tr><td>${p.cava || ''}</td><td>${p.blancas || 0}</td><td>${p.rojas || 0}</td><td>${p.patasManos || 0}</td><td>${p.cabezas || 0}</td><td>${p.crudas || 0}</td></tr>`
+    )
+    .join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe diario</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ddd;padding:8px;text-align:center}th{background:#f3f4f6}.kpi{display:inline-block;margin-right:12px;padding:10px;border:1px solid #e5e7eb;border-radius:6px}</style></head><body><h1>Informe Diario - ${d.fecha}</h1><div><span class="kpi">Completos: <b>${d.completos}</b></span><span class="kpi">Incompletos: <b>${d.incompletos}</b></span><span class="kpi">Beneficio dia: <b>${d.beneficioDia}</b></span><span class="kpi">Stock total: <b>${d.stockTotal}</b></span></div>${inclInv ? `<h2>Novedades</h2><table><tr><th>Codigo</th><th>Detalle</th></tr>${novRows || '<tr><td colspan="2">Sin novedades</td></tr>'}</table>` : ''}${inclCavas ? `<h2>Ocupacion cavas</h2><table><tr><th>Cava</th><th>Carros</th><th>Capacidad</th><th>Inventario</th><th>%</th></tr>${cavasRows.join('')}</table>` : ''}${inclPerch ? `<h2>Percheros</h2><table><tr><th>Cava</th><th>Blancas</th><th>Rojas</th><th>Patas/Manos</th><th>Cabezas</th><th>Crudas</th></tr>${percRows}</table>` : ''}</body></html>`;
   return {
     success: true,
-    html: '<html><body><p>Informe generado (versión SIRT). Complete datos en el módulo Informe.</p></body></html>',
+    html,
   };
 }
 
 export async function generarPDFDecomisos() {
   const res = await getResumenDecomisos();
   if (!res.resultados?.length) return { success: false, message: 'No hay datos en Resumen.' };
+  const fecha = fmtNow();
+  const rows = res.resultados
+    .map((r, i) => `<tr><td>${i + 1}</td><td>${r.id || ''}</td><td>${r.destino || ''}</td><td>${r.producto || ''}</td></tr>`)
+    .join('');
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen decomisos</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}th{background:#f3f4f6}</style></head><body><h1>Resumen de decomisos</h1><p>Fecha: ${fecha}</p><table><tr><th>#</th><th>ID</th><th>Destino</th><th>Producto</th></tr>${rows}</table></body></html>`;
+  const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  const s = await loadState();
+  s.historialPdf = s.historialPdf || [];
+  s.historialPdf.push({ fecha, total: res.resultados.length, url });
+  await saveState(s);
   return {
     success: true,
-    url: '#',
-    message: 'Use el informe en pantalla; exportación a Drive no aplica en SIRT.',
+    url,
+    message: 'Resumen listo. Abra el enlace y guarde como PDF desde el navegador.',
   };
 }
 
 export async function getKPIs(opl, filtro) {
+  const s = await loadState();
+  const todos = readHistorico(s);
+  const anioFiltro = Number(filtro?.anio || new Date().getFullYear());
+  const mesesFiltro = Array.isArray(filtro?.meses) && filtro.meses.length ? filtro.meses : null;
+  const periodo = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro, meses: mesesFiltro });
+  const todosOpl = filtrarHistoricoAvanzado(todos, { opl });
+  const hoyBase = new Date();
+  hoyBase.setHours(0, 0, 0, 0);
+  const inicioSemana = new Date(hoyBase);
+  inicioSemana.setDate(hoyBase.getDate() - 6);
+  const hoy = todosOpl.filter((r) => r.fecha.getTime() === hoyBase.getTime());
+  const semana = todosOpl.filter((r) => r.fecha >= inicioSemana);
+  const anio = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro });
+  const anioAnt = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro - 1 });
+  const periodoAnt = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro - 1, meses: mesesFiltro });
+  const despSem = sumarDespachados(semana);
+  const diasConData = [...new Set(semana.map((r) => r.fechaStr))].length || 1;
+  const promSem = Math.round(despSem / diasConData);
+  const sumDia = [0, 0, 0, 0, 0, 0, 0];
+  semana.forEach((r) => (sumDia[r.fecha.getDay()] += r.despachados));
+  const diasNombres = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+  let maxDia = 0;
+  let diaMayor = '';
+  sumDia.forEach((v, i) => {
+    if (v > maxDia) {
+      maxDia = v;
+      diaMayor = diasNombres[i];
+    }
+  });
+  const despMes = sumarDespachados(periodo);
+  const mitad = Math.floor((new Date().getDate() || 1) / 2);
+  const primera = periodo.filter((r) => r.fecha.getDate() <= mitad);
+  const segunda = periodo.filter((r) => r.fecha.getDate() > mitad);
+  const tendencia = sumarDespachados(segunda) >= sumarDespachados(primera) ? 'subiendo' : 'bajando';
+  const efPeriodo = eficienciaOps(periodo);
+  const efPeriodoAnt = eficienciaOps(periodoAnt);
+  const comparacionOPLsMap = {};
+  (periodo.length ? periodo : anio).forEach((r) => {
+    if (!comparacionOPLsMap[r.opl]) comparacionOPLsMap[r.opl] = { desp: 0, ops: 0, pend: 0, comp: 0 };
+    const x = comparacionOPLsMap[r.opl];
+    x.desp += r.despachados;
+    x.ops += 1;
+    x.pend += r.pendientes;
+    if (r.estado === ESTADO_COMPLETO) x.comp += 1;
+  });
+  const comparacionOPLs = Object.keys(comparacionOPLsMap)
+    .map((k) => ({
+      opl: k,
+      despachados: comparacionOPLsMap[k].desp,
+      operaciones: comparacionOPLsMap[k].ops,
+      pendientes: comparacionOPLsMap[k].pend,
+      promedio: comparacionOPLsMap[k].ops > 0 ? Math.round(comparacionOPLsMap[k].desp / comparacionOPLsMap[k].ops) : 0,
+      eficiencia: comparacionOPLsMap[k].ops > 0 ? Math.round((comparacionOPLsMap[k].comp / comparacionOPLsMap[k].ops) * 100) : 0,
+    }))
+    .sort((a, b) => b.despachados - a.despachados);
+  const anomalias = filtrarHistoricoAvanzado(todos, { anio: anioFiltro })
+    .filter((r) => r.pendientes > 50 || r.progreso < 50)
+    .map((r) => ({ fecha: r.fechaStr, turno: r.turno, opl: r.opl, pendientes: r.pendientes, progreso: r.progreso }))
+    .sort((a, b) => b.pendientes - a.pendientes);
+  const mesVals = new Array(12).fill(0);
+  anio.forEach((r) => (mesVals[r.fecha.getMonth()] += r.despachados));
+  const comparacionMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((n, i) => {
+    const anterior = i > 0 ? mesVals[i - 1] : 0;
+    const variacion = anterior > 0 ? Math.round(((mesVals[i] - anterior) / anterior) * 100) : null;
+    return { mes: i, nombre: n, valor: mesVals[i], anterior, variacion, tendencia: variacion === null ? '—' : variacion >= 0 ? '↑' : '↓' };
+  });
+  const hoyDesp = sumarDespachados(hoy);
+  const hoyProg = hoy.length ? Math.round(hoy.reduce((s2, r) => s2 + r.progreso, 0) / hoy.length) : 0;
   return {
     success: true,
     kpis: {
-      hoy: { despachados: 0, progreso: 0, completas: 0, total: 0, badge: '—' },
-      semana: { despachados: 0, promDiario: 0, diaMayor: '', maxDia: 0 },
-      mes: { despachados: 0, tendencia: '—' },
-      periodo: { despachados: 0, vsMesAnt: 0 },
-      anio: { despachados: 0, operaciones: 0, mesMayor: '', vsAnioAnt: 0 },
-      vs: { particulares: 0, transcarnes: 0 },
-      eficiencia: 0,
-      eficienciaVsAnt: 0,
-      productividad: { opsPorDia: 0, mejorDia: '', peorDia: '' },
-      anomalias: 0,
+      hoy: { despachados: hoyDesp, progreso: hoyProg, completas: hoy.filter((r) => r.estado === ESTADO_COMPLETO).length, total: hoy.length, badge: `${hoyProg}% promedio` },
+      semana: { despachados: despSem, promDiario: promSem, diaMayor, maxDia },
+      mes: { despachados: despMes, tendencia },
+      periodo: { despachados: sumarDespachados(periodo), vsMesAnt: sumarDespachados(periodoAnt) },
+      anio: { despachados: sumarDespachados(anio), operaciones: [...new Set(anio.map((r) => `${r.fechaStr}_${r.turno}`))].length, mesMayor: comparacionMeses.reduce((a, b) => (b.valor > a.valor ? b : a), { nombre: '' }).nombre, vsAnioAnt: sumarDespachados(anioAnt) },
+      vs: {
+        particulares: (periodo.length ? periodo : anio).filter((r) => r.opl !== 'TRANSCARNES').reduce((s2, r) => s2 + r.despachados, 0),
+        transcarnes: (periodo.length ? periodo : anio).filter((r) => r.opl === 'TRANSCARNES').reduce((s2, r) => s2 + r.despachados, 0),
+      },
+      eficiencia: efPeriodo.pctCompletas,
+      eficienciaVsAnt: efPeriodoAnt.pctCompletas,
+      productividad: {
+        promedioPorOp: comparacionOPLs.length ? Math.round(comparacionOPLs.reduce((s2, r) => s2 + r.promedio, 0) / comparacionOPLs.length) : 0,
+        totalOps: (periodo.length ? periodo : anio).length,
+        pctCompletadas: efPeriodo.pctCompletas,
+      },
+      anomalias: anomalias.length,
     },
     graficos: {
-      evolucion: [],
-      ranking: [],
+      evolucion: (() => {
+        const mapa = {};
+        todosOpl.forEach((r) => {
+          mapa[r.fechaStr] = mapa[r.fechaStr] || { despachados: 0, pendientes: 0 };
+          mapa[r.fechaStr].despachados += r.despachados;
+          mapa[r.fechaStr].pendientes += r.pendientes;
+        });
+        const out = [];
+        for (let i = 13; i >= 0; i--) {
+          const d = new Date(hoyBase);
+          d.setDate(hoyBase.getDate() - i);
+          const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+          out.push({ label: key.slice(0, 5), despachados: mapa[key]?.despachados || 0, pendientes: mapa[key]?.pendientes || 0 });
+        }
+        return out;
+      })(),
+      ranking: comparacionOPLs.map((x) => ({ opl: x.opl, despachados: x.despachados, promedio: x.promedio })),
       porDiaSemana: [],
-      eficiencia: { completas: 0, conPendientes: 0, pctCompletas: 0, pctPendientes: 0 },
-      comparacionMeses: [],
-      comparacionOPLs: [],
+      eficiencia: efPeriodo,
+      comparacionMeses,
+      comparacionOPLs,
     },
-    backlog: [],
-    anomalias: [],
+    backlog: comparacionOPLs
+      .map((x) => ({ opl: x.opl, opsPendientes: x.operaciones - Math.round((x.eficiencia / 100) * x.operaciones), totalPendientes: x.pendientes, eficiencia: x.eficiencia, estado: x.eficiencia >= 95 ? 'ok' : x.eficiencia >= 80 ? 'revisar' : 'critico' }))
+      .filter((x) => x.totalPendientes > 0)
+      .sort((a, b) => b.totalPendientes - a.totalPendientes),
+    anomalias: anomalias.slice(0, 10),
   };
 }
 
 export async function getAniosDisponibles() {
-  return { success: true, anios: [new Date().getFullYear()] };
+  const s = await loadState();
+  const set = {};
+  readHistorico(s).forEach((r) => {
+    set[r.fecha.getFullYear()] = true;
+  });
+  const anios = Object.keys(set)
+    .map(Number)
+    .sort((a, b) => b - a);
+  return { success: true, anios: anios.length ? anios : [new Date().getFullYear()] };
 }
 
 export async function getListaOPLsHistorico() {
@@ -962,7 +1246,9 @@ export async function getListaOPLsHistorico() {
 
 export async function generarReporteOPL(opl, filtro) {
   const res = await getKPIs(opl, filtro);
-  const html = `<html><body><h1>Reporte OPL ${opl}</h1><pre>${JSON.stringify(res.kpis, null, 2)}</pre></body></html>`;
+  if (!res.success) return res;
+  const k = res.kpis;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte OPL</title><style>body{font-family:Arial,sans-serif;padding:20px}.kpi{display:inline-block;border:1px solid #ddd;border-radius:6px;padding:10px;margin:6px 6px 0 0}table{border-collapse:collapse;width:100%;margin-top:14px}th,td{border:1px solid #ddd;padding:8px}th{background:#f3f4f6}</style></head><body><h1>Reporte OPL ${opl || 'Todos los OPLs'}</h1><p>Generado: ${fmtNow()}</p><div class="kpi">Hoy: <b>${k.hoy.despachados}</b></div><div class="kpi">Semana: <b>${k.semana.despachados}</b></div><div class="kpi">Mes: <b>${k.mes.despachados}</b></div><div class="kpi">Anio: <b>${k.anio.despachados}</b></div><div class="kpi">Eficiencia: <b>${k.eficiencia}%</b></div><h2>Comparacion OPLs</h2><table><tr><th>OPL</th><th>Despachados</th><th>Operaciones</th><th>Pendientes</th><th>Eficiencia</th></tr>${(res.graficos.comparacionOPLs || []).map((r) => `<tr><td>${r.opl}</td><td>${r.despachados}</td><td>${r.operaciones}</td><td>${r.pendientes}</td><td>${r.eficiencia}%</td></tr>`).join('')}</table></body></html>`;
   return { success: true, html };
 }
 
