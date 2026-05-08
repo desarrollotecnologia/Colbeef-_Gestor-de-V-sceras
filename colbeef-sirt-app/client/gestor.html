@@ -1072,11 +1072,30 @@ function switchTab(panelId, btn) {
 function loadDashboardData() {
   google.script.run
     .withSuccessHandler(updateDashboard)
-    .withFailureHandler(function(e){console.error('Dashboard:',e);})
+    .withFailureHandler(function (e) {
+      console.error('Dashboard:', e);
+      var msg =
+        e && e.message ? String(e.message) : 'No se pudo contactar el servidor (POST /api/rpc).';
+      var meta = document.getElementById('progresoMeta');
+      if (meta) {
+        meta.textContent =
+          'Error al cargar el tablero: ' +
+          msg +
+          ' · Pruebe abrir /api/health en el mismo puerto y revise la consola (F12).';
+      }
+    })
     .getDashboardData();
 }
 function updateDashboard(data) {
-  if(!data||!data.success) return;
+  if (!data || !data.success) {
+    var metaBad = document.getElementById('progresoMeta');
+    if (metaBad) {
+      metaBad.textContent =
+        'Sin datos del servidor para el tablero. Respuesta: ' +
+        (data && data.message ? data.message : JSON.stringify(data || {}).slice(0, 160));
+    }
+    return;
+  }
 
   var salidas    = Number(data.totalSalidas||0);
   var pendientes = Number(data.totalJuegosDespachar||0);
