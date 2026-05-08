@@ -13,6 +13,7 @@ import {
   detectarTurnoPorDia,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
+import PDFDocument from 'pdfkit';
 import { fetchEstadoCavasRows, fetchReporteDecomisosRows, fetchDespachosCavasRows } from './sirtSync.js';
 import { loadState, saveState } from './store.js';
 
@@ -30,19 +31,33 @@ export async function initializeSheets() {
   return { success: true };
 }
 
+function normalizarRangoFechas(range) {
+  const date = String(range?.date || '').trim();
+  const from = String(range?.from || '').trim();
+  const to = String(range?.to || '').trim();
+  const ok = /^\d{4}-\d{2}-\d{2}$/;
+  if (ok.test(date)) return { from: date, to: date };
+  return {
+    from: ok.test(from) ? from : null,
+    to: ok.test(to) ? to : null,
+  };
+}
+
 /** Sustituye importar Excel: rellena estado desde SIRT */
-export async function importarExcel(_base64, sheetName) {
+export async function importarExcel(_base64, sheetName, range) {
   const s = await loadState();
+  const filtro = normalizarRangoFechas(range);
   try {
     if (sheetName === 'Estado_Cavas') {
-      s.estadoFromRow12 = await fetchEstadoCavasRows();
+      s.estadoFromRow12 = await fetchEstadoCavasRows(filtro);
     } else if (sheetName === 'Reporte_Decomisos') {
-      s.reporteDecomisos = await fetchReporteDecomisosRows();
+      s.reporteDecomisos = await fetchReporteDecomisosRows(filtro);
     } else if (sheetName === 'Despachos_Cavas') {
-      s.despachosCavas = await fetchDespachosCavasRows();
+      s.despachosCavas = await fetchDespachosCavasRows(filtro);
     } else {
       return { success: false, message: 'Hoja no soportada: ' + sheetName };
     }
+    s.lastSyncRange = filtro;
     await saveState(s);
     const n =
       sheetName === 'Estado_Cavas'
@@ -690,17 +705,77 @@ const PLAZAS_DEFAULT = [
   ['YP', 'PIEDECUESTA'],
 ];
 
+function asegurarPlazasMap(s) {
+  if (!s.plazasMap || !Object.keys(s.plazasMap).length) {
+    s.plazasMap = s.plazasMap || {};
+    PLAZAS_DEFAULT.forEach(([p, pl]) => {
+      s.plazasMap[String(p).trim()] = String(pl).trim().toUpperCase();
+    });
+  }
+}
+
+export async function getPlazas() {
+  const s = await loadState();
+  asegurarPlazasMap(s);
+  const rows = Object.keys(s.plazasMap)
+    .sort((a, b) => a.localeCompare(b))
+    .map((puesto, i) => ({ idx: i + 2, puesto, plaza: String(s.plazasMap[puesto] || '').trim() }));
+  return { success: true, rows };
+}
+
+export async function insertarPlazaPorZona(puesto, plaza) {
+  const s = await loadState();
+  asegurarPlazasMap(s);
+  const p = String(puesto || '').trim();
+  const z = String(plaza || '').trim().toUpperCase();
+  if (!p || !z) return { success: false, message: 'Puesto y Plaza son requeridos' };
+  const keyExistente = Object.keys(s.plazasMap).find((k) => k.toUpperCase() === p.toUpperCase());
+  if (keyExistente) return { success: false, message: 'El puesto ya existe. Use modificar.' };
+  s.plazasMap[p] = z;
+  await saveState(s);
+  return { success: true, message: `Plaza agregada correctamente a la zona: ${z}` };
+}
+
+export async function insertarPlaza(puesto, plaza) {
+  return insertarPlazaPorZona(puesto, plaza);
+}
+
+export async function modificarPlaza(filaIdx, nuevoPuesto, nuevaPlaza) {
+  const s = await loadState();
+  asegurarPlazasMap(s);
+  const entries = Object.keys(s.plazasMap).sort((a, b) => a.localeCompare(b));
+  const i = Number(filaIdx) - 2;
+  if (i < 0 || i >= entries.length) return { success: false, message: 'Indice invalido' };
+  const antiguo = entries[i];
+  const p = String(nuevoPuesto || '').trim();
+  const z = String(nuevaPlaza || '').trim().toUpperCase();
+  if (!p || !z) return { success: false, message: 'Puesto y Plaza son requeridos' };
+  const colision = entries.find((k, idx) => idx !== i && k.toUpperCase() === p.toUpperCase());
+  if (colision) return { success: false, message: 'Ya existe otro registro con ese puesto' };
+  delete s.plazasMap[antiguo];
+  s.plazasMap[p] = z;
+  await saveState(s);
+  return { success: true, message: 'Plaza modificada correctamente' };
+}
+
+export async function eliminarPlaza(filaIdx) {
+  const s = await loadState();
+  asegurarPlazasMap(s);
+  const entries = Object.keys(s.plazasMap).sort((a, b) => a.localeCompare(b));
+  const i = Number(filaIdx) - 2;
+  if (i < 0 || i >= entries.length) return { success: false, message: 'Indice invalido' };
+  delete s.plazasMap[entries[i]];
+  await saveState(s);
+  return { success: true, message: 'Plaza eliminada correctamente' };
+}
+
 export async function consolidarDatos() {
   let s = await loadState();
   if (!s.estadoFromRow12.length) {
     await importarExcel(null, 'Estado_Cavas');
     s = await loadState();
   }
-  if (!Object.keys(s.plazasMap || {}).length) {
-    PLAZAS_DEFAULT.forEach(([p, pl]) => {
-      s.plazasMap[String(p).trim()] = String(pl).trim().toUpperCase();
-    });
-  }
+  asegurarPlazasMap(s);
   const mapaPlazas = s.plazasMap;
   const mapaOPL = cargarMapaOPL(s);
   const turno = String(s.resumenDespachos.turno || '').trim();
@@ -840,14 +915,14 @@ export async function getHistorialPDF() {
   return { success: true, historial: (s.historialPdf || []).slice().reverse() };
 }
 
-export async function prepararModuloDecomisosDesdeSIRT() {
-  await importarExcel(null, 'Estado_Cavas');
-  await importarExcel(null, 'Reporte_Decomisos');
+export async function prepararModuloDecomisosDesdeSIRT(range) {
+  await importarExcel(null, 'Estado_Cavas', range);
+  await importarExcel(null, 'Reporte_Decomisos', range);
   return resumirDecomisos();
 }
 
-export async function prepararModuloDespachosDesdeSIRT(turno) {
-  await importarExcel(null, 'Despachos_Cavas');
+export async function prepararModuloDespachosDesdeSIRT(turno, range) {
+  await importarExcel(null, 'Despachos_Cavas', range);
   return procesarDespachos(turno || detectarTurnoPorDia());
 }
 
@@ -931,6 +1006,46 @@ function eficienciaOps(datos) {
     pctCompletas: total > 0 ? Math.round((completas / total) * 100) : 0,
     pctPendientes: total > 0 ? Math.round((conPendientes / total) * 100) : 0,
   };
+}
+
+function porDiaSemana(datos) {
+  const dias = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const inicioSem = new Date(hoy);
+  inicioSem.setDate(hoy.getDate() - 6);
+  const inicioAnt = new Date(hoy);
+  inicioAnt.setDate(hoy.getDate() - 13);
+  const sumAct = [0, 0, 0, 0, 0, 0, 0];
+  const sumAnt = [0, 0, 0, 0, 0, 0, 0];
+  const sumHis = [0, 0, 0, 0, 0, 0, 0];
+  const cntHis = [0, 0, 0, 0, 0, 0, 0];
+  datos.forEach((r) => {
+    const d = r.fecha.getDay();
+    const fd = new Date(r.fecha.getFullYear(), r.fecha.getMonth(), r.fecha.getDate());
+    if (fd >= inicioSem && fd <= hoy) sumAct[d] += r.despachados;
+    if (fd >= inicioAnt && fd < inicioSem) sumAnt[d] += r.despachados;
+    sumHis[d] += r.despachados;
+    cntHis[d] += 1;
+  });
+  const totalAct = sumAct.reduce((s, v) => s + v, 0);
+  const diaHoy = hoy.getDay();
+  return dias.map((nombre, i) => {
+    const actual = sumAct[i];
+    const anterior = sumAnt[i];
+    const variacion = anterior > 0 ? Math.round(((actual - anterior) / anterior) * 100) : null;
+    return {
+      dia: nombre,
+      actual,
+      anterior,
+      variacion,
+      pctActual: totalAct > 0 ? Math.round((actual / totalAct) * 100) : 0,
+      total: sumHis[i],
+      promedio: cntHis[i] > 0 ? Math.round(sumHis[i] / cntHis[i]) : 0,
+      esHoy: i === diaHoy,
+      ops: cntHis[i],
+    };
+  });
 }
 
 export async function importarExcelAdicionales(bytes, nombre) {
@@ -1086,20 +1201,132 @@ export async function generarPDFDecomisos() {
   const res = await getResumenDecomisos();
   if (!res.resultados?.length) return { success: false, message: 'No hay datos en Resumen.' };
   const fecha = fmtNow();
-  const rows = res.resultados
-    .map((r, i) => `<tr><td>${i + 1}</td><td>${r.id || ''}</td><td>${r.destino || ''}</td><td>${r.producto || ''}</td></tr>`)
-    .join('');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Resumen decomisos</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ddd;padding:8px}th{background:#f3f4f6}</style></head><body><h1>Resumen de decomisos</h1><p>Fecha: ${fecha}</p><table><tr><th>#</th><th>ID</th><th>Destino</th><th>Producto</th></tr>${rows}</table></body></html>`;
-  const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  const rows = res.resultados.map((r, i) => ({
+    n: i + 1,
+    id: r.id || '',
+    destino: r.destino || '',
+    producto: r.producto || '',
+  }));
+  const porProducto = {};
+  rows.forEach((r) => {
+    porProducto[r.producto] = (porProducto[r.producto] || 0) + 1;
+  });
+
+  const cr = await getCrudasDetalle();
+  const resumenCrudas = [];
+  if (cr?.success && Array.isArray(cr.filas) && cr.filas.length > 0) {
+    const map = {};
+    cr.filas.forEach((f) => {
+      const key = `${f.puesto || ''}||${f.opl || ''}`;
+      if (!map[key]) map[key] = { puesto: f.puesto || '', opl: f.opl || '', cantidad: 0, codigos: [] };
+      map[key].cantidad += Number(f.cantidad || 0);
+      if (f.codigo) map[key].codigos.push(String(f.codigo));
+    });
+    Object.values(map)
+      .sort((a, b) => String(a.puesto).localeCompare(String(b.puesto)))
+      .forEach((f) => {
+        resumenCrudas.push({
+          puesto: f.puesto,
+          cantidad: f.cantidad,
+          opl: f.opl || '—',
+          codigos: f.codigos.slice(0, 8).join(', '),
+        });
+      });
+  }
+  const pdfBuffer = await generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha);
+  const url = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
   const s = await loadState();
   s.historialPdf = s.historialPdf || [];
-  s.historialPdf.push({ fecha, total: res.resultados.length, url });
+  const nombre = `Listado_Decomisos_${fmtDateOnly().replace(/\//g, '-')}.pdf`;
+  s.historialPdf.push({
+    nombre,
+    fecha,
+    url,
+    tipo: 'DECOMISOS',
+    registros: res.resultados.length,
+    usuario: 'SISTEMA',
+  });
   await saveState(s);
   return {
     success: true,
+    nombre,
     url,
-    message: 'Resumen listo. Abra el enlace y guarde como PDF desde el navegador.',
+    message: 'PDF generado correctamente.',
   };
+}
+
+async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha) {
+  return await new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 36, size: 'LETTER' });
+    const chunks = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    doc.fontSize(16).fillColor('#259c39').text('LISTADO DE DECOMISOS VISCERAS CON SALIDA', { align: 'center' });
+    doc.moveDown(0.4);
+    doc.fontSize(9).fillColor('#6b7280').text(`Fecha de generacion: ${fecha}`, { align: 'center' });
+    doc.moveDown(0.8);
+    doc.fillColor('#111827').fontSize(10).text(`Total registros: ${rows.length}    Productos distintos: ${Object.keys(porProducto).length}`);
+    doc.moveDown(0.8);
+
+    doc.fontSize(11).fillColor('#259c39').text('DETALLE DE DECOMISOS');
+    doc.moveDown(0.3);
+    drawSimpleTable(doc, ['#', 'Codigo', 'Destino', 'Decomisos'], rows.map((r) => [r.n, r.id, r.destino, r.producto]), [35, 130, 250, 120]);
+
+    doc.moveDown(0.8);
+    doc.fontSize(11).fillColor('#259c39').text('RESUMEN POR PRODUCTO');
+    doc.moveDown(0.3);
+    drawSimpleTable(
+      doc,
+      ['Producto', 'Cantidad'],
+      Object.keys(porProducto)
+        .sort()
+        .map((p) => [p, porProducto[p]]),
+      [420, 80]
+    );
+
+    if (resumenCrudas.length) {
+      doc.moveDown(0.8);
+      doc.fontSize(11).fillColor('#259c39').text('RESUMEN DE CRUDAS - VISCERAS BLANCAS');
+      doc.moveDown(0.3);
+      drawSimpleTable(
+        doc,
+        ['Puesto', 'Cantidad', 'OPL', 'Codigos'],
+        resumenCrudas.map((x) => [x.puesto, x.cantidad, x.opl, x.codigos]),
+        [130, 65, 90, 215]
+      );
+    }
+
+    doc.moveDown(0.8);
+    doc.fontSize(8).fillColor('#6b7280').text(`Documento generado automaticamente · Gestor de Visceras Colbeef · ${fecha}`, { align: 'center' });
+    doc.end();
+  });
+}
+
+function drawSimpleTable(doc, headers, rows, widths) {
+  const startX = doc.x;
+  let y = doc.y;
+  const rowH = 18;
+  doc.fontSize(9).fillColor('#111827');
+  headers.forEach((h, i) => {
+    doc.rect(startX + widths.slice(0, i).reduce((a, b) => a + b, 0), y, widths[i], rowH).fillAndStroke('#e8f5e9', '#d1d5db');
+    doc.fillColor('#065f46').text(String(h), startX + widths.slice(0, i).reduce((a, b) => a + b, 0) + 4, y + 5, { width: widths[i] - 8, ellipsis: true });
+  });
+  y += rowH;
+  rows.forEach((r) => {
+    if (y > 730) {
+      doc.addPage();
+      y = 36;
+    }
+    r.forEach((v, i) => {
+      const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
+      doc.rect(x, y, widths[i], rowH).stroke('#e5e7eb');
+      doc.fillColor('#111827').text(String(v ?? ''), x + 4, y + 5, { width: widths[i] - 8, ellipsis: true });
+    });
+    y += rowH;
+  });
+  doc.y = y;
 }
 
 export async function getKPIs(opl, filtro) {
@@ -1210,7 +1437,7 @@ export async function getKPIs(opl, filtro) {
         return out;
       })(),
       ranking: comparacionOPLs.map((x) => ({ opl: x.opl, despachados: x.despachados, promedio: x.promedio })),
-      porDiaSemana: [],
+      porDiaSemana: porDiaSemana(periodo.length ? periodo : anio.length ? anio : todos),
       eficiencia: efPeriodo,
       comparacionMeses,
       comparacionOPLs,
@@ -1244,11 +1471,138 @@ export async function getListaOPLsHistorico() {
   return { success: true, opls: ['Todos los OPLs'].concat(Object.keys(set).sort()) };
 }
 
+export async function getResumenAdicionales() {
+  const s = await loadState();
+  const resSalidas = contarJuegosVisceralesSync(s);
+  const totalSalidas = resSalidas.total || 0;
+  const totalDecomisos = Math.max(0, (s.resumenRows?.length || 0) - 1);
+  return { success: true, totalSalidas, totalDecomisos };
+}
+
 export async function generarReporteOPL(opl, filtro) {
   const res = await getKPIs(opl, filtro);
   if (!res.success) return res;
   const k = res.kpis;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Reporte OPL</title><style>body{font-family:Arial,sans-serif;padding:20px}.kpi{display:inline-block;border:1px solid #ddd;border-radius:6px;padding:10px;margin:6px 6px 0 0}table{border-collapse:collapse;width:100%;margin-top:14px}th,td{border:1px solid #ddd;padding:8px}th{background:#f3f4f6}</style></head><body><h1>Reporte OPL ${opl || 'Todos los OPLs'}</h1><p>Generado: ${fmtNow()}</p><div class="kpi">Hoy: <b>${k.hoy.despachados}</b></div><div class="kpi">Semana: <b>${k.semana.despachados}</b></div><div class="kpi">Mes: <b>${k.mes.despachados}</b></div><div class="kpi">Anio: <b>${k.anio.despachados}</b></div><div class="kpi">Eficiencia: <b>${k.eficiencia}%</b></div><h2>Comparacion OPLs</h2><table><tr><th>OPL</th><th>Despachados</th><th>Operaciones</th><th>Pendientes</th><th>Eficiencia</th></tr>${(res.graficos.comparacionOPLs || []).map((r) => `<tr><td>${r.opl}</td><td>${r.despachados}</td><td>${r.operaciones}</td><td>${r.pendientes}</td><td>${r.eficiencia}%</td></tr>`).join('')}</table></body></html>`;
+  const g = res.graficos || {};
+  const backlog = res.backlog || [];
+  const anomalias = res.anomalias || [];
+  const compRows = (g.comparacionOPLs || [])
+    .map(
+      (r) =>
+        `<tr><td>${r.opl}</td><td>${r.despachados}</td><td>${r.operaciones}</td><td>${r.pendientes}</td><td>${r.eficiencia}%</td></tr>`
+    )
+    .join('');
+  const backlogRows =
+    backlog.length > 0
+      ? backlog
+          .map(
+            (b) =>
+              `<tr><td>${b.opl}</td><td>${b.opsPendientes}</td><td>${b.totalPendientes}</td><td>${b.eficiencia}%</td><td>${b.estado}</td></tr>`
+          )
+          .join('')
+      : '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Sin backlog registrado</td></tr>';
+  const anomRows =
+    anomalias.length > 0
+      ? anomalias
+          .map(
+            (a) =>
+              `<tr><td>${a.fecha}</td><td>${a.turno}</td><td>${a.opl}</td><td>${a.pendientes}</td><td>${a.progreso}%</td></tr>`
+          )
+          .join('')
+      : '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Sin anomalias</td></tr>';
+  const ev = g.evolucion || [];
+  const sem = g.porDiaSemana || [];
+  const cm = g.comparacionMeses || [];
+  const html = `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Reporte OPL</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <style>
+    body{font-family:Arial,sans-serif;background:#f3f4f6;margin:0;padding:20px;color:#1f2937}
+    .wrap{max-width:1100px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden}
+    .head{background:#259c39;color:#fff;padding:18px 22px}
+    .head h1{margin:0;font-size:22px}
+    .head p{margin:6px 0 0;font-size:12px;opacity:.9}
+    .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px}
+    .kpi{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#fafafa}
+    .kpi .l{font-size:11px;color:#6b7280;text-transform:uppercase}
+    .kpi .v{font-size:23px;font-weight:700;color:#259c39}
+    .sec{padding:0 14px 14px}
+    .sec h2{font-size:14px;color:#259c39;margin:12px 0 8px}
+    .charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .card{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#fff}
+    .chart{height:220px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border:1px solid #e5e7eb;padding:7px;font-size:12px;text-align:center}
+    th{background:#f9fafb}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <h1>Reporte Operativo OPL: ${opl || 'Todos los OPLs'}</h1>
+      <p>Generado: ${fmtNow()} | Año: ${Number(filtro?.anio || new Date().getFullYear())}</p>
+    </div>
+    <div class="grid">
+      <div class="kpi"><div class="l">Hoy</div><div class="v">${k.hoy.despachados}</div><div>${k.hoy.progreso}%</div></div>
+      <div class="kpi"><div class="l">Semana</div><div class="v">${k.semana.despachados}</div><div>Prom: ${k.semana.promDiario}</div></div>
+      <div class="kpi"><div class="l">Mes</div><div class="v">${k.mes.despachados}</div><div>${k.mes.tendencia}</div></div>
+      <div class="kpi"><div class="l">Año</div><div class="v">${k.anio.despachados}</div><div>Ops: ${k.anio.operaciones}</div></div>
+      <div class="kpi"><div class="l">Eficiencia</div><div class="v">${k.eficiencia}%</div><div>Anomalias: ${k.anomalias}</div></div>
+    </div>
+    <div class="sec">
+      <h2>Graficos</h2>
+      <div class="charts">
+        <div class="card"><canvas id="c1" class="chart"></canvas></div>
+        <div class="card"><canvas id="c2" class="chart"></canvas></div>
+        <div class="card"><canvas id="c3" class="chart"></canvas></div>
+        <div class="card"><canvas id="c4" class="chart"></canvas></div>
+      </div>
+    </div>
+    <div class="sec">
+      <h2>Comparacion entre OPLs</h2>
+      <table><tr><th>OPL</th><th>Despachados</th><th>Operaciones</th><th>Pendientes</th><th>Eficiencia</th></tr>${compRows}</table>
+    </div>
+    <div class="sec">
+      <h2>Backlog por OPL</h2>
+      <table><tr><th>OPL</th><th>Ops c/pend</th><th>Total pendientes</th><th>Eficiencia</th><th>Estado</th></tr>${backlogRows}</table>
+    </div>
+    <div class="sec">
+      <h2>Anomalias</h2>
+      <table><tr><th>Fecha</th><th>Turno</th><th>OPL</th><th>Pendientes</th><th>Progreso</th></tr>${anomRows}</table>
+    </div>
+  </div>
+  <script>
+    new Chart(document.getElementById('c1'),{
+      type:'line',
+      data:{labels:${JSON.stringify(ev.map((x) => x.label))},datasets:[
+        {label:'Despachados',data:${JSON.stringify(ev.map((x) => x.despachados))},borderColor:'#259c39',backgroundColor:'rgba(37,156,57,.08)',fill:true,tension:.3},
+        {label:'Pendientes',data:${JSON.stringify(ev.map((x) => x.pendientes))},borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.06)',fill:true,tension:.3}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false}
+    });
+    new Chart(document.getElementById('c2'),{
+      type:'bar',
+      data:{labels:${JSON.stringify((g.ranking || []).map((x) => x.opl))},datasets:[{data:${JSON.stringify((g.ranking || []).map((x) => x.despachados))},backgroundColor:'#378ADD'}]},
+      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
+    });
+    new Chart(document.getElementById('c3'),{
+      type:'bar',
+      data:{labels:${JSON.stringify(sem.map((x) => x.dia))},datasets:[
+        {label:'Esta semana',data:${JSON.stringify(sem.map((x) => x.actual))},backgroundColor:'#259c39'},
+        {label:'Semana anterior',data:${JSON.stringify(sem.map((x) => x.anterior))},backgroundColor:'rgba(37,156,57,.25)'}
+      ]},
+      options:{responsive:true,maintainAspectRatio:false}
+    });
+    new Chart(document.getElementById('c4'),{
+      type:'bar',
+      data:{labels:${JSON.stringify(cm.map((x) => x.nombre))},datasets:[{label:'Mes',data:${JSON.stringify(cm.map((x) => x.valor))},backgroundColor:'#7F77DD'}]},
+      options:{responsive:true,maintainAspectRatio:false}
+    });
+  </script>
+</body></html>`;
   return { success: true, html };
 }
 

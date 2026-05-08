@@ -365,13 +365,13 @@
       <div class="modulo-card" onclick="showDecomisos()">
         <div class="modulo-icono">📋</div>
         <div class="modulo-nombre">Decomisos</div>
-        <div class="modulo-desc">Carga de archivos Excel, cruce de información y generación de reportes PDF.</div>
+        <div class="modulo-desc">Sincronización directa desde SIRT, cruce de información y generación de reportes PDF.</div>
         <span class="modulo-badge">Activo</span>
       </div>
       <div class="modulo-card" onclick="showDespachos()">
         <div class="modulo-icono">🚛</div>
         <div class="modulo-nombre">Despachos</div>
-        <div class="modulo-desc">Tabla dinámica por puesto y tipo. Se actualiza cada vez que se sube el archivo.</div>
+        <div class="modulo-desc">Tabla dinámica por puesto y tipo. Se actualiza al procesar desde SIRT.</div>
         <span class="modulo-badge">Activo</span>
       </div>
       <div class="modulo-card" onclick="showInforme()">
@@ -416,27 +416,32 @@
         <div class="ub-icon">📂</div>
         <div class="ub-label">Salida de Cava</div>
         <div class="ub-hint">Estado de productos en cavas y plan de faena actual</div>
-        <div class="ub-filename" id="file1Name">Sin archivo</div>
+        <div class="ub-filename" id="file1Name">No requerido (SIRT)</div>
         <input type="file" id="fileInput1" accept=".xlsx,.xls" onchange="onFileSelected(1)">
       </div>
       <div class="upload-box" id="uploadBox2">
         <div class="ub-icon">📂</div>
         <div class="ub-label">Reporte Decomisos</div>
         <div class="ub-hint">Reporte de decomisos de subproductos</div>
-        <div class="ub-filename" id="file2Name">Sin archivo</div>
+        <div class="ub-filename" id="file2Name">No requerido (SIRT)</div>
         <input type="file" id="fileInput2" accept=".xlsx,.xls" onchange="onFileSelected(2)">
       </div>
     </div>
     <div class="btn-row">
       <button class="btn btn-secondary" onclick="clearFiles()">✕ Limpiar</button>
-      <button class="btn btn-primary" id="btnProcesar" onclick="procesarDecomisos()" disabled>⚙️ Procesar Archivos</button>
+      <button class="btn btn-primary" id="btnProcesar" onclick="procesarDecomisos()">⚙️ Procesar desde SIRT</button>
       <button class="btn btn-primary" id="btnPDF" onclick="generarPDF()" disabled>📄 Generar PDF</button>
+    </div>
+    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.4rem 0 0.8rem;">
+      <span style="font-size:0.82rem;color:var(--gris);font-weight:600;">Fecha de consulta:</span>
+      <input type="date" id="decDate" class="inf-input" style="max-width:190px;padding:0.45rem 0.55rem;">
+      <button class="btn btn-secondary" style="padding:0.4rem 0.8rem;font-size:0.78rem;" onclick="limpiarFecha('decDate')">Hoy</button>
     </div>
     <div class="alert" id="decAlert"></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>ID Producto</th><th>Destino</th><th>Producto / Subproducto</th></tr></thead>
-        <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">No hay datos. Cargue archivos y presione "Procesar".</td></tr></tbody>
+        <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -485,9 +490,9 @@
     <div class="upload-grid" style="grid-template-columns:1fr 1fr;">
       <div class="upload-box" id="uploadBoxDesp">
         <div class="ub-icon">📊</div>
-        <div class="ub-label">Estado Productos en Cavas</div>
-        <div class="ub-hint">Se puede subir varias veces — actualiza la tabla</div>
-        <div class="ub-filename" id="fileDespName">Sin archivo</div>
+        <div class="ub-label">Origen SIRT</div>
+        <div class="ub-hint">La consulta toma datos directos de la base para la fecha y turno seleccionados.</div>
+        <div class="ub-filename" id="fileDespName">No requerido (SIRT)</div>
         <input type="file" id="fileInputDesp" accept=".xlsx,.xls" onchange="onFileDespSelected()">
       </div>
       <div class="upload-box" id="uploadBoxAdic" style="border:2px dashed #f59e0b;background:#fffbeb;">
@@ -501,7 +506,7 @@
     <div class="btn-row" style="align-items:center;flex-wrap:wrap;">
       <button class="btn btn-secondary" onclick="confirmarLimpiar()">🗑 Limpiar</button>
       <button class="btn btn-danger" onclick="confirmarCerrarOperacion()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🔒 Cerrar operación</button>
-      <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()" disabled>⚙️ Procesar</button>
+      <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()">⚙️ Procesar desde SIRT</button>
       <button class="btn btn-primary" id="btnProcesarAdic" onclick="procesarAdicionales()" disabled style="background:#f59e0b;border-color:#f59e0b;">⚙️ Procesar Adicionales</button>
       <div class="search-desp">
         <span class="s-icon">🔍</span>
@@ -510,11 +515,16 @@
       </div>
       <span class="search-count" id="searchCount"></span>
     </div>
+    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.2rem 0 0.8rem;">
+      <span style="font-size:0.82rem;color:var(--gris);font-weight:600;">Fecha de consulta:</span>
+      <input type="date" id="despDate" class="inf-input" style="max-width:190px;padding:0.45rem 0.55rem;">
+      <button class="btn btn-secondary" style="padding:0.4rem 0.8rem;font-size:0.78rem;" onclick="limpiarFecha('despDate')">Hoy</button>
+    </div>
     <div class="alert" id="despAlert"></div>
     <div class="table-wrap">
       <table>
         <thead id="despThead"></thead>
-        <tbody id="despTbody"><tr><td colspan="5" class="empty-state">Sube el archivo y presiona Procesar.</td></tr></tbody>
+        <tbody id="despTbody"><tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -785,6 +795,7 @@
       </div>
       <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-secondary" id="btnProcesarPlanilla" onclick="procesarPlanilla()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Procesar Planilla</button>
+        <button class="btn btn-secondary" onclick="abrirModalPlazas()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Configurar Plazas</button>
         <button class="btn btn-primary" onclick="exportarPlanillaPDF()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">🖨️ Exportar PDF</button>
       </div>
     </div>
@@ -843,6 +854,29 @@
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:1.5rem;">Historial de PDFs generados</h2>
     <div id="historialContainer"><p class="empty-state">Cargando...</p></div>
+  </div>
+
+  <!-- MODAL PLAZAS -->
+  <div class="modal-overlay" id="modalPlazas">
+    <div class="modal-box" style="max-width:760px;">
+      <div class="modal-header">
+        <div class="modal-title">⚙️ Configuración de Plazas</div>
+        <button class="modal-close" onclick="cerrarModalPlazas()">✕</button>
+      </div>
+      <div class="alert" id="plazasAlert"></div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.8rem;">
+        <input type="text" id="plazaPuestoInput" class="inf-input" placeholder="Puesto (ej: 01028)" style="flex:1;min-width:160px;">
+        <input type="text" id="plazaZonaInput" class="inf-input" placeholder="Plaza (ej: CENTRO)" style="flex:1;min-width:160px;">
+        <button class="btn btn-primary" onclick="guardarPlazaModal()" style="white-space:nowrap;">💾 Guardar</button>
+      </div>
+      <p style="font-size:0.78rem;color:var(--gris);margin-bottom:0.7rem;">La configuración impacta la consolidación de la planilla por zona.</p>
+      <div class="table-wrap" style="max-height:320px;overflow-y:auto;margin-top:0;">
+        <table>
+          <thead><tr><th>Puesto</th><th>Plaza</th><th style="width:180px;">Acciones</th></tr></thead>
+          <tbody id="plazasBody"><tr><td colspan="3" class="empty-state">Cargando...</td></tr></tbody>
+        </table>
+      </div>
+    </div>
   </div>
 
   <!-- SPINNER -->
@@ -978,6 +1012,11 @@ window.onload = function() {
   var bpd = document.getElementById('btnProcesarDesp');
   if (bp) bp.disabled = false;
   if (bpd) bpd.disabled = false;
+  var hoyIso = fechaHoyISO();
+  var decDate = document.getElementById('decDate');
+  var despDate = document.getElementById('despDate');
+  if (decDate && !decDate.value) decDate.value = hoyIso;
+  if (despDate && !despDate.value) despDate.value = hoyIso;
   google.script.run
     .withSuccessHandler(function(){})
     .withFailureHandler(function(e){console.warn('initSheets:',e);})
@@ -1094,25 +1133,27 @@ function updateDashboard(data) {
 function onFileSelected(num) {
   var file=document.getElementById('fileInput'+num).files[0];
   if(file){state['file'+num]=file;document.getElementById('file'+num+'Name').textContent='✓ '+file.name;document.getElementById('uploadBox'+num).classList.add('has-file');}
-  document.getElementById('btnProcesar').disabled=!(state.file1&&state.file2);
+  document.getElementById('btnProcesar').disabled=false;
 }
 function clearFiles() {
   state.file1=null;state.file2=null;state.hayResultados=false;
-  ['1','2'].forEach(function(n){document.getElementById('fileInput'+n).value='';document.getElementById('file'+n+'Name').textContent='Sin archivo';document.getElementById('uploadBox'+n).classList.remove('has-file');});
-  document.getElementById('btnProcesar').disabled=true;document.getElementById('btnPDF').disabled=true;
+  ['1','2'].forEach(function(n){document.getElementById('fileInput'+n).value='';document.getElementById('file'+n+'Name').textContent='No requerido (SIRT)';document.getElementById('uploadBox'+n).classList.remove('has-file');});
+  document.getElementById('btnProcesar').disabled=false;document.getElementById('btnPDF').disabled=true;
   document.getElementById('tablaDecomisos').innerHTML="<tr><td colspan='4' class='empty-state'>No hay datos.</td></tr>";
   hideAlert('decAlert');showSpinner('Limpiando...');
   google.script.run.withSuccessHandler(function(res){hideSpinner();showAlert('decAlert',res&&res.success?'success':'warn',res&&res.success?'Datos limpiados.':'Error: '+(res?res.message:''));loadDashboardData();}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','warn',e.message);}).limpiarResumen();
 }
 function procesarDecomisos() {
+  var filtro = leerFecha('decDate');
+  var fechaTxt = fechaISOaTexto(filtro.date);
   showSpinner('Sincronizando desde base de datos SIRT y cruzando decomisos...');
   google.script.run.withSuccessHandler(function(res){
     hideSpinner();
     if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}
-    showAlert('decAlert','success','✓ '+res.totalProductos+' productos en '+res.totalDestinos+' destinos (datos SIRT).');
+    showAlert('decAlert','success','✓ ' + res.totalProductos + ' productos en ' + res.totalDestinos + ' destinos · Fecha: <strong>' + fechaTxt + '</strong>');
     renderTablaDecomisos(res.resultados);state.hayResultados=res.totalProductos>0;
     document.getElementById('btnPDF').disabled=!state.hayResultados;loadDashboardData();
-  }).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).prepararModuloDecomisosDesdeSIRT();
+  }).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).prepararModuloDecomisosDesdeSIRT(filtro);
 }
 function generarPDF() {
   showSpinner('Generando PDF...');
@@ -1153,20 +1194,22 @@ function cargarDespachosGuardados() {
 }
 function onFileDespSelected() {
   var file=document.getElementById('fileInputDesp').files[0];
-  if(file){state.fileDesp=file;document.getElementById('fileDespName').textContent='✓ '+file.name;document.getElementById('uploadBoxDesp').classList.add('has-file');document.getElementById('btnProcesarDesp').disabled=false;}
+  if(file){state.fileDesp=file;document.getElementById('fileDespName').textContent='✓ '+file.name;document.getElementById('uploadBoxDesp').classList.add('has-file');}
 }
 function procesarDespachos() {
+  var filtro = leerFecha('despDate');
+  var fechaTxt = fechaISOaTexto(filtro.date);
   showSpinner('Sincronizando despachos desde SIRT (turno '+turnoSeleccionado+')...');
   google.script.run.withSuccessHandler(function(res){
     hideSpinner();
     if(!res||!res.success){showAlert('despAlert','error','Error: '+(res?res.message:''));return;}
-    showAlert('despAlert','success','✓ Turno <strong>'+res.turno+'</strong> — '+res.totalPuestos+' puestos | '+res.totalJuegos+' juegos');
+    showAlert('despAlert','success','✓ Fecha <strong>' + fechaTxt + '</strong> · Turno <strong>'+res.turno+'</strong> · '+res.totalPuestos+' puestos | '+res.totalJuegos+' juegos');
     seleccionarTurno(res.turno);
     document.getElementById('statJuegos').textContent=res.totalJuegos;
     document.getElementById('statPuestos').textContent=res.totalPuestos;
     renderTablaDespachos(res);loadDashboardData();
     cargarCrudasDespachos();
-  }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).prepararModuloDespachosDesdeSIRT(turnoSeleccionado);
+  }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).prepararModuloDespachosDesdeSIRT(turnoSeleccionado, filtro);
 }
 // Variable global para códigos con cruda
 var _codigosCrudas = {};
@@ -1245,11 +1288,11 @@ function confirmarLimpiar() {
     hideSpinner();
     if(!res||!res.success){showAlert('despAlert','error','Error: '+(res?res.message:''));return;}
     state.fileDesp=null;
-    document.getElementById('fileInputDesp').value='';document.getElementById('fileDespName').textContent='Sin archivo';
-    document.getElementById('uploadBoxDesp').classList.remove('has-file');document.getElementById('btnProcesarDesp').disabled=true;
+    document.getElementById('fileInputDesp').value='';document.getElementById('fileDespName').textContent='No requerido (SIRT)';
+    document.getElementById('uploadBoxDesp').classList.remove('has-file');document.getElementById('btnProcesarDesp').disabled=false;
     document.getElementById('statJuegos').textContent='—';document.getElementById('statPuestos').textContent='—';
     document.getElementById('despThead').innerHTML='';
-    document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">Sube el archivo y presiona Procesar.</td></tr>';
+    document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr>';
     inicializarSelectorTurno();hideAlert('despAlert');
     showAlert('despAlert','success','✓ Operación limpiada. Lista para el próximo turno.');loadDashboardData();
   }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).limpiarDespachos();
@@ -1562,6 +1605,10 @@ function showSpinner(text){document.getElementById('spinnerText').textContent=te
 function hideSpinner(){document.getElementById('spinner').classList.remove('show');}
 function showAlert(id,type,msg){var el=document.getElementById(id);el.className='alert alert-'+type+' show';el.innerHTML=msg;if(type!=='error')setTimeout(function(){el.classList.remove('show');},7000);}
 function hideAlert(id){document.getElementById(id).classList.remove('show');}
+function fechaHoyISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fechaISOaTexto(iso){if(!iso)return '—';var p=String(iso).split('-');if(p.length!==3)return iso;return p[2]+'/'+p[1]+'/'+p[0];}
+function leerFecha(id){var el=document.getElementById(id);var v=(el&&el.value||'').trim();return {date:v||fechaHoyISO()};}
+function limpiarFecha(id){var el=document.getElementById(id);if(el)el.value=fechaHoyISO();}
 
 // ══════════════════════════════════════════════════════
 // OPL — TARJETA DASHBOARD (mini) + MODAL EXPANDIDO
@@ -1700,7 +1747,7 @@ function recalcularOPLModal() {
 function renderModalOplProgreso(progreso) {
   if (!progreso || progreso.length === 0) {
     document.getElementById('oplModalProgresoContainer').innerHTML =
-      '<p class="empty-state">Sin datos de OPL. Recalcula o sube el archivo de Salida de Cava.</p>';
+      '<p class="empty-state">Sin datos de OPL. Recalcula desde los datos sincronizados de SIRT.</p>';
     return;
   }
   var html = progreso.map(function(p) {
@@ -1956,6 +2003,7 @@ function limpiarBusquedaCrudas() {
 // ══════════════════════════════════════════════════════
 var _planillaOplActivo = '';
 var _planillaUltimoDato = null;
+var _plazaEditIdx = null;
 
 function showPlanilla() {
   _hideAll();
@@ -2123,9 +2171,99 @@ function exportarPlanillaPDF() {
     .generarHTMLPlanillaPDF(_planillaOplActivo);
 }
 
+function abrirModalPlazas() {
+  document.getElementById('modalPlazas').classList.add('show');
+  _plazaEditIdx = null;
+  document.getElementById('plazaPuestoInput').value = '';
+  document.getElementById('plazaZonaInput').value = '';
+  cargarPlazasModal();
+}
+
+function cerrarModalPlazas() {
+  document.getElementById('modalPlazas').classList.remove('show');
+}
+
+function cargarPlazasModal() {
+  var tbody = document.getElementById('plazasBody');
+  tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Cargando...</td></tr>';
+  google.script.run
+    .withSuccessHandler(function(res){
+      if (!res || !res.success) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Error cargando plazas.</td></tr>';
+        return;
+      }
+      if (!res.rows || res.rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" class="empty-state">Sin plazas configuradas.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = res.rows.map(function(r){
+        return '<tr>'
+          + '<td style="font-weight:600;">' + (r.puesto||'') + '</td>'
+          + '<td>' + (r.plaza||'') + '</td>'
+          + '<td>'
+          +   '<button class="btn btn-secondary" style="padding:0.35rem 0.6rem;font-size:0.75rem;margin-right:0.35rem;" onclick="editarPlazaModal(' + r.idx + ',\'' + String(r.puesto||'').replace(/'/g,"\\'") + '\',\'' + String(r.plaza||'').replace(/'/g,"\\'") + '\')">✏️ Editar</button>'
+          +   '<button class="btn btn-danger" style="padding:0.35rem 0.6rem;font-size:0.75rem;" onclick="eliminarPlazaModal(' + r.idx + ')">🗑️ Eliminar</button>'
+          + '</td>'
+          + '</tr>';
+      }).join('');
+    })
+    .withFailureHandler(function(e){
+      tbody.innerHTML = '<tr><td colspan="3" class="empty-state" style="color:#991b1b;">' + e.message + '</td></tr>';
+    })
+    .getPlazas();
+}
+
+function editarPlazaModal(idx, puesto, plaza) {
+  _plazaEditIdx = idx;
+  document.getElementById('plazaPuestoInput').value = puesto || '';
+  document.getElementById('plazaZonaInput').value = plaza || '';
+  showAlert('plazasAlert','info','Editando fila #' + idx + '. Guarda para aplicar cambios.');
+}
+
+function guardarPlazaModal() {
+  var puesto = document.getElementById('plazaPuestoInput').value.trim();
+  var zona = document.getElementById('plazaZonaInput').value.trim().toUpperCase();
+  if (!puesto || !zona) {
+    showAlert('plazasAlert','warn','Completa puesto y plaza.');
+    return;
+  }
+  var onOk = function(res){
+    if (!res || !res.success) {
+      showAlert('plazasAlert','error','Error: ' + (res ? res.message : ''));
+      return;
+    }
+    showAlert('plazasAlert','success', res.message || 'Guardado');
+    _plazaEditIdx = null;
+    document.getElementById('plazaPuestoInput').value = '';
+    document.getElementById('plazaZonaInput').value = '';
+    cargarPlazasModal();
+  };
+  var req = google.script.run.withSuccessHandler(onOk).withFailureHandler(function(e){
+    showAlert('plazasAlert','error', e.message);
+  });
+  if (_plazaEditIdx) req.modificarPlaza(_plazaEditIdx, puesto, zona);
+  else req.insertarPlaza(puesto, zona);
+}
+
+function eliminarPlazaModal(idx) {
+  if (!confirm('¿Eliminar esta plaza?')) return;
+  google.script.run
+    .withSuccessHandler(function(res){
+      if (!res || !res.success) {
+        showAlert('plazasAlert','error','Error: ' + (res ? res.message : ''));
+        return;
+      }
+      showAlert('plazasAlert','success', res.message || 'Eliminado');
+      if (_plazaEditIdx === idx) _plazaEditIdx = null;
+      cargarPlazasModal();
+    })
+    .withFailureHandler(function(e){ showAlert('plazasAlert','error', e.message); })
+    .eliminarPlaza(idx);
+}
+
 // Cerrar modal OPL con ESC
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { cerrarModal(); cerrarModalOPL(); }
+  if (e.key === 'Escape') { cerrarModal(); cerrarModalOPL(); cerrarModalPlazas(); }
 });
 
 // ══════════════════════════════════════════════════════

@@ -3,8 +3,15 @@ import { mapTipoProductoNombre } from './engineUtils.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
 
+function normDate(v) {
+  const s = String(v || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
+}
+
 /** 14 columnas B–O (índices 0..13) */
-export async function fetchEstadoCavasRows() {
+export async function fetchEstadoCavasRows(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
   const sql = `
     SELECT
       pp.id_producto::text AS c0,
@@ -23,7 +30,12 @@ export async function fetchEstadoCavasRows() {
       ORDER BY v2.fecha_despacho_planta DESC NULLS LAST
       LIMIT 1
     ) v ON TRUE
-    WHERE pp.fecha_registro >= (CURRENT_DATE - $1::int)
+    WHERE (
+      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
+      OR pp.fecha_registro >= (CURRENT_DATE - $1::int)
+    )
+      AND ($2::date IS NULL OR pp.fecha_registro::date >= $2::date)
+      AND ($3::date IS NULL OR pp.fecha_registro::date <= $3::date)
       AND (
         t.nombre ILIKE '%visc%'
         OR t.nombre ILIKE '%cabeza%'
@@ -33,7 +45,7 @@ export async function fetchEstadoCavasRows() {
     ORDER BY pp.fecha_registro DESC
     LIMIT 40000
   `;
-  const { rows } = await query(sql, [SYNC_DAYS]);
+  const { rows } = await query(sql, [SYNC_DAYS, from, to]);
   return rows.map((r) => {
     const out = new Array(14).fill('');
     out[0] = r.c0;
@@ -47,7 +59,9 @@ export async function fetchEstadoCavasRows() {
   });
 }
 
-export async function fetchReporteDecomisosRows() {
+export async function fetchReporteDecomisosRows(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
   const sql = `
     SELECT
       COALESCE(NULLIF(TRIM(d.codigo_maquina), ''), d.id::text) AS id,
@@ -58,11 +72,16 @@ export async function fetchReporteDecomisosRows() {
       ''::text AS responsable
     FROM sai.decomiso d
     JOIN trazabilidad_proceso.tipo_parte_producto t ON t.id = d.id_tipo_parte_producto
-    WHERE d.fecha_registro >= (CURRENT_DATE - $1::int)
+    WHERE (
+      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
+      OR d.fecha_registro >= (CURRENT_DATE - $1::int)
+    )
+      AND ($2::date IS NULL OR d.fecha_registro::date >= $2::date)
+      AND ($3::date IS NULL OR d.fecha_registro::date <= $3::date)
     ORDER BY d.fecha_registro DESC
     LIMIT 50000
   `;
-  const { rows } = await query(sql, [SYNC_DAYS]);
+  const { rows } = await query(sql, [SYNC_DAYS, from, to]);
   return rows.map((r) => [
     r.id,
     r.fr instanceof Date ? r.fr.toISOString().slice(0, 10) : String(r.fr ?? ''),
@@ -73,7 +92,9 @@ export async function fetchReporteDecomisosRows() {
   ]);
 }
 
-export async function fetchDespachosCavasRows() {
+export async function fetchDespachosCavasRows(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
   const days = Math.min(SYNC_DAYS, 60);
   const sql = `
     SELECT
@@ -84,11 +105,16 @@ export async function fetchDespachosCavasRows() {
       v.orden_despacho::text AS orden,
       v.placa_vehiculo::text AS placa
     FROM trazabilidad_proceso.vw_producto_vendido_colbeef v
-    WHERE v.fecha_despacho_planta >= (CURRENT_DATE - $1::int)
+    WHERE (
+      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
+      OR v.fecha_despacho_planta >= (CURRENT_DATE - $1::int)
+    )
+      AND ($2::date IS NULL OR v.fecha_despacho_planta::date >= $2::date)
+      AND ($3::date IS NULL OR v.fecha_despacho_planta::date <= $3::date)
     ORDER BY v.fecha_despacho_planta DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [days]);
+  const { rows } = await query(sql, [days, from, to]);
   return rows.map((r) => {
     const tipo = mapTipoProductoNombre(r.cat || r.descr || '');
     const puesto = [r.orden || '', r.placa || '', r.descr || ''].filter(Boolean).join(' / ');
