@@ -1087,62 +1087,83 @@ function loadDashboardData() {
     .getDashboardData();
 }
 function updateDashboard(data) {
-  if (!data || !data.success) {
-    var metaBad = document.getElementById('progresoMeta');
-    if (metaBad) {
-      metaBad.textContent =
-        'Sin datos del servidor para el tablero. Respuesta: ' +
-        (data && data.message ? data.message : JSON.stringify(data || {}).slice(0, 160));
+  try {
+    if (!data || !data.success) {
+      var metaBad = document.getElementById('progresoMeta');
+      if (metaBad) {
+        metaBad.textContent =
+          'Sin datos del servidor para el tablero. Respuesta: ' +
+          (data && data.message ? data.message : JSON.stringify(data || {}).slice(0, 160));
+      }
+      return;
     }
-    return;
-  }
 
-  var salidas    = Number(data.totalSalidas||0);
-  var pendientes = Number(data.totalJuegosDespachar||0);
-  var finalizada = salidas > 0 && pendientes === 0 && (data.ultimaActDespachos||'').trim() !== '';
-
-  document.getElementById('dashSalidas').textContent   = salidas   || '—';
-  document.getElementById('dashDecomisos').textContent = data.totalDecomisos || '—';
-  document.getElementById('dashCrudas').textContent    = (data.totalCrudas != null && data.totalCrudas !== undefined) ? data.totalCrudas : '—';
-  document.getElementById('dashDespachos').textContent = pendientes;
-  if(data.turnoDespacho) document.getElementById('dashDespTurno').textContent='Turno '+data.turnoDespacho;
-
-  // ── Última actualización ──
-  var diasES=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  var ultima=(data.ultimaActDespachos||'').trim();
-  if(ultima && ultima.indexOf('/')!==-1 && ultima.indexOf(':')!==-1){
-    var partes   = ultima.split(' ');
-    var hora     = partes.length>1 ? partes[1] : '—';
-    var fechaStr = partes[0]||'';
-    var diaNombre= '';
-    var dp=fechaStr.split('/');
-    if(dp.length===3){
-      var dObj=new Date(Number(dp[2]),Number(dp[1])-1,Number(dp[0]));
-      diaNombre=isNaN(dObj.getTime())?'':(diasES[dObj.getDay()]||'');
+    function setText(id, value) {
+      var el = document.getElementById(id);
+      if (el) el.textContent = value;
     }
-    document.getElementById('dashUltimaHora').textContent  = hora;
-    document.getElementById('dashUltimaDia').textContent   = diaNombre;
-    document.getElementById('dashUltimaFecha').textContent = finalizada ? '✅ Operación finalizada' : fechaStr;
-  } else {
-    document.getElementById('dashUltimaHora').textContent  = '—';
-    document.getElementById('dashUltimaDia').textContent   = '';
-    document.getElementById('dashUltimaFecha').textContent = 'Sin procesar';
-  }
+    function setWidth(id, value) {
+      var el = document.getElementById(id);
+      if (el && el.style) el.style.width = value;
+    }
 
-  // ── Barra progreso general ──
-  var progreso = data.progreso||0;
-  document.getElementById('progresoPorcentaje').textContent = progreso+'%';
-  document.getElementById('progresoBarra').style.width      = progreso+'%';
-  var despachados = Math.max(0, salidas - pendientes);
-  document.getElementById('progresoMeta').textContent =
-    despachados+' despachados de '+salidas+' juegos totales — '+pendientes+' pendientes';
+    var salidas = Number(data.totalSalidas || 0);
+    var pendientes = Number(data.totalJuegosDespachar || 0);
+    var finalizada =
+      salidas > 0 && pendientes === 0 && (data.ultimaActDespachos || '').trim() !== '';
 
-  // ── Tarjeta OPL ──
-  if(finalizada){
-    // Operación completa — mostrar directamente sin llamar al servidor
-    renderDashOplFinalizada();
-  } else {
-    loadDashOPL();
+    setText('dashSalidas', salidas || '—');
+    setText('dashDecomisos', data.totalDecomisos || '—');
+    setText(
+      'dashCrudas',
+      data.totalCrudas != null && data.totalCrudas !== undefined ? data.totalCrudas : '—'
+    );
+    setText('dashDespachos', pendientes);
+    if (data.turnoDespacho) setText('dashDespTurno', 'Turno ' + data.turnoDespacho);
+
+    // ── Última actualización ──
+    var diasES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+    var ultima = (data.ultimaActDespachos || '').trim();
+    if (ultima && ultima.indexOf('/') !== -1 && ultima.indexOf(':') !== -1) {
+      var partes = ultima.split(' ');
+      var hora = partes.length > 1 ? partes[1] : '—';
+      var fechaStr = partes[0] || '';
+      var diaNombre = '';
+      var dp = fechaStr.split('/');
+      if (dp.length === 3) {
+        var dObj = new Date(Number(dp[2]), Number(dp[1]) - 1, Number(dp[0]));
+        diaNombre = isNaN(dObj.getTime()) ? '' : diasES[dObj.getDay()] || '';
+      }
+      setText('dashUltimaHora', hora);
+      setText('dashUltimaDia', diaNombre);
+      setText('dashUltimaFecha', finalizada ? '✅ Operación finalizada' : fechaStr);
+    } else {
+      setText('dashUltimaHora', '—');
+      setText('dashUltimaDia', '');
+      setText('dashUltimaFecha', 'Sin procesar');
+    }
+
+    // ── Barra progreso general ──
+    var progreso = data.progreso || 0;
+    setText('progresoPorcentaje', progreso + '%');
+    setWidth('progresoBarra', progreso + '%');
+    var despachados = Math.max(0, salidas - pendientes);
+    setText(
+      'progresoMeta',
+      despachados + ' despachados de ' + salidas + ' juegos totales — ' + pendientes + ' pendientes'
+    );
+
+    // ── Tarjeta OPL ──
+    if (finalizada) {
+      // Operación completa — mostrar directamente sin llamar al servidor
+      renderDashOplFinalizada();
+    } else {
+      loadDashOPL();
+    }
+  } catch (e) {
+    console.error('updateDashboard error:', e);
+    var meta = document.getElementById('progresoMeta');
+    if (meta) meta.textContent = 'Error renderizando tablero: ' + (e && e.message ? e.message : String(e));
   }
 }
 
