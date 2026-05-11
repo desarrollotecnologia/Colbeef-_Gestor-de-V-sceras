@@ -304,8 +304,8 @@
         <button type="button" class="btn btn-secondary" id="btnVistaSesion" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardVistaSesion()" title="Datos de la última sesión guardada">Sesión</button>
       </div>
       <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;justify-content:flex-end;">
-        <label for="dashboardFecha" style="font-size:0.72rem;color:var(--gris);font-weight:600;">Fecha</label>
-        <input type="date" id="dashboardFecha" class="inf-input" style="padding:0.35rem 0.5rem;max-width:158px;" onchange="onDashboardFechaChange()">
+        <label for="fechaGlobal" style="font-size:0.72rem;color:var(--gris);font-weight:600;">Fecha SIRT (todos los módulos)</label>
+        <input type="date" id="fechaGlobal" class="inf-input" style="padding:0.35rem 0.5rem;max-width:158px;" onchange="onDashboardFechaChange()">
         <button type="button" class="btn btn-secondary" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardFechaHoy()">Hoy</button>
       </div>
       <div id="fechaActualLabel" style="font-size:0.84rem;color:var(--vp);font-weight:600;text-align:right;line-height:1.25;"></div>
@@ -396,7 +396,7 @@
       <div class="modulo-card" onclick="showHistorial()">
         <div class="modulo-icono">📁</div>
         <div class="modulo-nombre">Historial PDF</div>
-        <div class="modulo-desc">Documentos generados, almacenados en Drive y registros de exportación.</div>
+        <div class="modulo-desc">PDF generados en el servidor: el usuario los descarga desde el navegador (sin subir a Drive).</div>
         <span class="modulo-badge">Activo</span>
       </div>
       <div class="modulo-card" onclick="showAnalytics()">
@@ -445,11 +445,7 @@
       <button class="btn btn-primary" id="btnProcesar" onclick="procesarDecomisos()">⚙️ Procesar desde SIRT</button>
       <button class="btn btn-primary" id="btnPDF" onclick="generarPDF()" disabled>📄 Generar PDF</button>
     </div>
-    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.4rem 0 0.8rem;">
-      <span style="font-size:0.82rem;color:var(--gris);font-weight:600;">Fecha de consulta:</span>
-      <input type="date" id="decDate" class="inf-input" style="max-width:190px;padding:0.45rem 0.55rem;">
-      <button class="btn btn-secondary" style="padding:0.4rem 0.8rem;font-size:0.78rem;" onclick="limpiarFecha('decDate')">Hoy</button>
-    </div>
+    <p id="fechaHintDecomisos" style="font-size:0.82rem;color:var(--gris);margin:0.35rem 0 0.85rem;line-height:1.35;"></p>
     <div class="alert" id="decAlert"></div>
     <div class="table-wrap">
       <table>
@@ -528,11 +524,7 @@
       </div>
       <span class="search-count" id="searchCount"></span>
     </div>
-    <div style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.2rem 0 0.8rem;">
-      <span style="font-size:0.82rem;color:var(--gris);font-weight:600;">Fecha de consulta:</span>
-      <input type="date" id="despDate" class="inf-input" style="max-width:190px;padding:0.45rem 0.55rem;">
-      <button class="btn btn-secondary" style="padding:0.4rem 0.8rem;font-size:0.78rem;" onclick="limpiarFecha('despDate')">Hoy</button>
-    </div>
+    <p id="fechaHintDespachos" style="font-size:0.82rem;color:var(--gris);margin:0.35rem 0 0.85rem;line-height:1.35;"></p>
     <div class="alert" id="despAlert"></div>
     <div class="table-wrap">
       <table>
@@ -547,7 +539,7 @@
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:0.3rem;">📊 Informe Laboral</h2>
     <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1.5rem;">
-      Los datos se guardan automáticamente en el sheet. Persisten entre sesiones.
+      Los datos se guardan en el servidor y persisten entre sesiones. La <strong>fecha del informe</strong> sigue la misma del encabezado (SIRT).
     </p>
 
     <!-- Checkboxes incluir -->
@@ -573,7 +565,7 @@
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
           <div class="inf-field">
             <div class="inf-label">Fecha del informe</div>
-            <input type="text" id="infFecha" class="inf-input" placeholder="dd/mm/aaaa" oninput="autoGuardar()">
+            <input type="text" id="infFecha" class="inf-input" placeholder="dd/mm/aaaa" readonly title="Gobernada por la fecha del encabezado (SIRT)" oninput="autoGuardar()">
           </div>
           <div class="inf-field">
             <div class="inf-label">Juegos Completos</div>
@@ -1016,8 +1008,9 @@ var autoGuardarTimer = null;
 // INIT
 // ══════════════════════════════════════════════════════
 window.onload = function() {
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (df && !df.value) df.value = fechaHoyISO();
+  syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   inicializarSelectorTurno();
   loadDashboardData();
@@ -1025,11 +1018,6 @@ window.onload = function() {
   var bpd = document.getElementById('btnProcesarDesp');
   if (bp) bp.disabled = false;
   if (bpd) bpd.disabled = false;
-  var hoyIso = fechaHoyISO();
-  var decDate = document.getElementById('decDate');
-  var despDate = document.getElementById('despDate');
-  if (decDate && !decDate.value) decDate.value = hoyIso;
-  if (despDate && !despDate.value) despDate.value = hoyIso;
   google.script.run
     .withSuccessHandler(function(){})
     .withFailureHandler(function(e){console.warn('initSheets:',e);})
@@ -1048,14 +1036,17 @@ function showDashboard() {
 }
 function showDecomisos() {
   _hideAll(); document.getElementById('viewDecomisos').classList.add('active');
+  syncFechaGlobalAModulos();
   loadResumenDecomisos();
 }
 function showDespachos() {
   _hideAll(); document.getElementById('viewDespachos').classList.add('active');
+  syncFechaGlobalAModulos();
   cargarDespachosGuardados();
 }
 function showInforme() {
   _hideAll(); document.getElementById('viewInforme').classList.add('active');
+  syncFechaGlobalAModulos();
   cargarDatosInforme();
 }
 function showHistorial() {
@@ -1087,9 +1078,35 @@ function escapeHtml(s) {
   d.textContent = s;
   return d.innerHTML;
 }
+/** Una sola fecha ISO para Decomisos, Despachos, informe y tablero SIRT. */
+function getFechaGlobalISO() {
+  var el = document.getElementById('fechaGlobal');
+  var v = el && el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : fechaHoyISO();
+  return v;
+}
+function syncFechaGlobalAModulos() {
+  var iso = getFechaGlobalISO();
+  var txt = fechaISOaTexto(iso);
+  var hDec = document.getElementById('fechaHintDecomisos');
+  var hDes = document.getElementById('fechaHintDespachos');
+  var msg =
+    'Fecha de consulta SIRT: <strong>' +
+    txt +
+    '</strong> — la misma del encabezado para todos los módulos.';
+  if (hDec) hDec.innerHTML = msg;
+  if (hDes) hDes.innerHTML = msg;
+  var inf = document.getElementById('infFecha');
+  if (inf) {
+    inf.value = txt;
+    if (typeof infState !== 'undefined') infState.fecha = txt;
+  }
+}
+function leerFechaGlobal() {
+  return { date: getFechaGlobalISO() };
+}
 function actualizarEtiquetaFechaDashboard() {
   var label = document.getElementById('fechaActualLabel');
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (!label) return;
   if (state.dashboardVista === 'sesion') {
     label.textContent = 'Última sesión guardada en el servidor';
@@ -1110,32 +1127,36 @@ function actualizarEtiquetaFechaDashboard() {
 }
 function setDashboardFechaHoy() {
   state.dashboardVista = 'sirt';
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (df) {
     df.disabled = false;
     df.value = fechaHoyISO();
   }
+  syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   loadDashboardData();
 }
 function onDashboardFechaChange() {
   state.dashboardVista = 'sirt';
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (df) df.disabled = false;
+  syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   loadDashboardData();
 }
 function setDashboardVistaSirt() {
   state.dashboardVista = 'sirt';
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (df) df.disabled = false;
+  syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   loadDashboardData();
 }
 function setDashboardVistaSesion() {
   state.dashboardVista = 'sesion';
-  var df = document.getElementById('dashboardFecha');
+  var df = document.getElementById('fechaGlobal');
   if (df) df.disabled = true;
+  syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   loadDashboardData();
 }
@@ -1155,7 +1176,7 @@ function loadDashboardData() {
       }
     });
   if (state.dashboardVista === 'sirt') {
-    var el = document.getElementById('dashboardFecha');
+    var el = document.getElementById('fechaGlobal');
     var iso = el && el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : fechaHoyISO();
     chain.getDashboardData({ date: iso });
   } else {
@@ -1251,7 +1272,7 @@ function updateDashboard(data) {
         '.';
     } else if (metaSirt) {
       metaSirt.textContent =
-        'Vista de la sesión guardada en el servidor. Use «SIRT día» y elija fecha para revisar otro día en la base.';
+        'Vista de la sesión guardada en el servidor. Use «SIRT día» y la fecha del encabezado para revisar otro día en la base (misma fecha en todos los módulos).';
     }
 
     // ── Tarjeta OPL ──
@@ -1297,7 +1318,7 @@ function clearFiles() {
   google.script.run.withSuccessHandler(function(res){hideSpinner();showAlert('decAlert',res&&res.success?'success':'warn',res&&res.success?'Datos limpiados.':'Error: '+(res?res.message:''));loadDashboardData();}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','warn',e.message);}).limpiarResumen();
 }
 function procesarDecomisos() {
-  var filtro = leerFecha('decDate');
+  var filtro = leerFechaGlobal();
   var fechaTxt = fechaISOaTexto(filtro.date);
   showSpinner('Sincronizando desde base de datos SIRT y cruzando decomisos...');
   google.script.run.withSuccessHandler(function(res){
@@ -1350,7 +1371,7 @@ function onFileDespSelected() {
   if(file){state.fileDesp=file;document.getElementById('fileDespName').textContent='✓ '+file.name;document.getElementById('uploadBoxDesp').classList.add('has-file');}
 }
 function procesarDespachos() {
-  var filtro = leerFecha('despDate');
+  var filtro = leerFechaGlobal();
   var fechaTxt = fechaISOaTexto(filtro.date);
   showSpinner('Sincronizando despachos desde SIRT (turno '+turnoSeleccionado+')...');
   google.script.run.withSuccessHandler(function(res){
@@ -1510,8 +1531,7 @@ function cargarDatosInforme() {
     .withSuccessHandler(function(res){
       hideSpinner();
       if(!res||!res.success){showAlert('infAlert','warn','No se pudieron cargar los datos guardados.');_renderInformeDefault();return;}
-      // Sincronizar estado
-      infState.fecha        = res.fecha;
+      // Sincronizar estado (la fecha del informe = fecha global SIRT del encabezado)
       infState.completos    = res.completos;
       infState.incompletos  = res.incompletos;
       infState.beneficioDia = res.beneficioDia;
@@ -1520,6 +1540,7 @@ function cargarDatosInforme() {
       infState.novedades    = res.novedades || [];
       if(res.cavas&&res.cavas.length>0) infState.cavas = res.cavas;
       if(res.percheros&&res.percheros.length>0) infState.percheros = res.percheros;
+      infState.fecha = fechaISOaTexto(getFechaGlobalISO());
       _renderInforme();
     })
     .withFailureHandler(function(){hideSpinner();_renderInformeDefault();})
@@ -1527,12 +1548,7 @@ function cargarDatosInforme() {
 }
 
 function _renderInformeDefault() {
-  // Formato dd/MM/yyyy
-  var _hoy=new Date();
-  var _dd=String(_hoy.getDate()).padStart(2,'0');
-  var _mm=String(_hoy.getMonth()+1).padStart(2,'0');
-  var _yyyy=_hoy.getFullYear();
-  infState.fecha = _dd+'/'+_mm+'/'+_yyyy;
+  infState.fecha = fechaISOaTexto(getFechaGlobalISO());
   _renderInforme();
 }
 
@@ -1760,8 +1776,6 @@ function showAlert(id,type,msg){var el=document.getElementById(id);el.className=
 function hideAlert(id){document.getElementById(id).classList.remove('show');}
 function fechaHoyISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function fechaISOaTexto(iso){if(!iso)return '—';var p=String(iso).split('-');if(p.length!==3)return iso;return p[2]+'/'+p[1]+'/'+p[0];}
-function leerFecha(id){var el=document.getElementById(id);var v=(el&&el.value||'').trim();return {date:v||fechaHoyISO()};}
-function limpiarFecha(id){var el=document.getElementById(id);if(el)el.value=fechaHoyISO();}
 
 // ══════════════════════════════════════════════════════
 // OPL — TARJETA DASHBOARD (mini) + MODAL EXPANDIDO
