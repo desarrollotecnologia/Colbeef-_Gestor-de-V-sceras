@@ -297,7 +297,20 @@
         <p>Control de inventario y despachos</p>
       </div>
     </div>
-    <div class="fecha-badge" id="fechaActual"></div>
+    <div class="fecha-badge" style="flex-direction:column;align-items:flex-end;gap:0.35rem;min-width:min(100%,280px);">
+      <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;justify-content:flex-end;">
+        <span style="font-size:0.7rem;color:var(--gris);font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">Vista tablero</span>
+        <button type="button" class="btn btn-secondary" id="btnVistaSirt" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardVistaSirt()" title="Consultar SIRT por día">SIRT día</button>
+        <button type="button" class="btn btn-secondary" id="btnVistaSesion" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardVistaSesion()" title="Datos de la última sesión guardada">Sesión</button>
+      </div>
+      <div style="display:flex;align-items:center;gap:0.45rem;flex-wrap:wrap;justify-content:flex-end;">
+        <label for="dashboardFecha" style="font-size:0.72rem;color:var(--gris);font-weight:600;">Fecha</label>
+        <input type="date" id="dashboardFecha" class="inf-input" style="padding:0.35rem 0.5rem;max-width:158px;" onchange="onDashboardFechaChange()">
+        <button type="button" class="btn btn-secondary" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardFechaHoy()">Hoy</button>
+      </div>
+      <div id="fechaActualLabel" style="font-size:0.84rem;color:var(--vp);font-weight:600;text-align:right;line-height:1.25;"></div>
+      <div id="dashboardSirtMeta" style="font-size:0.66rem;color:var(--gris);max-width:300px;text-align:right;line-height:1.3;"></div>
+    </div>
   </div>
 
   <!-- ═══ DASHBOARD ═══ -->
@@ -969,7 +982,7 @@
 // ══════════════════════════════════════════════════════
 // ESTADO GLOBAL
 // ══════════════════════════════════════════════════════
-var state = { file1:null, file2:null, hayResultados:false, fileDesp:null };
+var state = { file1:null, file2:null, hayResultados:false, fileDesp:null, dashboardVista:'sirt' };
 var turnoSeleccionado = null;
 var TURNO_POR_DIA = {0:'DxL',1:'LxM',2:'MxM',3:'MxJ',4:'JxV',5:'VxS',6:'SxD'};
 
@@ -1003,9 +1016,9 @@ var autoGuardarTimer = null;
 // INIT
 // ══════════════════════════════════════════════════════
 window.onload = function() {
-  document.getElementById('fechaActual').textContent = new Date().toLocaleDateString('es-ES',{
-    weekday:'long',year:'numeric',month:'long',day:'numeric'
-  });
+  var df = document.getElementById('dashboardFecha');
+  if (df && !df.value) df.value = fechaHoyISO();
+  actualizarEtiquetaFechaDashboard();
   inicializarSelectorTurno();
   loadDashboardData();
   var bp = document.getElementById('btnProcesar');
@@ -1067,10 +1080,67 @@ function switchTab(panelId, btn) {
 }
 
 // ══════════════════════════════════════════════════════
-// DASHBOARD
+// DASHBOARD — fecha consulta SIRT + vista sesión
 // ══════════════════════════════════════════════════════
+function escapeHtml(s) {
+  var d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function actualizarEtiquetaFechaDashboard() {
+  var label = document.getElementById('fechaActualLabel');
+  var df = document.getElementById('dashboardFecha');
+  if (!label) return;
+  if (state.dashboardVista === 'sesion') {
+    label.textContent = 'Última sesión guardada en el servidor';
+    return;
+  }
+  var v = (df && df.value) || fechaHoyISO();
+  var d = new Date(v + 'T12:00:00');
+  if (!isNaN(d.getTime())) {
+    label.textContent = d.toLocaleDateString('es-ES', {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  } else {
+    label.textContent = v;
+  }
+}
+function setDashboardFechaHoy() {
+  state.dashboardVista = 'sirt';
+  var df = document.getElementById('dashboardFecha');
+  if (df) {
+    df.disabled = false;
+    df.value = fechaHoyISO();
+  }
+  actualizarEtiquetaFechaDashboard();
+  loadDashboardData();
+}
+function onDashboardFechaChange() {
+  state.dashboardVista = 'sirt';
+  var df = document.getElementById('dashboardFecha');
+  if (df) df.disabled = false;
+  actualizarEtiquetaFechaDashboard();
+  loadDashboardData();
+}
+function setDashboardVistaSirt() {
+  state.dashboardVista = 'sirt';
+  var df = document.getElementById('dashboardFecha');
+  if (df) df.disabled = false;
+  actualizarEtiquetaFechaDashboard();
+  loadDashboardData();
+}
+function setDashboardVistaSesion() {
+  state.dashboardVista = 'sesion';
+  var df = document.getElementById('dashboardFecha');
+  if (df) df.disabled = true;
+  actualizarEtiquetaFechaDashboard();
+  loadDashboardData();
+}
 function loadDashboardData() {
-  google.script.run
+  var chain = google.script.run
     .withSuccessHandler(updateDashboard)
     .withFailureHandler(function (e) {
       console.error('Dashboard:', e);
@@ -1083,11 +1153,19 @@ function loadDashboardData() {
           msg +
           ' · Pruebe abrir /api/health en el mismo puerto y revise la consola (F12).';
       }
-    })
-    .getDashboardData();
+    });
+  if (state.dashboardVista === 'sirt') {
+    var el = document.getElementById('dashboardFecha');
+    var iso = el && el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : fechaHoyISO();
+    chain.getDashboardData({ date: iso });
+  } else {
+    chain.getDashboardData();
+  }
 }
 function updateDashboard(data) {
   try {
+    var metaSirt = document.getElementById('dashboardSirtMeta');
+    if (metaSirt) metaSirt.textContent = '';
     if (!data || !data.success) {
       var metaBad = document.getElementById('progresoMeta');
       if (metaBad) {
@@ -1110,7 +1188,10 @@ function updateDashboard(data) {
     var salidas = Number(data.totalSalidas || 0);
     var pendientes = Number(data.totalJuegosDespachar || 0);
     var finalizada =
-      salidas > 0 && pendientes === 0 && (data.ultimaActDespachos || '').trim() !== '';
+      !data.consultaSIRT &&
+      salidas > 0 &&
+      pendientes === 0 &&
+      (data.ultimaActDespachos || '').trim() !== '';
 
     setText('dashSalidas', salidas || '—');
     setText('dashDecomisos', data.totalDecomisos || '—');
@@ -1150,13 +1231,45 @@ function updateDashboard(data) {
     var despachados = Math.max(0, salidas - pendientes);
     setText(
       'progresoMeta',
-      despachados + ' despachados de ' + salidas + ' juegos totales — ' + pendientes + ' pendientes'
+      despachados +
+        ' despachados de ' +
+        salidas +
+        ' juegos totales — ' +
+        pendientes +
+        ' pendientes' +
+        (data.consultaSIRT ? ' · Consulta SIRT (no modifica la sesión guardada).' : '')
     );
+
+    if (metaSirt && data.consultaSIRT) {
+      metaSirt.textContent =
+        'Filas leídas: Estado_Cavas ' +
+        (data.filasEstadoCavas != null ? data.filasEstadoCavas : '—') +
+        ', Reporte_Decomisos ' +
+        (data.filasReporteDecomisos != null ? data.filasReporteDecomisos : '—') +
+        ', Despachos_Cavas ' +
+        (data.filasDespachosCavas != null ? data.filasDespachosCavas : '—') +
+        '.';
+    } else if (metaSirt) {
+      metaSirt.textContent =
+        'Vista de la sesión guardada en el servidor. Use «SIRT día» y elija fecha para revisar otro día en la base.';
+    }
 
     // ── Tarjeta OPL ──
     if (finalizada) {
-      // Operación completa — mostrar directamente sin llamar al servidor
       renderDashOplFinalizada();
+    } else if (data.consultaSIRT) {
+      if (data.operacionOPLFinalizada) {
+        renderDashOplFinalizada(data.oplPreviewFecha || '');
+      } else if (data.progresoOPL && data.progresoOPL.length > 0) {
+        renderDashOplMini(data.progresoOPL);
+      } else if (data.oplPreviewMessage) {
+        var esc = escapeHtml(String(data.oplPreviewMessage));
+        document.getElementById('dashOplMini').innerHTML =
+          '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">' + esc + '</div>';
+      } else {
+        document.getElementById('dashOplMini').innerHTML =
+          '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">Sin datos OPL calculables para este día (sin despachos o sin juegos VR en estado).</div>';
+      }
     } else {
       loadDashOPL();
     }
