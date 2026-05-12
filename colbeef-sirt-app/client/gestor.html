@@ -1335,16 +1335,23 @@ function updateDashboard(data) {
       setText('dashUltimaFecha', 'Sin procesar');
     }
 
-    // ── Barra progreso general ──
+    // ── Barra progreso general (usa juegosTotalesOperacion del backend = max salidas, pendientes) ──
     var progreso = data.progreso || 0;
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
-    var despachados = Math.max(0, salidas - pendientes);
+    var juegosTotalesOperacion =
+      data.juegosTotalesOperacion != null && data.juegosTotalesOperacion !== undefined
+        ? Number(data.juegosTotalesOperacion)
+        : Math.max(salidas, pendientes);
+    var despachados =
+      data.despachados != null && data.despachados !== undefined
+        ? Number(data.despachados)
+        : Math.max(0, juegosTotalesOperacion - pendientes);
     setText(
       'progresoMeta',
       despachados +
         ' despachados de ' +
-        salidas +
+        juegosTotalesOperacion +
         ' juegos totales — ' +
         pendientes +
         ' pendientes' +

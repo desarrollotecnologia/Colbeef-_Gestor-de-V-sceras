@@ -447,9 +447,12 @@ export async function getDashboardData(range) {
       const totalJuegosDespachar = Number(rd.totalJuegos || 0);
       const turnoDespacho = String(rd.turno || '');
       const ultimaActDespachos = rd.fechaStr || '';
-      const despachados = Math.max(0, totalSalidas - totalJuegosDespachar);
+      const juegosTotalesOperacion = Math.max(totalSalidas, totalJuegosDespachar);
+      const despachados = Math.max(0, juegosTotalesOperacion - totalJuegosDespachar);
       const progreso =
-        totalSalidas > 0 ? Math.min(100, Math.round((despachados / totalSalidas) * 100)) : 0;
+        juegosTotalesOperacion > 0
+          ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
+          : 0;
       const cr = contarCrudasSync(sWork);
       const totalDecomisos = contarCruceDecomisosSync(estado, reporte);
 
@@ -465,6 +468,8 @@ export async function getDashboardData(range) {
         totalDecomisos,
         totalCrudas: cr.total,
         totalJuegosDespachar,
+        despachados,
+        juegosTotalesOperacion,
         turnoDespacho,
         ultimaActDespachos,
         progreso,
@@ -495,9 +500,12 @@ export async function getDashboardData(range) {
   const totalJuegosDespachar = desp.totalJuegosDespachar || 0;
   const turnoDespacho = desp.turnoDespacho || '';
   const ultimaActDespachos = desp.ultimaActDespachos || '';
-  const despachados = Math.max(0, totalSalidas - totalJuegosDespachar);
+  const juegosTotalesOperacion = Math.max(totalSalidas, totalJuegosDespachar);
+  const despachados = Math.max(0, juegosTotalesOperacion - totalJuegosDespachar);
   const progreso =
-    totalSalidas > 0 ? Math.min(100, Math.round((despachados / totalSalidas) * 100)) : 0;
+    juegosTotalesOperacion > 0
+      ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
+      : 0;
   const cr = contarCrudasSync(s);
   return {
     success: true,
@@ -505,6 +513,8 @@ export async function getDashboardData(range) {
     totalDecomisos,
     totalCrudas: cr.total,
     totalJuegosDespachar,
+    despachados,
+    juegosTotalesOperacion,
     turnoDespacho,
     ultimaActDespachos,
     progreso,
