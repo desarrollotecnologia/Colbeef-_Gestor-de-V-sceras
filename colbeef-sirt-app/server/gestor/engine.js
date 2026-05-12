@@ -289,6 +289,9 @@ export async function resumirDecomisos() {
     totalDestinos: destinos.size,
     fechaProcesamiento: fmtNow(),
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
+    filasEstadoCruce: nEst,
+    filasReporteCruce: nRep,
+    sinCoincidenciasCruce: resultado.length === 0 && nEst > 0 && nRep > 0,
   };
 }
 
@@ -1581,70 +1584,124 @@ async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.fontSize(16).fillColor('#259c39').text('LISTADO DE DECOMISOS VISCERAS CON SALIDA', { align: 'center' });
-    doc.moveDown(0.4);
-    doc.fontSize(9).fillColor('#6b7280').text(`Fecha de generacion: ${fecha}`, { align: 'center' });
-    doc.moveDown(0.8);
+    doc.font('Helvetica-Bold').fontSize(15).fillColor('#166534').text('LISTADO DE DECOMISOS VÍSCERAS CON SALIDA', { align: 'center' });
+    doc.moveDown(0.35);
+    doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Fecha de generación: ${fecha}`, { align: 'center' });
+    doc.moveDown(0.9);
     doc.fillColor('#111827').fontSize(10).text(`Total registros: ${rows.length}    Productos distintos: ${Object.keys(porProducto).length}`);
-    doc.moveDown(0.8);
+    doc.moveDown(0.75);
 
-    doc.fontSize(11).fillColor('#259c39').text('DETALLE DE DECOMISOS');
-    doc.moveDown(0.3);
-    drawSimpleTable(doc, ['#', 'Codigo', 'Destino', 'Decomisos'], rows.map((r) => [r.n, r.id, r.destino, r.producto]), [35, 130, 250, 120]);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#14532d').text('DETALLE DE DECOMISOS');
+    doc.moveDown(0.35);
+    drawThemedPdfTable(doc, ['#', 'Código', 'Destino', 'Decomisos'], rows.map((r) => [r.n, r.id, r.destino, r.producto]), [32, 128, 248, 122], {
+      theme: 'decomisos',
+    });
 
-    doc.moveDown(0.8);
-    doc.fontSize(11).fillColor('#259c39').text('RESUMEN POR PRODUCTO');
-    doc.moveDown(0.3);
-    drawSimpleTable(
+    doc.moveDown(0.85);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor('#14532d').text('RESUMEN POR PRODUCTO');
+    doc.moveDown(0.35);
+    drawThemedPdfTable(
       doc,
       ['Producto', 'Cantidad'],
       Object.keys(porProducto)
         .sort()
         .map((p) => [p, porProducto[p]]),
-      [420, 80]
+      [420, 80],
+      { theme: 'producto' }
     );
 
     if (resumenCrudas.length) {
-      doc.moveDown(0.8);
-      doc.fontSize(11).fillColor('#259c39').text('RESUMEN DE CRUDAS - VISCERAS BLANCAS');
-      doc.moveDown(0.3);
-      drawSimpleTable(
+      doc.moveDown(0.85);
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#9a3412').text('RESUMEN DE CRUDAS - VÍSCERAS BLANCAS');
+      doc.moveDown(0.35);
+      drawThemedPdfTable(
         doc,
-        ['Puesto', 'Cantidad', 'OPL', 'Codigos'],
+        ['Puesto', 'Cantidad', 'OPL', 'Códigos'],
         resumenCrudas.map((x) => [x.puesto, x.cantidad, x.opl, x.codigos]),
-        [130, 65, 90, 215]
+        [118, 62, 88, 222],
+        { theme: 'crudas' }
       );
     }
 
-    doc.moveDown(0.8);
-    doc.fontSize(8).fillColor('#6b7280').text(`Documento generado automaticamente · Gestor de Visceras Colbeef · ${fecha}`, { align: 'center' });
+    doc.moveDown(0.85);
+    doc.font('Helvetica').fontSize(8).fillColor('#6b7280').text(`Documento generado automáticamente · Gestor de Vísceras Colbeef · ${fecha}`, { align: 'center' });
     doc.end();
   });
 }
 
-function drawSimpleTable(doc, headers, rows, widths) {
+const PDF_TABLE_THEMES = {
+  decomisos: {
+    headerBg: '#166534',
+    headerFg: '#ffffff',
+    stripeA: '#dcfce7',
+    stripeB: '#ffffff',
+    border: '#14532d',
+    bodyFg: '#111827',
+  },
+  producto: {
+    headerBg: '#15803d',
+    headerFg: '#ffffff',
+    stripeA: '#ecfdf5',
+    stripeB: '#ffffff',
+    border: '#166534',
+    bodyFg: '#111827',
+  },
+  crudas: {
+    headerBg: '#ea580c',
+    headerFg: '#ffffff',
+    stripeA: '#ffedd5',
+    stripeB: '#ffffff',
+    border: '#c2410c',
+    bodyFg: '#1c1917',
+  },
+};
+
+/** Tablas estilo planilla Apps Script: cabecera sólida, filas alternadas, salto de página con cabecera repetida. */
+function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
+  const themeKey = opts.theme === 'crudas' ? 'crudas' : opts.theme === 'producto' ? 'producto' : 'decomisos';
+  const t = PDF_TABLE_THEMES[themeKey];
   const startX = doc.x;
-  let y = doc.y;
   const rowH = 18;
-  doc.fontSize(9).fillColor('#111827');
-  headers.forEach((h, i) => {
-    doc.rect(startX + widths.slice(0, i).reduce((a, b) => a + b, 0), y, widths[i], rowH).fillAndStroke('#e8f5e9', '#d1d5db');
-    doc.fillColor('#065f46').text(String(h), startX + widths.slice(0, i).reduce((a, b) => a + b, 0) + 4, y + 5, { width: widths[i] - 8, ellipsis: true });
-  });
+  const pageBottom = doc.page.height - (doc.page.margins?.bottom ?? 50);
+  const leftPad = 5;
+
+  const paintHeader = (y0) => {
+    doc.font('Helvetica-Bold').fontSize(9);
+    headers.forEach((h, i) => {
+      const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
+      doc.save();
+      doc.fillColor(t.headerBg).rect(x, y0, widths[i], rowH).fill();
+      doc.strokeColor(t.border).lineWidth(0.35).rect(x, y0, widths[i], rowH).stroke();
+      doc.restore();
+      doc.fillColor(t.headerFg).text(String(h), x + leftPad, y0 + 5, { width: widths[i] - leftPad * 2, ellipsis: true });
+    });
+  };
+
+  let y = doc.y;
+  paintHeader(y);
   y += rowH;
-  rows.forEach((r) => {
-    if (y > 730) {
+
+  rows.forEach((r, rowIdx) => {
+    if (y + rowH > pageBottom) {
       doc.addPage();
-      y = 36;
+      y = doc.page.margins.top;
+      paintHeader(y);
+      y += rowH;
     }
+    const fill = rowIdx % 2 === 0 ? t.stripeA : t.stripeB;
+    doc.font('Helvetica').fontSize(9);
     r.forEach((v, i) => {
       const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
-      doc.rect(x, y, widths[i], rowH).stroke('#e5e7eb');
-      doc.fillColor('#111827').text(String(v ?? ''), x + 4, y + 5, { width: widths[i] - 8, ellipsis: true });
+      doc.save();
+      doc.fillColor(fill).rect(x, y, widths[i], rowH).fill();
+      doc.strokeColor(t.border).lineWidth(0.25).rect(x, y, widths[i], rowH).stroke();
+      doc.restore();
+      doc.fillColor(t.bodyFg).text(String(v ?? ''), x + leftPad, y + 5, { width: widths[i] - leftPad * 2, ellipsis: true });
     });
     y += rowH;
   });
-  doc.y = y;
+  doc.x = startX;
+  doc.y = y + 4;
 }
 
 export async function getKPIs(opl, filtro) {

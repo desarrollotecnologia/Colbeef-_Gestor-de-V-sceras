@@ -166,6 +166,13 @@
     tbody td.num{text-align:center;}
     .empty-state{text-align:center;padding:3rem;color:var(--gris);}
 
+    /* ── Vista técnica: JSON del backend (RPC) ── */
+    details.backend-json-details summary{list-style:none;}
+    details.backend-json-details summary::-webkit-details-marker{display:none;}
+    details.backend-json-details summary::before{content:'▸ ';display:inline-block;transition:transform 0.15s;}
+    details.backend-json-details[open] summary::before{transform:rotate(90deg);}
+    .json-backend-pre{margin:0.5rem 0 0;font-size:0.72rem;line-height:1.4;max-height:min(52vh,420px);overflow:auto;background:#0f172a;color:#e2e8f0;padding:1rem;border-radius:10px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace;}
+
     /* ── INFORME: INPUTS ── */
     .inf-input{padding:0.7rem 1rem;border-radius:10px;border:2px solid var(--vc);font-size:0.95rem;width:100%;transition:border-color 0.2s;}
     .inf-input:focus{outline:none;border-color:var(--vp);}
@@ -373,6 +380,12 @@
       <p style="margin-top:0.9rem;color:#4b6358;font-size:0.9rem;" id="progresoMeta">Cargando...</p>
     </div>
 
+    <details class="backend-json-details" style="margin-bottom:1.5rem;background:var(--blanco);border-radius:var(--radio);padding:0.75rem 1.15rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.25);">
+      <summary style="cursor:pointer;font-weight:600;color:var(--vp);font-size:0.88rem;">Respuesta del servidor <span style="font-weight:500;color:var(--gris);">· <code style="font-size:0.78rem;">getDashboardData</code> (JSON)</span></summary>
+      <p style="font-size:0.76rem;color:var(--gris);margin:0.55rem 0 0;line-height:1.4;">Misma carga que usa el tablero: vista <strong>SIRT día</strong> o <strong>Sesión</strong>, con la fecha global. Sirve para cotejar números y campos con el backend.</p>
+      <pre id="dashBackendJson" class="json-backend-pre" aria-label="JSON getDashboardData">Esperando primera respuesta del servidor…</pre>
+    </details>
+
     <div class="modulos-titulo">⚙️ Módulos de gestión</div>
     <div class="modulos-grid">
       <div class="modulo-card" onclick="showDecomisos()">
@@ -447,6 +460,11 @@
     </div>
     <p id="fechaHintDecomisos" style="font-size:0.82rem;color:var(--gris);margin:0.35rem 0 0.85rem;line-height:1.35;"></p>
     <div class="alert" id="decAlert"></div>
+    <details class="backend-json-details" style="margin-bottom:1rem;background:var(--fondo);border-radius:12px;padding:0.65rem 1rem;border:1px dashed var(--vc);">
+      <summary style="cursor:pointer;font-weight:600;color:var(--vp);font-size:0.82rem;">Última respuesta del servidor <span style="font-weight:500;color:var(--gris);">· <code style="font-size:0.74rem;">prepararModuloDecomisosDesdeSIRT</code></span></summary>
+      <p style="font-size:0.72rem;color:var(--gris);margin:0.45rem 0 0;">Tras pulsar «Procesar desde SIRT» se muestra aquí el objeto completo (<code>resultados</code>, totales, filas SIRT, etc.).</p>
+      <pre id="decBackendJson" class="json-backend-pre" style="max-height:min(40vh,320px);">Aún no se ha procesado en esta sesión.</pre>
+    </details>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>ID Producto</th><th>Destino</th><th>Producto / Subproducto</th></tr></thead>
@@ -1215,6 +1233,17 @@ function ejecutarSincronizacionAutomaticaSirt(opts) {
     })
     .sincronizarSesionDesdeSirtPorFecha(filtro);
 }
+/** Muestra en un bloque pre el objeto tal cual devuelve el RPC (cotejar con el backend). */
+function pintarJsonBackend(elId, obj, headerComment) {
+  var pre = document.getElementById(elId);
+  if (!pre) return;
+  try {
+    var body = JSON.stringify(obj === undefined ? null : obj, null, 2);
+    pre.textContent = headerComment ? headerComment + '\n' + body : body;
+  } catch (err) {
+    pre.textContent = String(obj);
+  }
+}
 function loadDashboardData() {
   var chain = google.script.run
     .withSuccessHandler(updateDashboard)
@@ -1222,6 +1251,11 @@ function loadDashboardData() {
       console.error('Dashboard:', e);
       var msg =
         e && e.message ? String(e.message) : 'No se pudo contactar el servidor (POST /api/rpc).';
+      pintarJsonBackend(
+        'dashBackendJson',
+        { _errorCliente: true, message: msg },
+        '// Fallo al llamar getDashboardData (sin JSON del servidor o error de red).'
+      );
       var meta = document.getElementById('progresoMeta');
       if (meta) {
         meta.textContent =
@@ -1240,6 +1274,7 @@ function loadDashboardData() {
 }
 function updateDashboard(data) {
   try {
+    pintarJsonBackend('dashBackendJson', data, null);
     var metaSirt = document.getElementById('dashboardSirtMeta');
     if (metaSirt) metaSirt.textContent = '';
     if (!data || !data.success) {
@@ -1379,8 +1414,27 @@ function procesarDecomisos() {
   showSpinner('Sincronizando desde base de datos SIRT y cruzando decomisos...');
   google.script.run.withSuccessHandler(function(res){
     hideSpinner();
+    pintarJsonBackend('decBackendJson', res, null);
     if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}
-    showAlert('decAlert','success','✓ ' + res.totalProductos + ' productos en ' + res.totalDestinos + ' destinos · Fecha: <strong>' + fechaTxt + '</strong>');
+    var ses = state.dashboardVista === 'sesion';
+    var baseOk = '✓ ' + res.totalProductos + ' productos en ' + res.totalDestinos + ' destinos · Fecha: <strong>' + fechaTxt + '</strong>';
+    var filasInf =
+      (res.filasEstadoCruce != null && res.filasReporteCruce != null)
+        ? ' · SIRT: Estado_Cavas <strong>' + res.filasEstadoCruce + '</strong> filas, Reporte_Decomisos <strong>' + res.filasReporteCruce + '</strong> filas.'
+        : '';
+    if (res.sinCoincidenciasCruce) {
+      showAlert(
+        'decAlert',
+        'warn',
+        '0 decomisos por cruce: hay datos en SIRT para ese día pero <strong>ningún ID producto</strong> de Estado_Cavas coincide con Reporte_Decomisos (columna ID).' +
+          filasInf +
+          (ses
+            ? ' <br><br>Está en vista <strong>«Sesión»</strong>: active <strong>«SIRT día»</strong> arriba para que al cambiar la fecha se vuelva a cargar solo desde la base.'
+            : '')
+      );
+    } else {
+      showAlert('decAlert', 'success', baseOk + filasInf + (ses ? ' <em>(Vista Sesión — use «SIRT día» para auto-actualizar al cambiar fecha.)</em>' : ''));
+    }
     renderTablaDecomisos(res.resultados);state.hayResultados=res.totalProductos>0;
     document.getElementById('btnPDF').disabled=!state.hayResultados;loadDashboardData();
   }).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).prepararModuloDecomisosDesdeSIRT(filtro);
@@ -1390,7 +1444,15 @@ function generarPDF() {
   google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}showAlert('decAlert','success','✓ PDF generado: <a href="'+res.url+'" target="_blank" style="color:#065f46;font-weight:bold;">Abrir PDF</a>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
 }
 function loadResumenDecomisos() {
-  google.script.run.withSuccessHandler(function(res){if(res&&res.success&&res.resultados&&res.resultados.length>0){renderTablaDecomisos(res.resultados);state.hayResultados=true;document.getElementById('btnPDF').disabled=false;}}).withFailureHandler(function(){}).getResumenDecomisos();
+  google.script.run.withSuccessHandler(function(res){
+    if (res) {
+      pintarJsonBackend(
+        'decBackendJson',
+        { _fuente: 'getResumenDecomisos', respuesta: res },
+        null
+      );
+    }
+    if(res&&res.success&&res.resultados&&res.resultados.length>0){renderTablaDecomisos(res.resultados);state.hayResultados=true;document.getElementById('btnPDF').disabled=false;}}).withFailureHandler(function(){}).getResumenDecomisos();
 }
 function renderTablaDecomisos(resultados) {
   var tbody=document.getElementById('tablaDecomisos');
