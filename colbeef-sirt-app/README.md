@@ -90,6 +90,8 @@ Definida en `server/services/metrics.js` sobre tablas/vistas detectadas en SIRT:
 - `sai.decomiso`
 - `trazabilidad_proceso.vw_producto_vendido_colbeef` (despachos / kg por propietario y categoría)
 
+El gestor y las métricas de despacho usan la **misma consulta agrupada** que la vista (tablas `desposte.*` + `vehiculo_asignado`), con el filtro de fecha **dentro** de la subconsulta para mejor plan de ejecución. Para ver o actualizar la definición oficial de la vista: `npm run view-def` (requiere `.env`).
+
 Ajuste filtros de tipos de producto y ventanas de fechas según reglas del negocio.
 
 ## Scripts de inspección

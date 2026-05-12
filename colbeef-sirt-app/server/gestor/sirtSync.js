@@ -1,5 +1,6 @@
 import { query } from '../db.js';
 import { mapTipoProductoNombre } from './engineUtils.js';
+import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from './sql/despachosColbeefGrouped.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
 
@@ -16,20 +17,13 @@ export async function fetchEstadoCavasRows(range = {}) {
     SELECT
       pp.id_producto::text AS c0,
       t.nombre::text AS c1,
-      COALESCE(v.propietario, pp.identificacion, 'SIN PROPIETARIO')::text AS c3,
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), 'SIN PROPIETARIO')::text AS c3,
       to_char(pp.fecha_registro, 'DD/MM/YYYY HH24:MI')::text AS c4,
       COALESCE(pp.con_destino, '')::text AS c8,
       t.nombre::text AS c6_tipo,
       COALESCE(pp.observaciones, '')::text AS c13
     FROM trazabilidad_proceso.parte_producto pp
     JOIN trazabilidad_proceso.tipo_parte_producto t ON t.id = pp.id_tipo_parte_producto
-    LEFT JOIN LATERAL (
-      SELECT v2.propietario
-      FROM trazabilidad_proceso.vw_producto_vendido_colbeef v2
-      WHERE v2.lote_interno = pp.id_producto
-      ORDER BY v2.fecha_despacho_planta DESC NULLS LAST
-      LIMIT 1
-    ) v ON TRUE
     WHERE (
       ($2::date IS NOT NULL OR $3::date IS NOT NULL)
       OR pp.fecha_registro >= (CURRENT_DATE - $1::int)
@@ -104,13 +98,7 @@ export async function fetchDespachosCavasRows(range = {}) {
       v.descripcion_productos::text AS descr,
       v.orden_despacho::text AS orden,
       v.placa_vehiculo::text AS placa
-    FROM trazabilidad_proceso.vw_producto_vendido_colbeef v
-    WHERE (
-      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
-      OR v.fecha_despacho_planta >= (CURRENT_DATE - $1::int)
-    )
-      AND ($2::date IS NULL OR v.fecha_despacho_planta::date >= $2::date)
-      AND ($3::date IS NULL OR v.fecha_despacho_planta::date <= $3::date)
+    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
     ORDER BY v.fecha_despacho_planta DESC
     LIMIT 80000
   `;

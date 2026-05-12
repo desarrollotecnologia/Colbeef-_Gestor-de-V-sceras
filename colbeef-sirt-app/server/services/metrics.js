@@ -1,4 +1,5 @@
 import { query } from '../db.js';
+import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from '../gestor/sql/despachosColbeefGrouped.js';
 
 const SQL_BASE_PP = `
   CASE
@@ -51,9 +52,7 @@ export async function getDashboard(opt = {}) {
     ? `d.fecha_registro BETWEEN $1::date AND $2::date`
     : `d.fecha_registro >= CURRENT_DATE - $1::int`;
 
-  const condVw = useRange
-    ? `v.fecha_despacho_planta::date BETWEEN $1::date AND $2::date`
-    : `v.fecha_despacho_planta::date >= CURRENT_DATE - $1::int`;
+  const pVw = useRange ? [days, from, to] : [days, null, null];
 
   const juegosSql = `
     SELECT COUNT(DISTINCT ${SQL_BASE_PP})::int AS total
@@ -96,10 +95,9 @@ export async function getDashboard(opt = {}) {
       COUNT(*)::int AS filas,
       COALESCE(SUM(v.sum), 0)::numeric(18,2) AS kg_total,
       COUNT(DISTINCT v.propietario)::int AS propietarios
-    FROM trazabilidad_proceso.vw_producto_vendido_colbeef v
-    WHERE ${condVw}
+    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
   `;
-  const { rows: vRows } = await query(vwSql, p);
+  const { rows: vRows } = await query(vwSql, pVw);
 
   const totalSalidas = jRows[0]?.total ?? 0;
   const conSalidaCava = sRows[0]?.total ?? 0;
@@ -140,45 +138,39 @@ export async function getDashboard(opt = {}) {
 export async function getDespachosPorPropietario({ days = 7, from, to, limit = 50 } = {}) {
   const useRange = from && to;
   const p = useRange ? [from, to] : [clampDays(days)];
-  const cond = useRange
-    ? `fecha_despacho_planta::date BETWEEN $1::date AND $2::date`
-    : `fecha_despacho_planta::date >= CURRENT_DATE - $1::int`;
-
+  const d = clampDays(days);
+  const pVw = useRange ? [d, from, to] : [p[0], null, null];
   const lim = Math.min(Number(limit) || 50, 200);
   const sql = `
     SELECT
-      COALESCE(NULLIF(TRIM(propietario), ''), '(Sin propietario)') AS propietario,
+      COALESCE(NULLIF(TRIM(v.propietario), ''), '(Sin propietario)') AS propietario,
       COUNT(*)::int AS filas,
-      COALESCE(SUM(sum), 0)::numeric(18,2) AS kg,
-      COUNT(DISTINCT orden_despacho)::int AS ordenes
-    FROM trazabilidad_proceso.vw_producto_vendido_colbeef
-    WHERE ${cond}
+      COALESCE(SUM(v.sum), 0)::numeric(18,2) AS kg,
+      COUNT(DISTINCT v.orden_despacho)::int AS ordenes
+    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
     GROUP BY 1
     ORDER BY kg DESC NULLS LAST
     LIMIT ${lim}
   `;
-  const { rows } = await query(sql, p);
+  const { rows } = await query(sql, pVw);
   return { success: true, rows };
 }
 
 export async function getCategoriasVw({ days = 7, from, to, limit = 20 } = {}) {
   const useRange = from && to;
   const p = useRange ? [from, to] : [clampDays(days)];
-  const cond = useRange
-    ? `fecha_despacho_planta::date BETWEEN $1::date AND $2::date`
-    : `fecha_despacho_planta::date >= CURRENT_DATE - $1::int`;
-
+  const d = clampDays(days);
+  const pVw = useRange ? [d, from, to] : [p[0], null, null];
   const lim = Math.min(Number(limit) || 20, 100);
   const sql = `
     SELECT
-      COALESCE(NULLIF(TRIM(categoria), ''), '(Sin categoría)') AS categoria,
-      COALESCE(SUM(sum), 0)::numeric(18,2) AS kg
-    FROM trazabilidad_proceso.vw_producto_vendido_colbeef
-    WHERE ${cond}
+      COALESCE(NULLIF(TRIM(v.categoria), ''), '(Sin categoría)') AS categoria,
+      COALESCE(SUM(v.sum), 0)::numeric(18,2) AS kg
+    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
     GROUP BY 1
     ORDER BY kg DESC
     LIMIT ${lim}
   `;
-  const { rows } = await query(sql, p);
+  const { rows } = await query(sql, pVw);
   return { success: true, rows };
 }
