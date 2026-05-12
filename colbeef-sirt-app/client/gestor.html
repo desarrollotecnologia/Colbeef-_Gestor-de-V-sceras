@@ -1003,6 +1003,7 @@ var infState = {
   ]
 };
 var autoGuardarTimer = null;
+var autoSirtSyncTimer = null;
 
 // ══════════════════════════════════════════════════════
 // INIT
@@ -1013,7 +1014,11 @@ window.onload = function() {
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   inicializarSelectorTurno();
-  loadDashboardData();
+  if (state.dashboardVista === 'sirt') {
+    ejecutarSincronizacionAutomaticaSirt({ useSpinner: true });
+  } else {
+    loadDashboardData();
+  }
   var bp = document.getElementById('btnProcesar');
   var bpd = document.getElementById('btnProcesarDesp');
   if (bp) bp.disabled = false;
@@ -1036,11 +1041,13 @@ function showDashboard() {
 }
 function showDecomisos() {
   _hideAll(); document.getElementById('viewDecomisos').classList.add('active');
+  hideAlert('decAlert');
   syncFechaGlobalAModulos();
   loadResumenDecomisos();
 }
 function showDespachos() {
   _hideAll(); document.getElementById('viewDespachos').classList.add('active');
+  hideAlert('despAlert');
   syncFechaGlobalAModulos();
   cargarDespachosGuardados();
 }
@@ -1090,9 +1097,11 @@ function syncFechaGlobalAModulos() {
   var hDec = document.getElementById('fechaHintDecomisos');
   var hDes = document.getElementById('fechaHintDespachos');
   var msg =
-    'Fecha de consulta SIRT: <strong>' +
-    txt +
-    '</strong> — la misma del encabezado para todos los módulos.';
+    state.dashboardVista === 'sesion'
+      ? 'Vista <strong>sesión</strong>: se muestran datos ya guardados en el servidor. Active «SIRT día» para cargar y alinear con la fecha del encabezado.'
+      : 'Fecha SIRT: <strong>' +
+        txt +
+        '</strong> (encabezado). Con «SIRT día» la app <strong>sincroniza sola</strong> al cambiar la fecha; también puede usar «Procesar desde SIRT» en cada módulo.';
   if (hDec) hDec.innerHTML = msg;
   if (hDes) hDes.innerHTML = msg;
   var inf = document.getElementById('infFecha');
@@ -1134,7 +1143,7 @@ function setDashboardFechaHoy() {
   }
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
-  loadDashboardData();
+  ejecutarSincronizacionAutomaticaSirt({ useSpinner: true });
 }
 function onDashboardFechaChange() {
   state.dashboardVista = 'sirt';
@@ -1142,7 +1151,7 @@ function onDashboardFechaChange() {
   if (df) df.disabled = false;
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
-  loadDashboardData();
+  programarSincronizacionAutomaticaSirt();
 }
 function setDashboardVistaSirt() {
   state.dashboardVista = 'sirt';
@@ -1150,7 +1159,7 @@ function setDashboardVistaSirt() {
   if (df) df.disabled = false;
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
-  loadDashboardData();
+  ejecutarSincronizacionAutomaticaSirt({ useSpinner: true });
 }
 function setDashboardVistaSesion() {
   state.dashboardVista = 'sesion';
@@ -1159,6 +1168,52 @@ function setDashboardVistaSesion() {
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   loadDashboardData();
+}
+function programarSincronizacionAutomaticaSirt() {
+  clearTimeout(autoSirtSyncTimer);
+  var meta = document.getElementById('dashboardSirtMeta');
+  if (meta && state.dashboardVista === 'sirt') meta.textContent = 'Sincronizando con SIRT…';
+  autoSirtSyncTimer = setTimeout(function () {
+    ejecutarSincronizacionAutomaticaSirt({ useSpinner: false });
+  }, 450);
+}
+/** Importa Estado_Cavas, Reporte_Decomisos y Despachos_Cavas para la fecha global y persiste sesión. */
+function ejecutarSincronizacionAutomaticaSirt(opts) {
+  opts = opts || {};
+  if (state.dashboardVista !== 'sirt') {
+    loadDashboardData();
+    return;
+  }
+  if (opts.useSpinner) showSpinner('Cargando desde SIRT (fecha y turno)…');
+  var filtro = leerFechaGlobal();
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (opts.useSpinner) hideSpinner();
+      if (res && res.turno) seleccionarTurno(res.turno);
+      syncFechaGlobalAModulos();
+      loadDashboardData();
+      if (res && !res.success && res.message) {
+        setTimeout(function () {
+          var m = document.getElementById('dashboardSirtMeta');
+          if (m) m.textContent = '⚠ ' + res.message;
+        }, 0);
+      } else if (res && res.success && res.avisoDespachos) {
+        setTimeout(function () {
+          var m = document.getElementById('dashboardSirtMeta');
+          if (m) m.textContent = (m.textContent ? m.textContent + ' ' : '') + '⚠ ' + res.avisoDespachos;
+        }, 0);
+      }
+    })
+    .withFailureHandler(function (e) {
+      if (opts.useSpinner) hideSpinner();
+      syncFechaGlobalAModulos();
+      loadDashboardData();
+      setTimeout(function () {
+        var m = document.getElementById('dashboardSirtMeta');
+        if (m) m.textContent = '⚠ Error: ' + (e && e.message ? e.message : String(e));
+      }, 0);
+    })
+    .sincronizarSesionDesdeSirtPorFecha(filtro);
 }
 function loadDashboardData() {
   var chain = google.script.run
@@ -1318,6 +1373,7 @@ function clearFiles() {
   google.script.run.withSuccessHandler(function(res){hideSpinner();showAlert('decAlert',res&&res.success?'success':'warn',res&&res.success?'Datos limpiados.':'Error: '+(res?res.message:''));loadDashboardData();}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','warn',e.message);}).limpiarResumen();
 }
 function procesarDecomisos() {
+  hideAlert('decAlert');
   var filtro = leerFechaGlobal();
   var fechaTxt = fechaISOaTexto(filtro.date);
   showSpinner('Sincronizando desde base de datos SIRT y cruzando decomisos...');

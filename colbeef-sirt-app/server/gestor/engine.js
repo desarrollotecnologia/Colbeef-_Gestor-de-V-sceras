@@ -11,6 +11,7 @@ import {
   extraerPuesto,
   detectarTurnoDesdeDatos,
   detectarTurnoPorDia,
+  detectarTurnoPorFechaISO,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -249,8 +250,18 @@ export async function importarExcel(_base64, sheetName, range) {
 
 export async function resumirDecomisos() {
   const s = await loadState();
-  if (!s.estadoFromRow12.length || !s.reporteDecomisos.length) {
-    return { success: false, message: 'Sincronice Estado_Cavas y Reporte_Decomisos desde SIRT primero.' };
+  const nEst = s.estadoFromRow12?.length || 0;
+  const nRep = s.reporteDecomisos?.length || 0;
+  if (!nEst || !nRep) {
+    return {
+      success: false,
+      message:
+        'No hay datos para cruzar decomisos: Estado_Cavas ' +
+        nEst +
+        ' filas, Reporte_Decomisos ' +
+        nRep +
+        ' filas (se necesitan ambas > 0). Cambie la fecha del encabezado y pulse «Procesar desde SIRT», o confirme en SIRT que exista información para ese día.',
+    };
   }
   const mapa = {};
   s.reporteDecomisos.forEach((fila) => {
@@ -1187,7 +1198,50 @@ export async function prepararModuloDecomisosDesdeSIRT(range) {
 
 export async function prepararModuloDespachosDesdeSIRT(turno, range) {
   await importarExcel(null, 'Despachos_Cavas', range);
-  return procesarDespachos(turno || detectarTurnoPorDia());
+  const s = await loadState();
+  const filtro = normalizarRangoFechas(range || {});
+  const porDiaFecha =
+    filtroSirtValido(filtro) && filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia();
+  const t =
+    (turno && String(turno).trim()) ||
+    detectarTurnoDesdeDatos(s.despachosCavas || []) ||
+    porDiaFecha;
+  return procesarDespachos(t);
+}
+
+/**
+ * Importa Estado_Cavas, Reporte_Decomisos y Despachos_Cavas para la fecha,
+ * cruza decomisos y procesa despachos (turno desde datos SIRT o día de la fecha).
+ * Persiste en la sesión del servidor (gestor-state).
+ */
+export async function sincronizarSesionDesdeSirtPorFecha(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  if (!filtroSirtValido(filtro)) {
+    return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
+  }
+  try {
+    const dec = await prepararModuloDecomisosDesdeSIRT(filtro);
+    if (!dec.success) {
+      const s = await loadState();
+      return {
+        success: false,
+        message: dec.message,
+        filasEstado: s.estadoFromRow12?.length || 0,
+        filasReporte: s.reporteDecomisos?.length || 0,
+        filasDespachos: s.despachosCavas?.length || 0,
+      };
+    }
+    const desp = await prepararModuloDespachosDesdeSIRT(null, filtro);
+    return {
+      success: true,
+      turno: desp && desp.success ? desp.turno : detectarTurnoPorFechaISO(filtro.from),
+      decomisos: dec,
+      despachos: desp,
+      avisoDespachos: desp && desp.success ? '' : String(desp?.message || 'Despachos no procesados.'),
+    };
+  } catch (e) {
+    return { success: false, message: e.message || String(e) };
+  }
 }
 
 function detectarTipoAdicionalPorFila(fila) {

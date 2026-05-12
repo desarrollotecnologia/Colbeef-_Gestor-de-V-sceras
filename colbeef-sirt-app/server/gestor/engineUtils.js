@@ -45,6 +45,15 @@ export function detectarTurnoPorDia() {
   return TURNO_POR_DIA[new Date().getDay()] || 'SxD';
 }
 
+/** Turno sugerido según el día de la semana de una fecha ISO (AAAA-MM-DD), p. ej. histórico SIRT. */
+export function detectarTurnoPorFechaISO(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return detectarTurnoPorDia();
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0);
+  if (Number.isNaN(d.getTime())) return detectarTurnoPorDia();
+  return TURNO_POR_DIA[d.getDay()] || 'SxD';
+}
+
 export function detectarTurnoDesdeDatos(rows) {
   const turnos = ['SxD', 'VxS', 'JxV', 'MxJ', 'MxM', 'LxM', 'DxL'];
   const conteo = {};

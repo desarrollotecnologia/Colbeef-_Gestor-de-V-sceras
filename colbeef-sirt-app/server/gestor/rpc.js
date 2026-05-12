@@ -45,6 +45,7 @@ const handlers = {
   eliminarPlaza: engine.eliminarPlaza,
   prepararModuloDecomisosDesdeSIRT: engine.prepararModuloDecomisosDesdeSIRT,
   prepararModuloDespachosDesdeSIRT: engine.prepararModuloDespachosDesdeSIRT,
+  sincronizarSesionDesdeSirtPorFecha: engine.sincronizarSesionDesdeSirtPorFecha,
 };
 
 export async function dispatchRpc(method, args) {
