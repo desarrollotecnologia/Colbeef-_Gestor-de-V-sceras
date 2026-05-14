@@ -15,6 +15,7 @@ En **Decomisos** y **Despachos**, el botón **Procesar** sincroniza desde SIRT y
 Variables útiles:
 
 - `SIRT_SYNC_DAYS` — días hacia atrás para sincronizar tablas (por defecto 120).
+- `SIRT_DECOMISO_EXTRA_DAYS_BEFORE` / `SIRT_DECOMISO_EXTRA_DAYS_AFTER` — al consultar **un solo día**, el reporte `sai.decomiso` puede ampliarse (por defecto 1 día antes) porque `fecha_registro` a menudo cae en el día hábil anterior al corte de estado; ponga `BEFORE=0` para exigir el mismo día calendario.
 
 ---
 

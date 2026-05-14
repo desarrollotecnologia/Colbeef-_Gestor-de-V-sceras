@@ -3,6 +3,31 @@ import { mapTipoProductoNombre } from './engineUtils.js';
 import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from './sql/despachosColbeefGrouped.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
+/** Si from=to (un día), ampliar inicio del filtro de sai.decomiso (días hacia atrás). En planta los decomisos suelen quedar con fecha_registro del día hábil anterior al corte de estado. 0 = solo ese día. */
+const DECOMISO_EXTRA_DAYS_BEFORE = Math.max(
+  0,
+  Math.min(7, Number(process.env.SIRT_DECOMISO_EXTRA_DAYS_BEFORE ?? 1))
+);
+const DECOMISO_EXTRA_DAYS_AFTER = Math.max(
+  0,
+  Math.min(7, Number(process.env.SIRT_DECOMISO_EXTRA_DAYS_AFTER ?? 0))
+);
+
+function isoAddDays(iso, delta) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return iso;
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + delta);
+  return new Date(t).toISOString().slice(0, 10);
+}
+
+/** Para un solo día SIRT, el reporte de decomisos a menudo viene con fecha_registro desfasada (ej. 13 vs estado 14). */
+function rangoEfectivoDecomiso(from, to) {
+  if (!from || !to || from !== to) return { from, to };
+  return {
+    from: isoAddDays(from, -DECOMISO_EXTRA_DAYS_BEFORE),
+    to: isoAddDays(to, DECOMISO_EXTRA_DAYS_AFTER),
+  };
+}
 
 function normDate(v) {
   const s = String(v || '').trim();
@@ -54,8 +79,9 @@ export async function fetchEstadoCavasRows(range = {}) {
 }
 
 export async function fetchReporteDecomisosRows(range = {}) {
-  const from = normDate(range.from);
-  const to = normDate(range.to);
+  const fromRaw = normDate(range.from);
+  const toRaw = normDate(range.to);
+  const { from, to } = rangoEfectivoDecomiso(fromRaw, toRaw);
   const sql = `
     SELECT
       COALESCE(NULLIF(TRIM(d.codigo_maquina), ''), d.id::text) AS id,

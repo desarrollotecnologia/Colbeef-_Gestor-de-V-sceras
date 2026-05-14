@@ -9,6 +9,7 @@
     "view-def": "node scripts/print-view-definition.mjs",
     "test:decomiso-cruce": "node scripts/test-decomiso-cruce.mjs",
     "analyze:data-excel": "node scripts/analyze-data-excel.mjs",
+    "probe:decomiso-dates": "node scripts/probe-decomiso-dates.mjs",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node server/index.js",
     "dev:client": "vite --config client/vite.config.js",
