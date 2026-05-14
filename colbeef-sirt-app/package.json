@@ -7,6 +7,8 @@
     "probe": "node scripts/probe-db.mjs",
     "search-tables": "node scripts/search-tables.mjs",
     "view-def": "node scripts/print-view-definition.mjs",
+    "test:decomiso-cruce": "node scripts/test-decomiso-cruce.mjs",
+    "analyze:data-excel": "node scripts/analyze-data-excel.mjs",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node server/index.js",
     "dev:client": "vite --config client/vite.config.js",
@@ -30,6 +32,7 @@
     "node-windows": "^1.0.0-beta.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "xlsx": "^0.18.5"
   }
 }

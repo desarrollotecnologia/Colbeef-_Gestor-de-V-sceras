@@ -92,6 +92,8 @@ Definida en `server/services/metrics.js` sobre tablas/vistas detectadas en SIRT:
 
 El gestor y las métricas de despacho usan la **misma consulta agrupada** que la vista (tablas `desposte.*` + `vehiculo_asignado`), con el filtro de fecha **dentro** de la subconsulta para mejor plan de ejecución. Para ver o actualizar la definición oficial de la vista: `npm run view-def` (requiere `.env`).
 
+**Cruce decomisos (paridad Apps Script):** se compara `parte_producto.id_producto` con `sai.decomiso` (`codigo_maquina` o `id`) usando clave normalizada (`trim` + minúsculas) y, si hace falta, el prefijo numérico `codigoBase` (mismo criterio que el conteo de juegos cuando el Excel traía código corto en decomiso).
+
 Ajuste filtros de tipos de producto y ventanas de fechas según reglas del negocio.
 
 ## Scripts de inspección

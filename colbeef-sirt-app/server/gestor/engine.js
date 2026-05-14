@@ -7,11 +7,13 @@ import {
 } from './constants.js';
 import {
   codigoBase,
+  construirMapaReporteDecomisos,
   esCruda,
   extraerPuesto,
   detectarTurnoDesdeDatos,
   detectarTurnoPorDia,
   detectarTurnoPorFechaISO,
+  productoDecomisoDesdeMapa,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -50,16 +52,12 @@ function filtroSirtValido(filtro) {
 
 function contarCruceDecomisosSync(estadoFromRow12, reporteDecomisos) {
   if (!estadoFromRow12?.length || !reporteDecomisos?.length) return 0;
-  const mapa = {};
-  reporteDecomisos.forEach((fila) => {
-    const id = String(fila[0] ?? '').trim();
-    if (id) mapa[id] = fila[2];
-  });
+  const mapa = construirMapaReporteDecomisos(reporteDecomisos);
   let n = 0;
   estadoFromRow12.forEach((fila) => {
     const slice9 = fila.slice(0, 9);
     const id = String(slice9[0] ?? '').trim();
-    if (id && mapa[id] !== undefined) n++;
+    if (id && productoDecomisoDesdeMapa(mapa, id) !== undefined) n++;
   });
   return n;
 }
@@ -263,16 +261,13 @@ export async function resumirDecomisos() {
         ' filas (se necesitan ambas > 0). Cambie la fecha del encabezado y pulse «Procesar desde SIRT», o confirme en SIRT que exista información para ese día.',
     };
   }
-  const mapa = {};
-  s.reporteDecomisos.forEach((fila) => {
-    const id = String(fila[0] ?? '').trim();
-    if (id) mapa[id] = fila[2];
-  });
+  const mapa = construirMapaReporteDecomisos(s.reporteDecomisos);
   const resultado = [];
   s.estadoFromRow12.forEach((fila) => {
     const slice9 = fila.slice(0, 9);
     const id = String(slice9[0] ?? '').trim();
-    if (id && mapa[id] !== undefined) resultado.push([id, slice9[8], mapa[id]]);
+    const prod = productoDecomisoDesdeMapa(mapa, id);
+    if (id && prod !== undefined) resultado.push([id, slice9[8], prod]);
   });
   const ahora = new Date();
   s.resumenRows = [

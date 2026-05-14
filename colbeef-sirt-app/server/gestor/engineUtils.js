@@ -8,6 +8,43 @@ export function codigoBase(id) {
   return g > 0 ? s.substring(0, g) : s;
 }
 
+/**
+ * Cruce Estado_Cavas ↔ Reporte_Decomisos (Apps Script comparaba strings del Excel;
+ * en SIRT suele variar mayúsculas o sufijo de lote).
+ */
+export function normalizeProductIdForDecomisoCruce(raw) {
+  return String(raw ?? '').trim().toLowerCase();
+}
+
+/** Mapa id → producto/subproducto del reporte (varias claves por fila para tolerar formato). */
+export function construirMapaReporteDecomisos(reporteFilas) {
+  const mapa = {};
+  (reporteFilas || []).forEach((fila) => {
+    const id = String(fila[0] ?? '').trim();
+    if (!id) return;
+    const prod = fila[2];
+    const k = normalizeProductIdForDecomisoCruce(id);
+    if (k) mapa[k] = prod;
+    const base = codigoBase(id);
+    if (base) {
+      const kb = normalizeProductIdForDecomisoCruce(base);
+      if (kb && kb !== k) mapa[kb] = prod;
+    }
+  });
+  return mapa;
+}
+
+export function productoDecomisoDesdeMapa(mapa, idEstadoRaw) {
+  const id = String(idEstadoRaw ?? '').trim();
+  if (!id) return undefined;
+  const k = normalizeProductIdForDecomisoCruce(id);
+  if (mapa[k] !== undefined) return mapa[k];
+  const base = codigoBase(id);
+  if (!base) return undefined;
+  const kb = normalizeProductIdForDecomisoCruce(base);
+  return mapa[kb];
+}
+
 export function mapTipoProductoNombre(nombre) {
   const n = String(nombre || '').toLowerCase();
   if (n.includes('cabeza')) return 'Cabeza';
