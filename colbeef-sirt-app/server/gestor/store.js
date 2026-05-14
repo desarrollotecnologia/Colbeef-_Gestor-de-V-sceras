@@ -18,6 +18,7 @@ export function defaultState() {
   return {
     estadoFromRow12: [],
     reporteDecomisos: [],
+    decomisoVinculoStats: null,
     resumenRows: [],
     resumenFechaProc: null,
     despachosCavas: [],

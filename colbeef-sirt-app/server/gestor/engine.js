@@ -226,7 +226,9 @@ export async function importarExcel(_base64, sheetName, range) {
     if (sheetName === 'Estado_Cavas') {
       s.estadoFromRow12 = await fetchEstadoCavasRows(filtro);
     } else if (sheetName === 'Reporte_Decomisos') {
-      s.reporteDecomisos = await fetchReporteDecomisosRows(filtro);
+      const pack = await fetchReporteDecomisosRows(filtro);
+      s.reporteDecomisos = pack.rows;
+      s.decomisoVinculoStats = pack.vinculo;
     } else if (sheetName === 'Despachos_Cavas') {
       s.despachosCavas = await fetchDespachosCavasRows(filtro);
     } else {
@@ -278,6 +280,25 @@ export async function resumirDecomisos() {
   actualizarCantidadesInicialesOPLSync(s);
   await saveState(s);
   const destinos = new Set(resultado.map((r) => r[1]).filter(Boolean));
+  const sinCruce = resultado.length === 0 && nEst > 0 && nRep > 0;
+  let muestraIdsEstado = [];
+  let muestraIdsReporte = [];
+  if (sinCruce) {
+    const seenE = new Set();
+    for (let i = 0; i < s.estadoFromRow12.length && muestraIdsEstado.length < 10; i++) {
+      const id = String(s.estadoFromRow12[i][0] ?? '').trim();
+      if (!id || seenE.has(id)) continue;
+      seenE.add(id);
+      muestraIdsEstado.push(id);
+    }
+    const seenR = new Set();
+    for (let i = 0; i < s.reporteDecomisos.length && muestraIdsReporte.length < 10; i++) {
+      const id = String(s.reporteDecomisos[i][0] ?? '').trim();
+      if (!id || seenR.has(id)) continue;
+      seenR.add(id);
+      muestraIdsReporte.push(id);
+    }
+  }
   return {
     success: true,
     totalProductos: resultado.length,
@@ -286,7 +307,10 @@ export async function resumirDecomisos() {
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
     filasEstadoCruce: nEst,
     filasReporteCruce: nRep,
-    sinCoincidenciasCruce: resultado.length === 0 && nEst > 0 && nRep > 0,
+    sinCoincidenciasCruce: sinCruce,
+    muestraIdsEstado: sinCruce ? muestraIdsEstado : undefined,
+    muestraIdsReporte: sinCruce ? muestraIdsReporte : undefined,
+    decomisoVinculoStats: s.decomisoVinculoStats || undefined,
   };
 }
 
@@ -405,11 +429,13 @@ export async function getDashboardData(range) {
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
-      const [estado, reporte, desp] = await Promise.all([
+      const [estado, reportePack, desp] = await Promise.all([
         fetchEstadoCavasRows(filtro),
         fetchReporteDecomisosRows(filtro),
         fetchDespachosCavasRows(filtro),
       ]);
+      const reporte = reportePack.rows;
+      const decomisoVinculoStats = reportePack.vinculo;
       const baseOpl =
         persisted.oplConfig && persisted.oplConfig.length
           ? JSON.parse(JSON.stringify(persisted.oplConfig))
@@ -417,6 +443,7 @@ export async function getDashboardData(range) {
       const sWork = {
         estadoFromRow12: estado,
         reporteDecomisos: reporte,
+        decomisoVinculoStats,
         despachosCavas: desp,
         oplConfig: baseOpl,
         resumenDespachos: {
@@ -474,6 +501,7 @@ export async function getDashboardData(range) {
         filasEstadoCavas: estado.length,
         filasReporteDecomisos: reporte.length,
         filasDespachosCavas: desp.length,
+        decomisoVinculoStats,
         progresoOPL,
         operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
         oplPreviewMessage: preview.success ? '' : String(preview.message || ''),
@@ -642,6 +670,7 @@ export async function limpiarResumen() {
   const s = await loadState();
   s.estadoFromRow12 = [];
   s.reporteDecomisos = [];
+  s.decomisoVinculoStats = null;
   s.resumenRows = [];
   s.resumenFechaProc = null;
   s.oplConfig.forEach((r) => {

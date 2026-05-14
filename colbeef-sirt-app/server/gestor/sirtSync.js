@@ -78,11 +78,25 @@ export async function fetchEstadoCavasRows(range = {}) {
   });
 }
 
+const DECOMISO_WHERE = `
+    WHERE (
+      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
+      OR d.fecha_registro >= (CURRENT_DATE - $1::int)
+    )
+      AND ($2::date IS NULL OR d.fecha_registro::date >= $2::date)
+      AND ($3::date IS NULL OR d.fecha_registro::date <= $3::date)
+`;
+
+/**
+ * Filas del reporte (como hoja Excel) + conteos de vínculo a trazabilidad en el mismo rango de fechas.
+ * Si codigo_maquina e id_registro_sesion vienen vacíos en BD, la columna ID cae en d.id y el cruce con parte_producto da 0 aunque haya filas.
+ */
 export async function fetchReporteDecomisosRows(range = {}) {
   const fromRaw = normDate(range.from);
   const toRaw = normDate(range.to);
   const { from, to } = rangoEfectivoDecomiso(fromRaw, toRaw);
-  const sql = `
+  const params = [SYNC_DAYS, from, to];
+  const sqlRows = `
     SELECT
       COALESCE(NULLIF(TRIM(d.codigo_maquina), ''), d.id::text) AS id,
       d.fecha_registro AS fr,
@@ -92,17 +106,26 @@ export async function fetchReporteDecomisosRows(range = {}) {
       ''::text AS responsable
     FROM sai.decomiso d
     JOIN trazabilidad_proceso.tipo_parte_producto t ON t.id = d.id_tipo_parte_producto
-    WHERE (
-      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
-      OR d.fecha_registro >= (CURRENT_DATE - $1::int)
-    )
-      AND ($2::date IS NULL OR d.fecha_registro::date >= $2::date)
-      AND ($3::date IS NULL OR d.fecha_registro::date <= $3::date)
+    ${DECOMISO_WHERE}
     ORDER BY d.fecha_registro DESC
     LIMIT 50000
   `;
-  const { rows } = await query(sql, [SYNC_DAYS, from, to]);
-  return rows.map((r) => [
+  const sqlStats = `
+    SELECT
+      COUNT(*)::int AS filas_en_rango,
+      COUNT(NULLIF(TRIM(d.codigo_maquina), ''))::int AS con_codigo_maquina,
+      COUNT(d.id_registro_sesion)::int AS con_id_registro_sesion
+    FROM sai.decomiso d
+    ${DECOMISO_WHERE}
+  `;
+  const [main, stats] = await Promise.all([query(sqlRows, params), query(sqlStats, params)]);
+  const st = stats.rows[0] || {};
+  const vinculo = {
+    filasEnRango: Number(st.filas_en_rango || 0),
+    conCodigoMaquina: Number(st.con_codigo_maquina || 0),
+    conIdRegistroSesion: Number(st.con_id_registro_sesion || 0),
+  };
+  const rows = main.rows.map((r) => [
     r.id,
     r.fr instanceof Date ? r.fr.toISOString().slice(0, 10) : String(r.fr ?? ''),
     r.producto,
@@ -110,6 +133,7 @@ export async function fetchReporteDecomisosRows(range = {}) {
     r.motivo,
     r.responsable,
   ]);
+  return { rows, vinculo };
 }
 
 export async function fetchDespachosCavasRows(range = {}) {

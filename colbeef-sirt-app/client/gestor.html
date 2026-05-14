@@ -1359,6 +1359,16 @@ function updateDashboard(data) {
     );
 
     if (metaSirt && data.consultaSIRT) {
+      var vDash = data.decomisoVinculoStats;
+      var avisoVinc =
+        vDash &&
+        vDash.filasEnRango > 0 &&
+        vDash.conCodigoMaquina === 0 &&
+        vDash.conIdRegistroSesion === 0
+          ? ' Decomisos: en BD hay ' +
+            vDash.filasEnRango +
+            ' filas en el rango ampliado pero ninguna con codigo_maquina ni id_registro_sesion; el cruce con Estado_Cavas no puede usar IDs de trazabilidad hasta que SIRT los persista.'
+          : '';
       metaSirt.textContent =
         'Filas leídas: Estado_Cavas ' +
         (data.filasEstadoCavas != null ? data.filasEstadoCavas : '—') +
@@ -1366,7 +1376,8 @@ function updateDashboard(data) {
         (data.filasReporteDecomisos != null ? data.filasReporteDecomisos : '—') +
         ', Despachos_Cavas ' +
         (data.filasDespachosCavas != null ? data.filasDespachosCavas : '—') +
-        '.';
+        '.' +
+        avisoVinc;
     } else if (metaSirt) {
       metaSirt.textContent =
         'Vista de la sesión guardada en el servidor. Use «SIRT día» y la fecha del encabezado para revisar otro día en la base (misma fecha en todos los módulos).';
@@ -1430,14 +1441,38 @@ function procesarDecomisos() {
         ? ' · SIRT: Estado_Cavas <strong>' + res.filasEstadoCruce + '</strong> filas, Reporte_Decomisos <strong>' + res.filasReporteCruce + '</strong> filas.'
         : '';
     if (res.sinCoincidenciasCruce) {
+      var vDec = res.decomisoVinculoStats;
+      var bloqueVincBd =
+        vDec &&
+        vDec.filasEnRango > 0 &&
+        vDec.conCodigoMaquina === 0 &&
+        vDec.conIdRegistroSesion === 0
+          ? '<br><br><strong>Datos en PostgreSQL:</strong> En el rango consultado de <code>sai.decomiso</code> hay <strong>' +
+            escapeHtml(String(vDec.filasEnRango)) +
+            '</strong> filas, pero <strong>ninguna</strong> trae <code>codigo_maquina</code> ni <code>id_registro_sesion</code>. La columna ID del reporte usa entonces el id interno (<code>d.id</code>), que no coincide con <code>id_producto</code> de Estado_Cavas. Corrija captura o ETL en SIRT para que esos campos se guarden como en el Excel de planta.'
+          : '';
+      var diag =
+        res.muestraIdsEstado && res.muestraIdsEstado.length
+          ? '<br><br><strong>Ejemplos ID Estado_Cavas:</strong> ' +
+            res.muestraIdsEstado.map(function (x) {
+              return escapeHtml(String(x));
+            }).join(', ') +
+            ' …<br><strong>Ejemplos ID Reporte_Decomisos:</strong> ' +
+            res.muestraIdsReporte.map(function (x) {
+              return escapeHtml(String(x));
+            }).join(', ') +
+            ' …<br><span style="font-size:0.85em;">Si los formatos no se parecen, en SIRT no es el mismo identificador que en Excel; hay que definir mapeo con planta.</span>'
+          : '';
+      diag = bloqueVincBd + diag;
       showAlert(
         'decAlert',
         'warn',
         '0 decomisos por cruce: hay datos en SIRT para ese día pero <strong>ningún ID producto</strong> de Estado_Cavas coincide con Reporte_Decomisos (columna ID).' +
           filasInf +
           (ses
-            ? ' <br><br>Está en vista <strong>«Sesión»</strong>: active <strong>«SIRT día»</strong> arriba para que al cambiar la fecha se vuelva a cargar solo desde la base.'
-            : '')
+            ? ' <br><br>Está en vista <strong>«Sesión»</strong>: los datos son la <strong>última carga guardada</strong> en el servidor (pueden mezclarse turnos o fechas). Active <strong>«SIRT día»</strong>, confirme la fecha y pulse otra vez <strong>Procesar desde SIRT</strong> para leer solo la base.'
+            : '') +
+          diag
       );
     } else {
       showAlert('decAlert', 'success', baseOk + filasInf + (ses ? ' <em>(Vista Sesión — use «SIRT día» para auto-actualizar al cambiar fecha.)</em>' : ''));
