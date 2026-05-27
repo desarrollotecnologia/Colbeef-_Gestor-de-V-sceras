@@ -1,0 +1,63 @@
+%% Mapa de endpoints del backend -> elementos UI
+flowchart TB
+  %% Columnas
+  subgraph L[Endpoint backend]
+    direction TB
+    dash_tot[GET /api/dashboard<br/>totalSalidas, totalDecomisos, totalCrudas]
+    dash_desp[GET /api/despachos<br/>turno, totalJuegosDespachar]
+    opl_prog[GET /api/opl/progreso<br/>progresoOPL[] por OPL]
+    dash_prog[GET /api/dashboard<br/>despachados, totalJuegos]
+
+    deco_res[POST /api/decomisos/resumir<br/>cruza EstadoCava × Decomiso]
+    deco_pdf[GET /api/decomisos/pdf<br/>Puppeteer → PDF landscape A4]
+
+    desp_proc[POST /api/despachos/procesar<br/>detecta turno, agrupa por puesto]
+
+    opl_calc[POST /api/opl/calcular<br/>recalcula despachados/pendientes]
+    crudas_get[GET /api/crudas<br/>filtra VB con obs CRUDAS]
+
+    plan_con[GET /api/planilla · RPC consolidarDatos<br/>0.25pts/fila, agrupa por zona]
+
+    adic_post[POST /api/adicionales<br/>upload xlsx, 3 tipos]
+    hist_pdf[GET /api/historico/pdf<br/>lista HistoricoPdf]
+  end
+
+  subgraph R[Elemento en pantalla]
+    direction TB
+    ui_cards[Tarjeta split Salidas | Decomisos | Crudas<br/>dashSalidas · dashDecomisos · dashCrudas]
+    ui_togo[Tarjeta "Juegos a despachar"<br/>dashDespachos · dashDespTurno]
+    ui_oplmini[Tarjeta OPL mini + modal expandido<br/>dashOplMini · renderModalOplProgreso()]
+    ui_bar[Barra de progreso global<br/>barra-interior width% = "x/y despachados"]
+
+    ui_deco_tab[Tabla Resumen Decomisos<br/>Código | Destino | Producto decomisado]
+    ui_deco_pdf[Descarga PDF + log en Historial<br/>16 filas p.1 / 21 filas siguientes]
+
+    ui_desp_tab[Tabla despachos por puesto<br/>Cabeza | Patas | VB | VR · fila roja si incompleta]
+
+    ui_opl_modal[Modal OPL: barra por operador<br/>rojo <30% · verde 100% · normal resto]
+    ui_crudas_tab[Tabla crudas por puesto + OPL<br/>fondo #fffbe0 · borde #f59e0b]
+
+    ui_plan_cards[Tarjetas por zona + botones OPL<br/>renderPlanilla() · header verde por zona]
+
+    ui_toast[Toast: "X juegos adicionales agregados"<br/>recarga dashboard automáticamente]
+    ui_hist[Lista historial con botón descargar<br/>nombre · tipo · fecha · nro registros]
+  end
+
+  %% Mapeo
+  dash_tot --> ui_cards
+  dash_desp --> ui_togo
+  opl_prog --> ui_oplmini
+  dash_prog --> ui_bar
+
+  deco_res --> ui_deco_tab
+  deco_pdf --> ui_deco_pdf
+
+  desp_proc --> ui_desp_tab
+
+  opl_calc --> ui_opl_modal
+  crudas_get --> ui_crudas_tab
+
+  plan_con --> ui_plan_cards
+
+  adic_post --> ui_toast
+  hist_pdf --> ui_hist

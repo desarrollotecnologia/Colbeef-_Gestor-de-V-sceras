@@ -1,0 +1,62 @@
+%% Arquitectura general (alto nivel)
+flowchart TB
+  %% Fuente externa
+  subgraph EXT[Fuente de datos externa (AppSheet / sistema operativo)]
+    ext_salidas[Salidas de Cava<br/>POST /sync/salidas-cava]
+    ext_productos[Productos en Cava<br/>POST /sync/productos-cava]
+    ext_decomisos[Decomisos<br/>POST /sync/decomisos]
+    ext_adic_upload[Adic. Upload]
+  end
+
+  %% Backend
+  subgraph BE[Backend — Node.js + Express + Prisma]
+    subgraph BE_LOGIC[Lógica de negocio]
+      logic1[codigoBase() · detectarTurno()]
+      logic2[cruzarDecomisos()]
+      logic3[calcularProgreso()]
+      logic4[procesarDespachos()]
+      logic5[detectarCrudas() · calcularPlanilla()]
+    end
+
+    subgraph BE_API[API Routes]
+      api_dash[/api/dashboard]
+      api_decom[/api/decomisos · /api/despachos]
+      api_opl[/api/opl · /api/crudas]
+      api_plan[/api/planilla · /api/adicionales]
+      api_sync[/api/sync/*]
+    end
+
+    subgraph BE_SVC[Servicios]
+      svc_pdf[PDF]
+      svc_pupp[Puppeteer]
+      svc_excel[Excel]
+      svc_sheet[SheetJS]
+    end
+  end
+
+  %% DB
+  subgraph DB[PostgreSQL + Prisma ORM]
+    t_estado[EstadoCava]
+    t_decom[Decomiso]
+    t_desp[DespachoCava]
+    t_cfg[OplConfig]
+    t_prog[OplProgreso]
+    t_res[ResumenDecomiso]
+    t_plaza[Plaza]
+    t_hist[HistoricoOpl]
+  end
+
+  %% Frontend
+  FE[Frontend — React + Vite<br/>Mismos CSS vars · auto-refresh 60s]
+
+  %% Flujos
+  ext_salidas --> api_sync
+  ext_productos --> api_sync
+  ext_decomisos --> api_sync
+  ext_adic_upload --> api_plan
+
+  BE_API --> BE_LOGIC
+  BE_LOGIC --> DB
+  BE_API --> DB
+  BE_API --> FE
+  BE_SVC --> BE_API
