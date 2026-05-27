@@ -46,6 +46,11 @@ const handlers = {
   prepararModuloDecomisosDesdeSIRT: engine.prepararModuloDecomisosDesdeSIRT,
   prepararModuloDespachosDesdeSIRT: engine.prepararModuloDespachosDesdeSIRT,
   sincronizarSesionDesdeSirtPorFecha: engine.sincronizarSesionDesdeSirtPorFecha,
+  consultarEnCavaDesdeSIRT: engine.consultarEnCavaDesdeSIRT,
+  consultarSalidasCavaDesdeSIRT: engine.consultarSalidasCavaDesdeSIRT,
+  consultarDecomisosDesdeSIRT: engine.consultarDecomisosDesdeSIRT,
+  consultarCruceDecomisosPreview: engine.consultarCruceDecomisosPreview,
+  consultarDespachosPreview: engine.consultarDespachosPreview,
 };
 
 export async function dispatchRpc(method, args) {

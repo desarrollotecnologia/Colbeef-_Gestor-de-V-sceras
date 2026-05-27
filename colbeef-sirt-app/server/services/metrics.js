@@ -49,8 +49,8 @@ export async function getDashboard(opt = {}) {
     : `pcr.fecha_salida::date >= CURRENT_DATE - $1::int`;
 
   const condDecom = useRange
-    ? `d.fecha_registro BETWEEN $1::date AND $2::date`
-    : `d.fecha_registro >= CURRENT_DATE - $1::int`;
+    ? `d.fecha BETWEEN $1::date AND $2::date`
+    : `d.fecha >= CURRENT_DATE - $1::int`;
 
   const pVw = useRange ? [days, from, to] : [days, null, null];
 
@@ -84,9 +84,11 @@ export async function getDashboard(opt = {}) {
   const { rows: cRows } = await query(crudasSql, p);
 
   const decomSql = `
-    SELECT COUNT(*)::int AS total
-    FROM sai.decomiso d
+    SELECT COUNT(DISTINCT CONCAT(TRIM(d.id_producto), '|', d.id_parte_producto))::int AS total
+    FROM a_trazabilidad_proceso.a_vehiculo_asignado_decomisado d
     WHERE ${condDecom}
+      AND NULLIF(TRIM(d.id_producto), '') IS NOT NULL
+      AND COALESCE(UPPER(TRIM(d.accion)), 'INSERT') <> 'DELETE'
   `;
   const { rows: dRows } = await query(decomSql, p);
 

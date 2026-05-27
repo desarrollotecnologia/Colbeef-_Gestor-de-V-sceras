@@ -12,9 +12,11 @@
     "probe:decomiso-dates": "node scripts/probe-decomiso-dates.mjs",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node server/index.js",
-    "dev:client": "vite --config client/vite.config.js",
+    "dev:client": "vite --config client/vite.config.js --host 0.0.0.0",
+    "dev:lan": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "build": "vite build --config client/vite.config.js",
     "start": "cross-env NODE_ENV=production node server/index.js",
+    "start:lan": "npm run build && cross-env NODE_ENV=production node server/index.js",
     "service:install": "node scripts/service-install.cjs",
     "service:uninstall": "node scripts/service-uninstall.cjs"
   },
@@ -23,6 +25,7 @@
     "dotenv": "^16.4.5",
     "exceljs": "^4.4.0",
     "express": "^4.21.0",
+    "multer": "^2.1.1",
     "pdfkit": "^0.15.0",
     "pg": "^8.13.0"
   },

@@ -1,32 +1,47 @@
 # Colbeef · Gestor de vísceras (SIRT + UI Apps Script)
 
 - **Interfaz completa** del Apps Script (`client/gestor.html`): mismos módulos y flujos, conectada al backend por `POST /api/rpc` (shim `google.script.run`).
-- **Datos operativos**: se **leen desde PostgreSQL (SIRT)**; no hace falta subir Excel. La “sesión” (resúmenes, OPL, histórico local, planilla consolidada) se guarda en `server/data/gestor-state.json`.
-- **API REST** previa (`/api/dashboard`, exportes Excel/PDF de resumen) sigue disponible para el cliente React (`index.html`).
+- **Datos operativos**: se **leen directamente desde PostgreSQL/SIRT**. El único upload manual es el `.xlsx` de **Salidas de Cava Adicionales**.
+- **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/planilla`, `/api/adicionales`, `/api/historico`, `/api/analytics`).
 
-## Gestor tipo Apps Script (recomendado)
+## Gestor v2 (recomendado — interfaz operativa)
+
+Abra **http://localhost:3001/gestor-v2.html** (o el enlace de red que muestra el servidor).
+
+- Pestañas: **Tablero · Stock en cava · Decomisos · Despachos**
+- **Consulta BD**: lee SIRT en vivo sin guardar
+- **Actualizar día**: guarda la operación completa en el servidor
+- Sin nombres de hojas Excel (`Estado_Cavas`, etc.)
+
+La [versión clásica](/gestor.html) conserva Informe, PDF, Analytics y Planilla.
+
+## Gestor clásico (Apps Script)
 
 1. Terminal 1: `node server/index.js`
 2. Terminal 2: `npm run dev:client`
 3. Abrir **http://localhost:5173/gestor.html**
 
-En **Decomisos** y **Despachos**, el botón **Procesar** sincroniza desde SIRT y aplica la misma lógica que el Apps Script (cruce, turnos, OPL, etc.). Las cajas de archivo son opcionales / legacy.
+En **Decomisos** y **Despachos**, el botón **Procesar** consulta SIRT y arma las matrices equivalentes a `Estado_Cavas`, `Reporte_Decomisos` y `Despachos_Cavas`, aplicando la misma lógica que el Apps Script.
 
-Variables útiles:
+Variables requeridas:
 
-- `SIRT_SYNC_DAYS` — días hacia atrás para sincronizar tablas (por defecto 120).
-- `SIRT_DECOMISO_EXTRA_DAYS_BEFORE` / `SIRT_DECOMISO_EXTRA_DAYS_AFTER` — al consultar **un solo día**, el reporte `sai.decomiso` puede ampliarse (por defecto 1 día antes) porque `fecha_registro` a menudo cae en el día hábil anterior al corte de estado; ponga `BEFORE=0` para exigir el mismo día calendario.
+- `POSTGRES_HOST`
+- `POSTGRES_PORT`
+- `POSTGRES_DB`
+- `POSTGRES_USER`
+- `POSTGRES_PASSWORD`
+- `SERVER_PORT=3001`
 
 ---
 
-## Cliente React (resumen directo BD)
+## Cliente React
 
-Aplicación ligera: **PostgreSQL SIRT** solo lectura en métricas agregadas.
+`index.html` muestra una entrada liviana al gestor. La SPA operativa completa está en `gestor.html`.
 
 ## Requisitos
 
 - Node.js 18+
-- Red al servidor PostgreSQL (`POSTGRES_HOST`)
+- Acceso de red a PostgreSQL/SIRT.
 
 ## Configuración
 
@@ -38,21 +53,27 @@ Aplicación ligera: **PostgreSQL SIRT** solo lectura en métricas agregadas.
 npm install
 ```
 
-## Desarrollo
+## Desarrollo (red local / compartir enlace)
 
-Terminal 1 — API:
-
-```bash
-node server/index.js
-```
-
-Terminal 2 — interfaz (Vite, proxy `/api` → `localhost:3001`):
+Un solo comando (API + Vite en `0.0.0.0`):
 
 ```bash
-npm run dev:client
+npm run dev
 ```
 
-Abra `http://localhost:5173`.
+Abra en esta PC: `http://localhost:5173/gestor.html`  
+En otros equipos de la misma red: `http://<IP-de-esta-PC>:5173/gestor.html`  
+(El enlace aparece en consola del servidor y en el botón **Copiar enlace** del gestor.)
+
+Opcional en `.env`: `LAN_SHARE_IP=192.168.x.x` para fijar la IP mostrada.
+
+## Producción en red (un solo puerto, recomendado para compartir)
+
+```bash
+npm run start:lan
+```
+
+Abra `http://<IP-de-esta-PC>:3001/gestor.html` desde cualquier equipo en la LAN.
 
 O en un solo comando:
 
@@ -73,29 +94,28 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 ## Endpoints
 
 - `POST /api/rpc` — cuerpo JSON `{ "method": "...", "args": [...] }`; usado por `gestor.html` vía el shim `google.script.run`
-- `GET /api/health` — comprueba conexión
-- `GET /api/dashboard?days=7` — KPIs
-- `GET /api/despachos-propietario?days=7`
-- `GET /api/categorias?days=7`
-- `GET /api/export/resumen.xlsx?days=7` — Excel generado en servidor
-- `GET /api/export/resumen.pdf?days=7` — PDF generado en servidor
-
-Opcional: `from=YYYY-MM-DD&to=YYYY-MM-DD` en lugar de `days`.
+- `GET /api/health` — comprueba conexión a BD.
+- `GET /api/dashboard` — KPIs desde SIRT.
+- `GET /api/salidas` — productos en cava (`?date=YYYY-MM-DD` o `from`/`to`)
+- `GET /api/en-cava` — alias de salidas (inventario en cava)
+- `GET /api/decomisos`
+- `GET /api/decomisos/detalle` — decomisos SAI (ventana automática de 7 días hasta la fecha consultada)
+- `POST /api/decomisos/resumir`
+- `GET /api/decomisos/pdf`
+- `GET /api/despachos`
+- `POST /api/despachos/procesar`
+- `GET /api/opl/config`, `POST /api/opl/config`, `DELETE /api/opl/config/:idx`
+- `GET /api/opl/progreso`, `POST /api/opl/calcular`
+- `GET /api/crudas`
+- `GET /api/planilla`
+- `POST /api/adicionales`
+- `GET /api/historico/pdf`, `GET /api/historico/opl`
+- `GET /api/analytics`
+- `POST /api/limpiar`
 
 ## Lógica de datos
 
-Definida en `server/services/metrics.js` sobre tablas/vistas detectadas en SIRT:
-
-- `trazabilidad_proceso.parte_producto` + `tipo_parte_producto` (juegos y crudas)
-- `trazabilidad_proceso.parte_producto_cava_riel` (salidas de cava)
-- `sai.decomiso`
-- `trazabilidad_proceso.vw_producto_vendido_colbeef` (despachos / kg por propietario y categoría)
-
-El gestor y las métricas de despacho usan la **misma consulta agrupada** que la vista (tablas `desposte.*` + `vehiculo_asignado`), con el filtro de fecha **dentro** de la subconsulta para mejor plan de ejecución. Para ver o actualizar la definición oficial de la vista: `npm run view-def` (requiere `.env`).
-
-**Cruce decomisos (paridad Apps Script):** se compara `parte_producto.id_producto` con `sai.decomiso` (`codigo_maquina` o `id`) usando clave normalizada (`trim` + minúsculas) y, si hace falta, el prefijo numérico `codigoBase` (mismo criterio que el conteo de juegos cuando el Excel traía código corto en decomiso).
-
-Ajuste filtros de tipos de producto y ventanas de fechas según reglas del negocio.
+La lectura de SIRT está en `server/gestor/sirtSync.js`; allí se convierten consultas SQL a las matrices que espera el motor del gestor. La lógica del Apps Script adaptada está en `server/gestor/engine.js` y `server/gestor/engineUtils.js`.
 
 ## Scripts de inspección
 

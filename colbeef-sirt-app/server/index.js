@@ -1,23 +1,33 @@
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
 import { pool, query } from './db.js';
-import { getDashboard, getDespachosPorPropietario, getCategoriasVw } from './services/metrics.js';
+import { getDespachosPorPropietario, getCategoriasVw } from './services/metrics.js';
 import { buildExcelBuffer, buildPdfBuffer } from './services/exportReport.js';
 import { dispatchRpc } from './gestor/rpc.js';
+import * as gestor from './gestor/engine.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
 const app = express();
 const PORT = Number(process.env.SERVER_PORT || 3001);
+const BIND_HOST = process.env.SERVER_BIND || '0.0.0.0';
+const VITE_DEV_PORT = Number(process.env.VITE_PORT || 5173);
 const isProd = process.env.NODE_ENV === 'production';
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 
-app.use(cors());
+app.use(
+  cors({
+    origin: true,
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: '8mb' }));
 
 app.post('/api/rpc', async (req, res) => {
@@ -42,6 +52,34 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+/** URLs para compartir en la red local (gestor + API). */
+app.get('/api/info', (req, res) => {
+  const lan = getLanAddresses();
+  const preferred = String(process.env.LAN_SHARE_IP || '').trim();
+  const ips = preferred && lan.includes(preferred) ? [preferred, ...lan.filter((ip) => ip !== preferred)] : lan;
+  const gestorPath = '/gestor-v2.html';
+  const share = (ip, port) => `http://${ip}:${port}${gestorPath}`;
+  res.json({
+    success: true,
+    mode: isProd ? 'production' : 'development',
+    apiPort: PORT,
+    vitePort: VITE_DEV_PORT,
+    gestorPath,
+    localhost: {
+      api: `http://127.0.0.1:${PORT}`,
+      gestorDev: share('127.0.0.1', VITE_DEV_PORT),
+      gestorProd: share('127.0.0.1', PORT),
+    },
+    lan: ips.map((ip) => ({
+      ip,
+      api: `http://${ip}:${PORT}`,
+      gestorDev: share(ip, VITE_DEV_PORT),
+      gestorProd: share(ip, PORT),
+    })),
+    recommended: ips.length ? share(ips[0], PORT) : share('127.0.0.1', PORT),
+  });
+});
+
 function parseOpts(req) {
   const days = req.query.days;
   const from = req.query.from;
@@ -53,12 +91,209 @@ function parseOpts(req) {
   };
 }
 
+function parseGestorRange(req) {
+  const src = { ...(req.query || {}), ...(req.body || {}) };
+  return {
+    date: src.date || src.fecha || undefined,
+    from: src.from || src.desde || undefined,
+    to: src.to || src.hasta || undefined,
+  };
+}
+
+function apiError(res, e) {
+  res.status(500).json({ success: false, message: e.message || String(e) });
+}
+
 app.get('/api/dashboard', async (req, res) => {
   try {
-    const data = await getDashboard(parseOpts(req));
+    const data = await gestor.getDashboardData(parseGestorRange(req));
     res.json(data);
   } catch (e) {
-    res.status(500).json({ success: false, message: e.message });
+    apiError(res, e);
+  }
+});
+
+/** Productos en cava (Estado_Cavas) — consulta 2. */
+app.get('/api/salidas', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    const data = await gestor.consultarEnCavaDesdeSIRT(range);
+    res.json(data);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+/** Alias explícito: inventario en cava. */
+app.get('/api/en-cava', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    const data = await gestor.consultarEnCavaDesdeSIRT(range);
+    res.json(data);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/decomisos', async (_req, res) => {
+  try {
+    res.json(await gestor.getResumenDecomisos());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+/** Detalle de decomisos SIRT (SAI) — ventana automática 7 días hasta fecha consulta. */
+app.get('/api/decomisos/detalle', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    res.json(await gestor.consultarDecomisosDesdeSIRT(range));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/decomisos/resumir', async (req, res) => {
+  try {
+    res.json(await gestor.prepararModuloDecomisosDesdeSIRT(parseGestorRange(req)));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/decomisos/pdf', async (_req, res) => {
+  try {
+    const out = await gestor.generarPDFDecomisos();
+    if (!out.success) return res.status(400).json(out);
+    const base64 = String(out.url || '').split(',')[1];
+    const buf = Buffer.from(base64 || '', 'base64');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.nombre || 'decomisos.pdf'}"`);
+    res.send(buf);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+/** Salidas de cava (Despachos_Cavas) — consulta 1. */
+app.get('/api/despachos', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    const data = await gestor.consultarSalidasCavaDesdeSIRT(range);
+    res.json(data);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/despachos/procesar', async (req, res) => {
+  try {
+    res.json(await gestor.prepararModuloDespachosDesdeSIRT(req.body?.turno || '', parseGestorRange(req)));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/opl/config', async (_req, res) => {
+  try {
+    res.json(await gestor.getOplConfig());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/opl/config', async (req, res) => {
+  try {
+    res.json(await gestor.upsertOpl(req.body?.propietario, req.body?.opl));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.delete('/api/opl/config/:idx', async (req, res) => {
+  try {
+    res.json(await gestor.eliminarOpl(req.params.idx));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/opl/progreso', async (_req, res) => {
+  try {
+    res.json(await gestor.getProgresoOPL());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/opl/calcular', async (req, res) => {
+  try {
+    res.json(await gestor.calcularProgresoOPL(req.body?.totalJuegos));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/crudas', async (_req, res) => {
+  try {
+    await gestor.importarExcel(null, 'Estado_Cavas');
+    res.json(await gestor.getCrudasDetalle());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/planilla', async (req, res) => {
+  try {
+    await gestor.consolidarDatos();
+    res.json(await gestor.generarPlanillaPuntos(req.query.opl || 'TODOS'));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/adicionales', upload.single('archivo'), async (req, res) => {
+  try {
+    if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Falta archivo .xlsx.' });
+    const uploadRes = await gestor.importarExcelAdicionales(req.file.buffer, req.file.originalname);
+    if (!uploadRes.success) return res.status(400).json(uploadRes);
+    res.json(await gestor.importarAdicionales(null, req.file.originalname, 'AUTO'));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/historico/pdf', async (_req, res) => {
+  try {
+    res.json(await gestor.getHistorialPDF());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/historico/opl', async (req, res) => {
+  try {
+    res.json(await gestor.getHistoricoResumen(req.query.limit));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/analytics', async (req, res) => {
+  try {
+    res.json(await gestor.getKPIs(req.query.opl || 'Todos los OPLs', req.query));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/limpiar', async (_req, res) => {
+  try {
+    const resumen = await gestor.limpiarResumen();
+    const despachos = await gestor.limpiarDespachos();
+    res.json({ success: true, resumen, despachos });
+  } catch (e) {
+    apiError(res, e);
   }
 });
 
@@ -108,9 +343,28 @@ app.get('/api/export/resumen.pdf', async (req, res) => {
   }
 });
 
+const clientRoot = path.join(__dirname, '..', 'client');
+const clientDir = isProd ? path.join(clientRoot, 'dist') : clientRoot;
+
 if (isProd) {
-  const clientDir = path.join(__dirname, '..', 'client', 'dist');
   app.use(express.static(clientDir));
+} else {
+  app.use(express.static(path.join(clientRoot, 'public')));
+}
+
+app.get('/', (_req, res) => {
+  res.redirect(302, '/gestor-v2.html');
+});
+
+app.get('/gestor.html', (_req, res) => {
+  res.sendFile(path.join(isProd ? clientDir : clientRoot, 'gestor.html'));
+});
+
+app.get('/gestor-v2.html', (_req, res) => {
+  res.sendFile(path.join(isProd ? clientDir : clientRoot, 'gestor-v2.html'));
+});
+
+if (isProd) {
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
     res.sendFile(path.join(clientDir, 'index.html'));
@@ -128,12 +382,19 @@ function getLanAddresses() {
   return addrs;
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, BIND_HOST, () => {
   const lan = getLanAddresses();
-  console.log(`Colbeef SIRT API escuchando en :${PORT}`);
-  console.log(`  - http://localhost:${PORT}`);
-  console.log(`  - http://127.0.0.1:${PORT}`);
-  for (const ip of lan) console.log(`  - http://${ip}:${PORT}`);
+  const pref = String(process.env.LAN_SHARE_IP || '').trim();
+  const primary = pref && lan.includes(pref) ? pref : lan[0];
+  console.log(`Colbeef SIRT API escuchando en ${BIND_HOST}:${PORT} (${isProd ? 'producción' : 'desarrollo'})`);
+  console.log(`  API  http://127.0.0.1:${PORT}/api/health`);
+  console.log(`  Gestor v2 http://127.0.0.1:${PORT}/gestor-v2.html`);
+  console.log(`  Gestor clásico http://127.0.0.1:${PORT}/gestor.html`);
+  for (const ip of lan) console.log(`  Gestor v2 (compartir) http://${ip}:${PORT}/gestor-v2.html`);
+  if (!isProd) {
+    console.log(`  Gestor con recarga en vivo (Vite) http://127.0.0.1:${VITE_DEV_PORT}/gestor.html`);
+  }
+  if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor-v2.html`);
 });
 
 process.on('SIGINT', async () => {

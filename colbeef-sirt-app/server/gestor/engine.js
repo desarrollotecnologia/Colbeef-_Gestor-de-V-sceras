@@ -17,7 +17,14 @@ import {
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
-import { fetchEstadoCavasRows, fetchReporteDecomisosRows, fetchDespachosCavasRows } from './sirtSync.js';
+import {
+  fetchEstadoCavasRows,
+  fetchReporteDecomisosRows,
+  fetchDespachosCavasRows,
+  estadoCavaRowToDto,
+  despachoCavaRowToDto,
+  consultarDecomisosDesdeSirt,
+} from './sirtSync.js';
 import { loadState, saveState, defaultState } from './store.js';
 
 function cargarMapaOPL(state) {
@@ -27,6 +34,39 @@ function cargarMapaOPL(state) {
     if (p) mapa[p] = String(r.opl || '').trim() || OPL_DEFAULT;
   });
   return mapa;
+}
+
+function tieneJuegoCompleto(tipos) {
+  return TIPOS_PRODUCTO.every((tipo) => tipos.has(tipo));
+}
+
+function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
+  const grupos = {};
+  (rows || []).forEach((fila) => {
+    const id = String(fila[cols.id] ?? '').trim();
+    const tipo = String(fila[cols.tipo] ?? '').trim();
+    const puesto = cols.puesto !== undefined ? String(fila[cols.puesto] ?? '').trim() : '';
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    if (turno && puesto && !puesto.includes(turno)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    const clave = String(getClave(fila) || '').trim();
+    if (!clave) return;
+    if (!grupos[clave]) grupos[clave] = {};
+    if (!grupos[clave][base]) grupos[clave][base] = new Set();
+    grupos[clave][base].add(tipo);
+  });
+
+  const conteo = {};
+  Object.keys(grupos).forEach((clave) => {
+    conteo[clave] = Object.values(grupos[clave]).filter(tieneJuegoCompleto).length;
+  });
+  return conteo;
+}
+
+function totalJuegosCompletos(rows, cols, turno = '') {
+  const conteo = contarJuegosCompletosPorClave(rows, cols, () => '__TOTAL__', turno);
+  return conteo.__TOTAL__ || 0;
 }
 
 export async function initializeSheets() {
@@ -102,7 +142,16 @@ function construirResumenDespachosDesdeFilas(despachosCavas, turnoForzado) {
       });
       resultado.push(r);
     });
-  const totalJuegos = resultado.reduce((sum, r) => sum + (r['Visceras Rojas'] || 0), 0);
+  const juegosPorPuesto = contarJuegosCompletosPorClave(
+    data,
+    { id: 3, tipo: 7, puesto: 9 },
+    (fila) => fila[9],
+    turno
+  );
+  resultado.forEach((r) => {
+    r.Juegos = juegosPorPuesto[r.puesto] || 0;
+  });
+  const totalJuegos = Object.values(juegosPorPuesto).reduce((sum, n) => sum + Number(n || 0), 0);
   return {
     turno,
     fechaStr: '',
@@ -115,12 +164,27 @@ function construirResumenDespachosDesdeFilas(despachosCavas, turnoForzado) {
 /**
  * Igual que calcularProgresoOPL pero sin guardar ni historizar (vista previa / consulta por fecha).
  */
-function computeProgresoOPLPreview(s, totalJuegosParam) {
+function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
+  const consultaSirt = Boolean(opts.consultaSirt);
   const fecha = fmtNow();
   const rd = s.resumenDespachos;
   const turno = String(rd.turno || '').trim();
 
   if (totalJuegosParam !== undefined && Number(totalJuegosParam) === 0) {
+    if (consultaSirt) {
+      const hayTotales = s.oplConfig?.some((r) => Number(r.total || 0) > 0);
+      return {
+        success: true,
+        turno: turno || detectarTurnoPorDia(),
+        progreso: [],
+        operacionFinalizada: false,
+        fecha,
+        totalJuegos: 0,
+        message: hayTotales
+          ? 'Sin despachos del turno aún para esta fecha (consulta en vivo).'
+          : 'Sin despachos del turno. Procese Decomisos y Despachos para activar OPL.',
+      };
+    }
     const porOPL0 = {};
     s.oplConfig.forEach((r) => {
       const opl = String(r.opl || '').trim() || OPL_DEFAULT;
@@ -152,21 +216,12 @@ function computeProgresoOPLPreview(s, totalJuegosParam) {
     return { success: false, message: 'Sin juegos VR en estado para OPL en esta fecha.', progreso: [] };
   }
 
-  const pendProp = {};
-  const vistosDC = {};
-  s.despachosCavas.forEach((fila) => {
-    const id = String(fila[3] ?? '').trim();
-    const tipo = String(fila[7] ?? '').trim();
-    const prop = String(fila[4] ?? '').trim();
-    const puesto = String(fila[9] ?? '').trim();
-    if (!id || !prop || tipo !== 'Visceras Rojas') return;
-    if (turno && !puesto.includes(turno)) return;
-    const base = codigoBase(id);
-    if (!base || vistosDC[base]) return;
-    vistosDC[base] = true;
-    const key = prop.trim().toUpperCase();
-    pendProp[key] = (pendProp[key] || 0) + 1;
-  });
+  const pendProp = contarJuegosCompletosPorClave(
+    s.despachosCavas,
+    { id: 3, tipo: 7, prop: 4, puesto: 9 },
+    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
+    turno
+  );
 
   const porOPL = {};
   s.oplConfig.forEach((r) => {
@@ -198,7 +253,7 @@ function computeProgresoOPLPreview(s, totalJuegosParam) {
 
   let operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
   const totalJuegosRD = Number(rd.totalJuegos || 0);
-  if (totalJuegosRD === 0 && todosOPL.length > 0) {
+  if (!consultaSirt && totalJuegosRD === 0 && todosOPL.length > 0) {
     todosOPL.forEach((p) => {
       p.despachados = p.total;
       p.pendientes = 0;
@@ -323,21 +378,11 @@ function fmtNowFromDate(d) {
 }
 
 function actualizarCantidadesInicialesOPLSync(s) {
-  const conteo = {};
-  const vistos = {};
-  s.estadoFromRow12.forEach((fila) => {
-    const slice9 = fila.slice(0, 9);
-    const id = String(slice9[0] ?? '').trim();
-    const tipo = String(slice9[1] ?? '').trim();
-    const prop = String(slice9[3] ?? '').trim();
-    if (!id || !prop) return;
-    if (tipo !== 'Visceras Rojas') return;
-    const base = codigoBase(id);
-    if (!base || vistos[base]) return;
-    vistos[base] = true;
-    const k = prop.toUpperCase();
-    conteo[k] = (conteo[k] || 0) + 1;
-  });
+  const conteo = contarJuegosCompletosPorClave(
+    s.estadoFromRow12,
+    { id: 0, tipo: 1 },
+    (fila) => String(fila[3] ?? '').trim().toUpperCase()
+  );
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
@@ -389,15 +434,7 @@ export async function getResumenDecomisos() {
 
 export function contarJuegosVisceralesSync(s) {
   if (!s.estadoFromRow12.length) return { success: true, total: 0 };
-  const startIdx = Math.max(0, 13 - 12);
-  const codigos = new Set();
-  for (let i = startIdx; i < s.estadoFromRow12.length; i++) {
-    const c = String(s.estadoFromRow12[i][0] ?? '').trim();
-    if (!c) continue;
-    const partes = c.split('-');
-    if (partes.length >= 2) codigos.add(`${partes[0]}-${partes[1]}`);
-  }
-  return { success: true, total: codigos.size };
+  return { success: true, total: totalJuegosCompletos(s.estadoFromRow12, { id: 0, tipo: 1 }) };
 }
 
 export function contarCrudasSync(s) {
@@ -462,10 +499,11 @@ export async function getDashboardData(range) {
       const fechaIso = filtro.from;
       rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} 00:00 (consulta SIRT)`;
       sWork.resumenDespachos = rd;
-      const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos);
+      const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const totalSalidas = resSalidas.total || 0;
+      const filasEnCava = estado.length;
       const totalJuegosDespachar = Number(rd.totalJuegos || 0);
       const turnoDespacho = String(rd.turno || '');
       const ultimaActDespachos = rd.fechaStr || '';
@@ -477,6 +515,7 @@ export async function getDashboardData(range) {
           : 0;
       const cr = contarCrudasSync(sWork);
       const totalDecomisos = contarCruceDecomisosSync(estado, reporte);
+      const totalDecomisosEnRango = reporte.length;
 
       const progresoOPL = preview.success
         ? preview.operacionFinalizada
@@ -488,6 +527,11 @@ export async function getDashboardData(range) {
         success: true,
         totalSalidas,
         totalDecomisos,
+        totalDecomisosEnRango,
+        filasEnCava,
+        totalSubproductosEnCava: filasEnCava,
+        totalDecomisosVinculadosCava: totalDecomisos,
+        totalDecomisosSinVinculo: Math.max(0, totalDecomisosEnRango - totalDecomisos),
         totalCrudas: cr.total,
         totalJuegosDespachar,
         despachados,
@@ -504,7 +548,7 @@ export async function getDashboardData(range) {
         decomisoVinculoStats,
         progresoOPL,
         operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
-        oplPreviewMessage: preview.success ? '' : String(preview.message || ''),
+        oplPreviewMessage: String(preview.message || ''),
         oplPreviewFecha: preview.fecha || '',
       };
     } catch (e) {
@@ -598,7 +642,16 @@ export async function procesarDespachos(turnoForzado) {
       });
       resultado.push(r);
     });
-  const totalJuegos = resultado.reduce((sum, r) => sum + (r['Visceras Rojas'] || 0), 0);
+  const juegosPorPuesto = contarJuegosCompletosPorClave(
+    data,
+    { id: 3, tipo: 7, puesto: 9 },
+    (fila) => fila[9],
+    turno
+  );
+  resultado.forEach((r) => {
+    r.Juegos = juegosPorPuesto[r.puesto] || 0;
+  });
+  const totalJuegos = Object.values(juegosPorPuesto).reduce((sum, n) => sum + Number(n || 0), 0);
   s.resumenDespachos = {
     turno,
     fechaStr: fmtNow(),
@@ -710,21 +763,12 @@ export async function calcularProgresoOPL(totalJuegosParam) {
   const hayTotales = s.oplConfig.some((r) => Number(r.total || 0) > 0);
   if (!hayTotales) return { success: false, message: 'Sin totales. Procesa primero el módulo de Decomisos.' };
 
-  const pendProp = {};
-  const vistosDC = {};
-  s.despachosCavas.forEach((fila) => {
-    const id = String(fila[3] ?? '').trim();
-    const tipo = String(fila[7] ?? '').trim();
-    const prop = String(fila[4] ?? '').trim();
-    const puesto = String(fila[9] ?? '').trim();
-    if (!id || !prop || tipo !== 'Visceras Rojas') return;
-    if (turno && !puesto.includes(turno)) return;
-    const base = codigoBase(id);
-    if (!base || vistosDC[base]) return;
-    vistosDC[base] = true;
-    const key = prop.trim().toUpperCase();
-    pendProp[key] = (pendProp[key] || 0) + 1;
-  });
+  const pendProp = contarJuegosCompletosPorClave(
+    s.despachosCavas,
+    { id: 3, tipo: 7, prop: 4, puesto: 9 },
+    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
+    turno
+  );
 
   const porOPL = {};
   s.oplConfig.forEach((r) => {
@@ -895,21 +939,12 @@ export async function getOplPorPropietario() {
   } else {
     datos = s.despachosCavas.map((f) => [f[3], '', '', f[4], '', '', f[7], '', f[9]]);
   }
-  const conteo = {};
-  const vistos = {};
-  datos.forEach((fila) => {
-    const id = String(fila[cols.id] ?? '').trim();
-    const tipo = String(fila[cols.tipo] ?? '').trim();
-    const prop = String(fila[cols.prop] ?? '').trim();
-    const puesto = String(fila[cols.puesto] ?? '').trim();
-    if (!id || !prop || tipo !== 'Visceras Rojas') return;
-    if (turno && puesto && !puesto.includes(turno)) return;
-    const base = codigoBase(id);
-    if (!base || vistos[base]) return;
-    vistos[base] = true;
-    const k = prop.toUpperCase();
-    conteo[k] = (conteo[k] || 0) + 1;
-  });
+  const conteo = contarJuegosCompletosPorClave(
+    datos,
+    cols,
+    (fila) => String(fila[cols.prop] ?? '').trim().toUpperCase(),
+    turno
+  );
   const opls = [...new Set(s.oplConfig.map((r) => r.opl).filter(Boolean))].sort();
   if (!opls.includes(OPL_DEFAULT)) opls.unshift(OPL_DEFAULT);
   const resultado = Object.keys(conteo)
@@ -1227,6 +1262,96 @@ export async function getHistorialPDF() {
   return { success: true, historial: (s.historialPdf || []).slice().reverse() };
 }
 
+/** Consulta SIRT: subproductos en cava (consulta 2 del usuario). */
+export async function consultarEnCavaDesdeSIRT(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  const useRange = filtroSirtValido(filtro) ? filtro : {};
+  const porRango = Boolean(useRange.from && useRange.to);
+  const filas = await fetchEstadoCavasRows(useRange);
+  const resSalidas = contarJuegosVisceralesSync({ estadoFromRow12: filas });
+  return {
+    success: true,
+    modo: porRango ? 'rango' : 'lookback',
+    desde: useRange.from || null,
+    hasta: useRange.to || null,
+    lookbackDias: porRango ? null : Number(process.env.SIRT_CAVA_LOOKBACK_DAYS || 30),
+    totalFilas: filas.length,
+    totalJuegos: resSalidas.total || 0,
+    filas: filas.map(estadoCavaRowToDto),
+  };
+}
+
+/** Consulta SIRT: salidas de cava (consulta 1 del usuario). */
+export async function consultarSalidasCavaDesdeSIRT(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  const useRange = filtroSirtValido(filtro) ? filtro : {};
+  const porRango = Boolean(useRange.from && useRange.to);
+  const filas = await fetchDespachosCavasRows(useRange);
+  return {
+    success: true,
+    modo: porRango ? 'rango' : 'lookback',
+    desde: useRange.from || null,
+    hasta: useRange.to || null,
+    lookbackDias: porRango ? null : Number(process.env.SIRT_SALIDAS_CAVA_LOOKBACK_DAYS || 30),
+    turno: detectarTurnoDesdeDatos(filas),
+    totalFilas: filas.length,
+    filas: filas.map(despachoCavaRowToDto),
+  };
+}
+
+/** Vista previa de decomisos SAI (ventana automática de N días). */
+export async function consultarDecomisosDesdeSIRT(range) {
+  return consultarDecomisosDesdeSirt(range);
+}
+
+/** Cruce decomisos ↔ cava en vivo, sin guardar sesión (solo lectura para UI v2). */
+/** Despachos del turno en vivo, sin guardar sesión. */
+export async function consultarDespachosPreview(turno, range) {
+  const filtro = normalizarRangoFechas(range || {});
+  let useRange = filtroSirtValido(filtro) ? filtro : {};
+  let desp = await fetchDespachosCavasRows(useRange);
+  if (filtroSirtValido(filtro) && !desp.length) {
+    desp = await fetchDespachosCavasRows({});
+  }
+  const t =
+    (turno && String(turno).trim()) ||
+    detectarTurnoDesdeDatos(desp) ||
+    (filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia());
+  const rd = construirResumenDespachosDesdeFilas(desp, t);
+  return {
+    success: true,
+    turno: rd.turno,
+    totalPuestos: rd.resultado.length,
+    totalJuegos: rd.totalJuegos,
+    tipos: TIPOS_PRODUCTO,
+    resultado: rd.resultado,
+    avisoRango: filtroSirtValido(filtro) && !desp.length ? 'Sin salidas en la fecha exacta.' : '',
+  };
+}
+
+export async function consultarCruceDecomisosPreview(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  const useRange = filtroSirtValido(filtro) ? filtro : {};
+  const estado = await fetchEstadoCavasRows(useRange);
+  const pack = await fetchReporteDecomisosRows(useRange);
+  const mapa = construirMapaReporteDecomisos(pack.rows);
+  const resultado = [];
+  estado.forEach((fila) => {
+    const slice9 = fila.slice(0, 9);
+    const id = String(slice9[0] ?? '').trim();
+    const prod = productoDecomisoDesdeMapa(mapa, id);
+    if (id && prod !== undefined) resultado.push([id, slice9[8], prod]);
+  });
+  return {
+    success: true,
+    totalProductos: resultado.length,
+    totalDestinos: new Set(resultado.map((r) => r[1]).filter(Boolean)).size,
+    resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
+    filasEnCava: estado.length,
+    filasDecomisosPeriodo: pack.rows.length,
+  };
+}
+
 export async function prepararModuloDecomisosDesdeSIRT(range) {
   await importarExcel(null, 'Estado_Cavas', range);
   await importarExcel(null, 'Reporte_Decomisos', range);
@@ -1236,14 +1361,25 @@ export async function prepararModuloDecomisosDesdeSIRT(range) {
 export async function prepararModuloDespachosDesdeSIRT(turno, range) {
   await importarExcel(null, 'Despachos_Cavas', range);
   const s = await loadState();
+  let usoLookback = false;
   const filtro = normalizarRangoFechas(range || {});
+  if (filtroSirtValido(filtro) && (!s.despachosCavas || s.despachosCavas.length === 0)) {
+    await importarExcel(null, 'Despachos_Cavas', {});
+    usoLookback = true;
+  }
+  const s2 = usoLookback ? await loadState() : s;
   const porDiaFecha =
     filtroSirtValido(filtro) && filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia();
   const t =
     (turno && String(turno).trim()) ||
-    detectarTurnoDesdeDatos(s.despachosCavas || []) ||
+    detectarTurnoDesdeDatos(s2.despachosCavas || []) ||
     porDiaFecha;
-  return procesarDespachos(t);
+  const out = await procesarDespachos(t);
+  if (out && out.success && usoLookback) {
+    out.avisoRango =
+      'No hubo salidas para la fecha exacta; se usó ventana lookback de SIRT para mantener la operación.';
+  }
+  return out;
 }
 
 /**
@@ -1441,6 +1577,8 @@ export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual
   });
   const nuevas = [];
   let ignorados = 0;
+  let cancelados = 0;
+  let cambios = 0;
   filasAdicional.forEach((fila) => {
     const codigo = String(fila[1] || '').trim();
     if (!codigo) return;
@@ -1451,24 +1589,44 @@ export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual
     codigos[codigo] = true;
     nuevas.push(fila.slice(1, 15));
   });
+  if (filasCancel.length) {
+    const cancelar = new Set(filasCancel.map((fila) => String(fila[1] || '').trim()).filter(Boolean));
+    const antes = s.estadoFromRow12.length;
+    s.estadoFromRow12 = s.estadoFromRow12.filter((fila) => !cancelar.has(String(fila[0] || '').trim()));
+    cancelados = antes - s.estadoFromRow12.length;
+  }
+  filasCambio.forEach((fila) => {
+    const codigo = String(fila[1] || '').trim();
+    const destino = String(fila[9] || '').trim();
+    if (!codigo || !destino) return;
+    s.estadoFromRow12.forEach((row) => {
+      if (String(row[0] || '').trim() === codigo) {
+        row[8] = destino;
+        cambios++;
+      }
+    });
+  });
   if (nuevas.length) {
     s.estadoFromRow12.push(...nuevas);
-    actualizarCantidadesInicialesOPLSync(s);
   }
+  if (nuevas.length || cancelados || cambios) actualizarCantidadesInicialesOPLSync(s);
   s.adicionalesTemp = null;
   await saveState(s);
-  if (nuevas.length > 0 && s.reporteDecomisos.length > 0) {
+  if ((nuevas.length > 0 || cancelados > 0 || cambios > 0) && s.reporteDecomisos.length > 0) {
     await resumirDecomisos();
   }
   return {
     success: true,
-    tipo: 'ADICIONAL',
-    procesados: nuevas.length,
+    tipo: 'MIXTO',
+    procesados: nuevas.length + cancelados + cambios,
     ignorados,
     totalAdicional: filasAdicional.length,
     totalCancel: filasCancel.length,
     totalCambio: filasCambio.length,
-    mensaje: `Se agregaron ${nuevas.length} adicionales a Estado_Cavas.`,
+    adicionales: nuevas.length,
+    cancelaciones: cancelados,
+    cambios,
+    mensaje: `Adicionales: ${nuevas.length}. Cancelaciones: ${cancelados}. Cambios de destino: ${cambios}.`,
   };
 }
 

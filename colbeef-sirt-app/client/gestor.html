@@ -166,13 +166,6 @@
     tbody td.num{text-align:center;}
     .empty-state{text-align:center;padding:3rem;color:var(--gris);}
 
-    /* ── Vista técnica: JSON del backend (RPC) ── */
-    details.backend-json-details summary{list-style:none;}
-    details.backend-json-details summary::-webkit-details-marker{display:none;}
-    details.backend-json-details summary::before{content:'▸ ';display:inline-block;transition:transform 0.15s;}
-    details.backend-json-details[open] summary::before{transform:rotate(90deg);}
-    .json-backend-pre{margin:0.5rem 0 0;font-size:0.72rem;line-height:1.4;max-height:min(52vh,420px);overflow:auto;background:#0f172a;color:#e2e8f0;padding:1rem;border-radius:10px;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Consolas,monospace;}
-
     /* ── INFORME: INPUTS ── */
     .inf-input{padding:0.7rem 1rem;border-radius:10px;border:2px solid var(--vc);font-size:0.95rem;width:100%;transition:border-color 0.2s;}
     .inf-input:focus{outline:none;border-color:var(--vp);}
@@ -282,6 +275,42 @@
     tr.hl-match td:first-child{font-weight:700;color:#92400e;}
     tr.hl-hidden{display:none;}
     .search-count{font-size:0.78rem;color:var(--vp);font-weight:600;margin-left:0.3rem;white-space:nowrap;}
+
+    /* ── UX mejoras ── */
+    .ux-status-bar{display:flex;flex-wrap:wrap;align-items:center;gap:0.5rem 0.75rem;margin-bottom:1rem;padding:0.65rem 1rem;background:white;border-radius:12px;border:1px solid var(--vc);box-shadow:0 2px 8px rgba(37,156,57,0.06);}
+    .ux-conn-wrap{display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--gris);}
+    .ux-conn-dot{width:9px;height:9px;border-radius:50%;background:#9ca3af;}
+    .ux-conn-dot.ux-conn-ok{background:#22c55e;box-shadow:0 0 0 2px rgba(34,197,94,0.25);}
+    .ux-conn-dot.ux-conn-bad{background:#ef4444;}
+    .ux-vista-badge{font-size:0.72rem;font-weight:700;padding:0.28rem 0.65rem;border-radius:20px;white-space:nowrap;}
+    .ux-vista-sirt{background:#dcfce7;color:#166534;}
+    .ux-vista-sesion{background:#f3f4f6;color:#4b5563;}
+    .ux-share-wrap{display:flex;align-items:center;gap:0.35rem;flex-wrap:wrap;}
+    .ux-share-btn{font-size:0.7rem;font-weight:700;padding:0.28rem 0.6rem;border-radius:8px;border:1px solid var(--vc);background:#f0fdf4;color:#166534;cursor:pointer;}
+    .ux-share-btn:hover{background:#dcfce7;}
+    .ux-share-url{font-size:0.68rem;color:var(--gris);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .ux-fecha-chips{display:flex;flex-wrap:wrap;gap:0.35rem;justify-content:flex-end;}
+    .ux-chip{font-size:0.68rem;padding:0.2rem 0.5rem;border-radius:6px;background:#f0faf3;color:#166534;border:1px solid var(--vc);}
+    .ux-chip-warn{background:#fff7ed;color:#9a3412;border-color:#fed7aa;}
+    .ux-inline-loader{font-size:0.75rem;color:var(--vp);font-weight:600;display:none;}
+    .ux-inline-loader.show{display:inline;}
+    .ux-collapsible{border:1px solid var(--vc);border-radius:12px;margin-bottom:1rem;overflow:hidden;}
+    .ux-collapsible>summary{cursor:pointer;padding:0.75rem 1rem;font-weight:700;color:var(--vp);background:var(--fondo);list-style:none;display:flex;align-items:center;gap:0.5rem;}
+    .ux-collapsible>summary::-webkit-details-marker{display:none;}
+    .ux-collapsible>summary::before{content:'▸';transition:transform 0.15s;}
+    .ux-collapsible[open]>summary::before{transform:rotate(90deg);}
+    .ux-collapsible .ux-collapsible-body{padding:0 1rem 1rem;}
+    .ux-toolbar{display:flex;flex-wrap:wrap;gap:0.5rem;align-items:center;margin-bottom:0.5rem;}
+    .ux-search{flex:1;min-width:160px;max-width:280px;padding:0.4rem 0.75rem;border:1.5px solid var(--vc);border-radius:20px;font-size:0.85rem;}
+    .ux-search:focus{outline:none;border-color:var(--vp);}
+    .ux-legacy-panel{margin-bottom:1rem;}
+    .ux-legacy-panel>summary{font-size:0.82rem;color:var(--gris);cursor:pointer;}
+    .ux-tech-toggle{font-size:0.72rem;margin-left:0.5rem;background:none;border:none;color:var(--vp);cursor:pointer;text-decoration:underline;}
+    .ux-tech-detail{display:none;font-size:0.7rem;background:#f9fafb;padding:0.5rem;margin-top:0.35rem;border-radius:6px;white-space:pre-wrap;max-height:120px;overflow:auto;}
+    .ux-tech-detail.show{display:block;}
+    .ux-alert-close{float:right;background:none;border:none;cursor:pointer;font-size:1rem;color:inherit;opacity:0.7;}
+    .alert.alert-error,.alert.alert-warn{padding-right:2rem;}
+    .btn-row-sticky{position:sticky;top:0;z-index:5;background:var(--blanco);padding:0.5rem 0;margin-bottom:0.5rem;border-bottom:1px solid var(--vc);}
     @media(max-width:700px){
       body{padding:1rem;}
       .header{flex-direction:column;align-items:start;}
@@ -301,7 +330,7 @@
       <div class="logo-icon">🥩</div>
       <div class="logo-text">
         <h1><span style="color:var(--vp)">Col</span><span style="color:var(--rojo)">beef</span> · Gestor de Vísceras</h1>
-        <p>Control de inventario y despachos</p>
+        <p>Control de inventario y despachos · <a href="/gestor-v2.html" style="color:var(--vp);font-weight:700;">Nueva interfaz v2</a></p>
       </div>
     </div>
     <div class="fecha-badge" style="flex-direction:column;align-items:flex-end;gap:0.35rem;min-width:min(100%,280px);">
@@ -316,8 +345,23 @@
         <button type="button" class="btn btn-secondary" style="padding:0.32rem 0.55rem;font-size:0.72rem;" onclick="setDashboardFechaHoy()">Hoy</button>
       </div>
       <div id="fechaActualLabel" style="font-size:0.84rem;color:var(--vp);font-weight:600;text-align:right;line-height:1.25;"></div>
+      <div id="uxFechaChips" class="ux-fecha-chips"></div>
       <div id="dashboardSirtMeta" style="font-size:0.66rem;color:var(--gris);max-width:300px;text-align:right;line-height:1.3;"></div>
     </div>
+  </div>
+
+  <div class="ux-status-bar" role="status" aria-live="polite">
+    <div class="ux-conn-wrap">
+      <span class="ux-conn-dot" id="uxConnDot" aria-hidden="true"></span>
+      <span id="uxConnLabel">Comprobando conexión…</span>
+    </div>
+    <span id="uxVistaBadge" class="ux-vista-badge ux-vista-sirt">● Consultando SIRT</span>
+    <div class="ux-share-wrap" id="uxShareWrap" hidden>
+      <button type="button" class="ux-share-btn" id="uxShareCopy" title="Copiar enlace para abrir en otro equipo de la red">🔗 Copiar enlace</button>
+      <span class="ux-share-url" id="uxShareUrl"></span>
+    </div>
+    <span id="uxInlineLoader" class="ux-inline-loader" aria-live="polite"></span>
+    <span style="font-size:0.72rem;color:var(--gris);margin-left:auto;" title="SIRT = base en vivo · Sesión = datos guardados en servidor">ℹ️ SIRT lee la BD · Sesión usa lo ya procesado</span>
   </div>
 
   <!-- ═══ DASHBOARD ═══ -->
@@ -327,9 +371,9 @@
       <div class="tarjeta-resumen">
         <div class="tarjeta-split">
           <div class="split-left">
-            <div class="split-label">📤 Salidas</div>
+            <div class="split-label">📦 En cava</div>
             <div class="split-valor" id="dashSalidas">—</div>
-            <div class="split-sub">Juegos en cava</div>
+            <div class="split-sub">Juegos viscerales en stock</div>
           </div>
           <div class="split-right">
             <div class="split-label">🏷️ Decomisos</div>
@@ -379,12 +423,6 @@
       <div class="barra-exterior"><div class="barra-interior" id="progresoBarra" style="width:0%"></div></div>
       <p style="margin-top:0.9rem;color:#4b6358;font-size:0.9rem;" id="progresoMeta">Cargando...</p>
     </div>
-
-    <details class="backend-json-details" style="margin-bottom:1.5rem;background:var(--blanco);border-radius:var(--radio);padding:0.75rem 1.15rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.25);">
-      <summary style="cursor:pointer;font-weight:600;color:var(--vp);font-size:0.88rem;">Respuesta del servidor <span style="font-weight:500;color:var(--gris);">· <code style="font-size:0.78rem;">getDashboardData</code> (JSON)</span></summary>
-      <p style="font-size:0.76rem;color:var(--gris);margin:0.55rem 0 0;line-height:1.4;">Misma carga que usa el tablero: vista <strong>SIRT día</strong> o <strong>Sesión</strong>, con la fecha global. Sirve para cotejar números y campos con el backend.</p>
-      <pre id="dashBackendJson" class="json-backend-pre" aria-label="JSON getDashboardData">Esperando primera respuesta del servidor…</pre>
-    </details>
 
     <div class="modulos-titulo">⚙️ Módulos de gestión</div>
     <div class="modulos-grid">
@@ -437,38 +475,71 @@
   <div id="viewDecomisos" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:1rem;">Módulo de Decomisos</h2>
-    <div class="upload-grid">
-      <div class="upload-box" id="uploadBox1">
-        <div class="ub-icon">📂</div>
-        <div class="ub-label">Salida de Cava</div>
-        <div class="ub-hint">Estado de productos en cavas y plan de faena actual</div>
-        <div class="ub-filename" id="file1Name">No requerido (SIRT)</div>
-        <input type="file" id="fileInput1" accept=".xlsx,.xls" onchange="onFileSelected(1)">
+    <details class="ux-legacy-panel">
+      <summary>Modo avanzado: cargar archivos Excel (opcional)</summary>
+      <div class="upload-grid" style="margin-top:0.75rem;">
+        <div class="upload-box" id="uploadBox1">
+          <div class="ub-icon">📂</div>
+          <div class="ub-label">Estado en cava (Excel)</div>
+          <div class="ub-hint">Solo si no usa SIRT</div>
+          <div class="ub-filename" id="file1Name">No requerido (SIRT)</div>
+          <input type="file" id="fileInput1" accept=".xlsx,.xls" onchange="onFileSelected(1)">
+        </div>
+        <div class="upload-box" id="uploadBox2">
+          <div class="ub-icon">📂</div>
+          <div class="ub-label">Reporte Decomisos (Excel)</div>
+          <div class="ub-hint">Solo si no usa SIRT</div>
+          <div class="ub-filename" id="file2Name">No requerido (SIRT)</div>
+          <input type="file" id="fileInput2" accept=".xlsx,.xls" onchange="onFileSelected(2)">
+        </div>
       </div>
-      <div class="upload-box" id="uploadBox2">
-        <div class="ub-icon">📂</div>
-        <div class="ub-label">Reporte Decomisos</div>
-        <div class="ub-hint">Reporte de decomisos de subproductos</div>
-        <div class="ub-filename" id="file2Name">No requerido (SIRT)</div>
-        <input type="file" id="fileInput2" accept=".xlsx,.xls" onchange="onFileSelected(2)">
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-secondary" onclick="clearFiles()">✕ Limpiar</button>
-      <button class="btn btn-primary" id="btnProcesar" onclick="procesarDecomisos()">⚙️ Procesar desde SIRT</button>
+    </details>
+    <div class="btn-row btn-row-sticky">
+      <button class="btn btn-primary" id="btnProcesar" onclick="procesarDecomisos()">⚙️ Cargar y procesar desde SIRT</button>
       <button class="btn btn-primary" id="btnPDF" onclick="generarPDF()" disabled>📄 Generar PDF</button>
+      <button class="btn btn-secondary" onclick="clearFiles()">✕ Limpiar sesión</button>
     </div>
     <p id="fechaHintDecomisos" style="font-size:0.82rem;color:var(--gris);margin:0.35rem 0 0.85rem;line-height:1.35;"></p>
-    <div class="alert" id="decAlert"></div>
-    <details class="backend-json-details" style="margin-bottom:1rem;background:var(--fondo);border-radius:12px;padding:0.65rem 1rem;border:1px dashed var(--vc);">
-      <summary style="cursor:pointer;font-weight:600;color:var(--vp);font-size:0.82rem;">Última respuesta del servidor <span style="font-weight:500;color:var(--gris);">· <code style="font-size:0.74rem;">prepararModuloDecomisosDesdeSIRT</code></span></summary>
-      <p style="font-size:0.72rem;color:var(--gris);margin:0.45rem 0 0;">Tras pulsar «Procesar desde SIRT» se muestra aquí el objeto completo (<code>resultados</code>, totales, filas SIRT, etc.).</p>
-      <pre id="decBackendJson" class="json-backend-pre" style="max-height:min(40vh,320px);">Aún no se ha procesado en esta sesión.</pre>
+    <details class="ux-collapsible">
+      <summary>Vista previa SIRT — Decomisos (7 días automático)</summary>
+      <div class="ux-collapsible-body">
+        <div class="ux-toolbar">
+          <input type="search" class="ux-search" id="searchDecomisosSirt" placeholder="Buscar código, producto, causa…" oninput="uxBuscarDecomisosSirt(this.value)" aria-label="Buscar en decomisos SIRT">
+          <span id="decomisosSirtPreviewMeta" style="font-size:0.8rem;color:var(--gris);">—</span>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="cargarVistaDecomisosSirt()">🔄 Actualizar</button>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="uxExportDecomisosSirt()">⬇ CSV</button>
+        </div>
+        <div class="table-wrap" style="max-height:240px;margin-top:0;">
+          <table style="font-size:0.82rem;">
+            <thead><tr><th>Fecha</th><th>Código</th><th>Subproducto</th><th>Puesto</th><th>Causa</th><th>Responsable</th></tr></thead>
+            <tbody id="tablaDecomisosSirt"><tr><td colspan="6" class="empty-state">Se cargará al abrir el módulo.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
     </details>
+    <details class="ux-collapsible">
+      <summary>Vista previa SIRT — Productos en cava</summary>
+      <div class="ux-collapsible-body">
+        <div class="ux-toolbar">
+          <input type="search" class="ux-search" id="searchEnCava" placeholder="Buscar código, propietario…" oninput="uxBuscarEnCava(this.value)" aria-label="Buscar en cava">
+          <span id="enCavaPreviewMeta" style="font-size:0.8rem;color:var(--gris);">—</span>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="cargarVistaEnCava()">🔄 Actualizar</button>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="uxExportEnCava()">⬇ CSV</button>
+        </div>
+        <div class="table-wrap" style="max-height:280px;margin-top:0;">
+          <table style="font-size:0.82rem;">
+            <thead><tr><th>Ingreso</th><th>Código</th><th>Subproducto</th><th>Propietario</th><th>Destino</th><th>Riel</th></tr></thead>
+            <tbody id="tablaEnCavaSirt"><tr><td colspan="6" class="empty-state">Se cargará al abrir el módulo.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
+    <div class="alert" id="decAlert"></div>
+    <h3 style="font-size:1rem;color:var(--vp);margin:1rem 0 0.5rem;">Resultado del cruce (para operación)</h3>
     <div class="table-wrap">
       <table>
         <thead><tr><th>#</th><th>ID Producto</th><th>Destino</th><th>Producto / Subproducto</th></tr></thead>
-        <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr></tbody>
+        <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">Pulse «Cargar y procesar desde SIRT».</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -486,8 +557,9 @@
     </p>
     <div style="margin-bottom:1.5rem;">
       <p style="font-size:0.85rem;color:var(--gris);margin-bottom:0.8rem;">
-        <strong style="color:var(--vp);">Selecciona el turno a procesar</strong> — el marcado con "hoy" es el sugerido.
+        <strong style="color:var(--vp);">Selecciona el turno a procesar</strong> — el botón con etiqueta «hoy» es el sugerido.
       </p>
+      <button type="button" class="btn btn-secondary" style="margin-bottom:0.75rem;padding:0.45rem 1rem;font-size:0.85rem;" onclick="usarTurnoHoy()">✓ Usar turno de hoy</button>
       <div class="turno-btns">
         <button class="turno-btn" data-turno="DxL" onclick="seleccionarTurno('DxL')"><span class="t-d">Dom</span><span class="t-a">→</span><span class="t-d">Lun</span><span class="t-c">DxL</span></button>
         <button class="turno-btn" data-turno="LxM" onclick="seleccionarTurno('LxM')"><span class="t-d">Lun</span><span class="t-a">→</span><span class="t-d">Mar</span><span class="t-c">LxM</span></button>
@@ -502,7 +574,7 @@
       <div class="stat-card">
         <div class="stat-label">Total Juegos a Despachar</div>
         <div class="stat-valor" id="statJuegos">—</div>
-        <div class="stat-sub">Vísceras Rojas del turno</div>
+        <div class="stat-sub">Juegos completos: 4 subproductos</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Puestos</div>
@@ -514,14 +586,7 @@
         <div class="stat-valor" style="font-size:1.5rem;" id="statTurno">—</div>
       </div>
     </div>
-    <div class="upload-grid" style="grid-template-columns:1fr 1fr;">
-      <div class="upload-box" id="uploadBoxDesp">
-        <div class="ub-icon">📊</div>
-        <div class="ub-label">Origen SIRT</div>
-        <div class="ub-hint">La consulta toma datos directos de la base para la fecha y turno seleccionados.</div>
-        <div class="ub-filename" id="fileDespName">No requerido (SIRT)</div>
-        <input type="file" id="fileInputDesp" accept=".xlsx,.xls" onchange="onFileDespSelected()">
-      </div>
+    <div class="upload-grid" style="grid-template-columns:1fr;">
       <div class="upload-box" id="uploadBoxAdic" style="border:2px dashed #f59e0b;background:#fffbeb;">
         <div class="ub-icon">➕</div>
         <div class="ub-label" style="color:#d97706;">Salidas Adicionales</div>
@@ -533,7 +598,7 @@
     <div class="btn-row" style="align-items:center;flex-wrap:wrap;">
       <button class="btn btn-secondary" onclick="confirmarLimpiar()">🗑 Limpiar</button>
       <button class="btn btn-danger" onclick="confirmarCerrarOperacion()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🔒 Cerrar operación</button>
-      <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()">⚙️ Procesar desde SIRT</button>
+      <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()">⚙️ Cargar y procesar desde SIRT</button>
       <button class="btn btn-primary" id="btnProcesarAdic" onclick="procesarAdicionales()" disabled style="background:#f59e0b;border-color:#f59e0b;">⚙️ Procesar Adicionales</button>
       <div class="search-desp">
         <span class="s-icon">🔍</span>
@@ -543,11 +608,28 @@
       <span class="search-count" id="searchCount"></span>
     </div>
     <p id="fechaHintDespachos" style="font-size:0.82rem;color:var(--gris);margin:0.35rem 0 0.85rem;line-height:1.35;"></p>
+    <details class="ux-collapsible">
+      <summary>Vista previa SIRT — Salidas de cava</summary>
+      <div class="ux-collapsible-body">
+        <div class="ux-toolbar">
+          <input type="search" class="ux-search" id="searchSalidasCava" placeholder="Buscar código, destino…" oninput="uxBuscarSalidasCava(this.value)" aria-label="Buscar salidas">
+          <span id="salidasCavaPreviewMeta" style="font-size:0.8rem;color:var(--gris);">—</span>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="cargarVistaSalidasCava()">🔄 Actualizar</button>
+          <button type="button" class="btn btn-secondary" style="padding:0.35rem 0.85rem;font-size:0.8rem;" onclick="uxExportSalidasCava()">⬇ CSV</button>
+        </div>
+        <div class="table-wrap" style="max-height:280px;margin-top:0;">
+          <table style="font-size:0.82rem;">
+            <thead><tr><th>Salida</th><th>Ingreso</th><th>Código</th><th>Subproducto</th><th>Propietario</th><th>Destino</th><th>Cód. suc.</th></tr></thead>
+            <tbody id="tablaSalidasCavaSirt"><tr><td colspan="7" class="empty-state">Se cargará al abrir el módulo.</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </details>
     <div class="alert" id="despAlert"></div>
     <div class="table-wrap">
       <table>
         <thead id="despThead"></thead>
-        <tbody id="despTbody"><tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr></tbody>
+        <tbody id="despTbody"><tr><td colspan="6" class="empty-state">Pulse «Cargar y procesar desde SIRT».</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -884,7 +966,7 @@
     <div class="modal-box" style="max-width:760px;">
       <div class="modal-header">
         <div class="modal-title">⚙️ Configuración de Plazas</div>
-        <button class="modal-close" onclick="cerrarModalPlazas()">✕</button>
+        <button class="modal-close" onclick="cerrarModalPlazas()" aria-label="Cerrar configuración de plazas">✕</button>
       </div>
       <div class="alert" id="plazasAlert"></div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.8rem;">
@@ -928,7 +1010,7 @@
     <div class="modal-box" style="max-width:620px;">
       <div class="modal-header">
         <div class="modal-title">🚚 Progreso por Operador Logístico</div>
-        <button class="modal-close" onclick="cerrarModalOPL()">✕</button>
+        <button class="modal-close" onclick="cerrarModalOPL()" aria-label="Cerrar progreso OPL">✕</button>
       </div>
 
       <!-- Tabs dentro del modal -->
@@ -993,6 +1075,7 @@
 // ESTADO GLOBAL
 // ══════════════════════════════════════════════════════
 var state = { file1:null, file2:null, hayResultados:false, fileDesp:null, dashboardVista:'sirt' };
+window._uxPreviewCache = { decomisos: [], enCava: [], salidas: [] };
 var turnoSeleccionado = null;
 var TURNO_POR_DIA = {0:'DxL',1:'LxM',2:'MxM',3:'MxJ',4:'JxV',5:'VxS',6:'SxD'};
 
@@ -1022,6 +1105,7 @@ var infState = {
 };
 var autoGuardarTimer = null;
 var autoSirtSyncTimer = null;
+var dashboardRefreshTimer = null;
 
 // ══════════════════════════════════════════════════════
 // INIT
@@ -1045,6 +1129,12 @@ window.onload = function() {
     .withSuccessHandler(function(){})
     .withFailureHandler(function(e){console.warn('initSheets:',e);})
     .initializeSheets();
+  clearInterval(dashboardRefreshTimer);
+  dashboardRefreshTimer = setInterval(function(){
+    if (document.getElementById('viewDashboard').style.display !== 'none') {
+      loadDashboardData();
+    }
+  }, 60000);
 };
 
 // ══════════════════════════════════════════════════════
@@ -1062,12 +1152,15 @@ function showDecomisos() {
   hideAlert('decAlert');
   syncFechaGlobalAModulos();
   loadResumenDecomisos();
+  cargarVistaEnCava();
+  cargarVistaDecomisosSirt();
 }
 function showDespachos() {
   _hideAll(); document.getElementById('viewDespachos').classList.add('active');
   hideAlert('despAlert');
   syncFechaGlobalAModulos();
   cargarDespachosGuardados();
+  cargarVistaSalidasCava();
 }
 function showInforme() {
   _hideAll(); document.getElementById('viewInforme').classList.add('active');
@@ -1119,7 +1212,7 @@ function syncFechaGlobalAModulos() {
       ? 'Vista <strong>sesión</strong>: se muestran datos ya guardados en el servidor. Active «SIRT día» para cargar y alinear con la fecha del encabezado.'
       : 'Fecha SIRT: <strong>' +
         txt +
-        '</strong> (encabezado). Con «SIRT día» la app <strong>sincroniza sola</strong> al cambiar la fecha; también puede usar «Procesar desde SIRT» en cada módulo.';
+        '</strong> (encabezado). Decomisos: el programa consulta automáticamente los últimos <strong>7 días</strong> hasta esa fecha. En cava y salidas: ese día (o lookback 30 días si no hay filas).';
   if (hDec) hDec.innerHTML = msg;
   if (hDes) hDes.innerHTML = msg;
   var inf = document.getElementById('infFecha');
@@ -1170,6 +1263,11 @@ function onDashboardFechaChange() {
   syncFechaGlobalAModulos();
   actualizarEtiquetaFechaDashboard();
   programarSincronizacionAutomaticaSirt();
+  if (document.getElementById('viewDecomisos').classList.contains('active')) {
+    cargarVistaEnCava();
+    cargarVistaDecomisosSirt();
+  }
+  if (document.getElementById('viewDespachos').classList.contains('active')) cargarVistaSalidasCava();
 }
 function setDashboardVistaSirt() {
   state.dashboardVista = 'sirt';
@@ -1233,17 +1331,6 @@ function ejecutarSincronizacionAutomaticaSirt(opts) {
     })
     .sincronizarSesionDesdeSirtPorFecha(filtro);
 }
-/** Muestra en un bloque pre el objeto tal cual devuelve el RPC (cotejar con el backend). */
-function pintarJsonBackend(elId, obj, headerComment) {
-  var pre = document.getElementById(elId);
-  if (!pre) return;
-  try {
-    var body = JSON.stringify(obj === undefined ? null : obj, null, 2);
-    pre.textContent = headerComment ? headerComment + '\n' + body : body;
-  } catch (err) {
-    pre.textContent = String(obj);
-  }
-}
 function loadDashboardData() {
   var chain = google.script.run
     .withSuccessHandler(updateDashboard)
@@ -1251,11 +1338,6 @@ function loadDashboardData() {
       console.error('Dashboard:', e);
       var msg =
         e && e.message ? String(e.message) : 'No se pudo contactar el servidor (POST /api/rpc).';
-      pintarJsonBackend(
-        'dashBackendJson',
-        { _errorCliente: true, message: msg },
-        '// Fallo al llamar getDashboardData (sin JSON del servidor o error de red).'
-      );
       var meta = document.getElementById('progresoMeta');
       if (meta) {
         meta.textContent =
@@ -1274,7 +1356,6 @@ function loadDashboardData() {
 }
 function updateDashboard(data) {
   try {
-    pintarJsonBackend('dashBackendJson', data, null);
     var metaSirt = document.getElementById('dashboardSirtMeta');
     if (metaSirt) metaSirt.textContent = '';
     if (!data || !data.success) {
@@ -1304,8 +1385,24 @@ function updateDashboard(data) {
       pendientes === 0 &&
       (data.ultimaActDespachos || '').trim() !== '';
 
-    setText('dashSalidas', salidas || '—');
-    setText('dashDecomisos', data.totalDecomisos || '—');
+    var filasCava = Number(data.filasEnCava != null ? data.filasEnCava : data.filasEstadoCavas || 0);
+    var decoVinc = Number(data.totalDecomisosVinculadosCava != null ? data.totalDecomisosVinculadosCava : data.totalDecomisos || 0);
+    var decoRango = Number(data.totalDecomisosEnRango != null ? data.totalDecomisosEnRango : 0);
+    if (salidas > 0) {
+      setText('dashSalidas', salidas);
+    } else if (filasCava > 0) {
+      setText('dashSalidas', '0 juegos');
+    } else {
+      setText('dashSalidas', '—');
+    }
+    if (data.consultaSIRT && decoRango > 0) {
+      setText(
+        'dashDecomisos',
+        decoVinc > 0 ? decoVinc + ' vinc.' : decoRango + ' en período'
+      );
+    } else {
+      setText('dashDecomisos', decoVinc || '—');
+    }
     setText(
       'dashCrudas',
       data.totalCrudas != null && data.totalCrudas !== undefined ? data.totalCrudas : '—'
@@ -1363,20 +1460,27 @@ function updateDashboard(data) {
       var avisoVinc =
         vDash &&
         vDash.filasEnRango > 0 &&
-        vDash.conCodigoMaquina === 0 &&
-        vDash.conIdRegistroSesion === 0
+        vDash.conIdProducto === 0
           ? ' Decomisos: en BD hay ' +
             vDash.filasEnRango +
-            ' filas en el rango ampliado pero ninguna con codigo_maquina ni id_registro_sesion; el cruce con Estado_Cavas no puede usar IDs de trazabilidad hasta que SIRT los persista.'
+            ' filas en el rango ampliado pero ninguna con id_producto; el cruce con Estado_Cavas no puede marcar productos decomisados.'
           : '';
+      var rangoDec =
+        vDash && vDash.desde && vDash.hasta
+          ? ' Decomisos SAI: ' + vDash.desde + ' → ' + vDash.hasta + ' (auto ' + (vDash.lookbackDias || 7) + ' d).'
+          : ' Decomisos: ventana automática de 7 días hasta la fecha del encabezado.';
       metaSirt.textContent =
-        'Filas leídas: Estado_Cavas ' +
+        'En cava (snapshot día): ' +
         (data.filasEstadoCavas != null ? data.filasEstadoCavas : '—') +
-        ', Reporte_Decomisos ' +
-        (data.filasReporteDecomisos != null ? data.filasReporteDecomisos : '—') +
-        ', Despachos_Cavas ' +
+        ' subproductos · ' +
+        salidas +
+        ' juegos viscerales · Decomisos vinculados a cava: ' +
+        decoVinc +
+        (decoRango > 0 ? ' de ' + decoRango + ' en período SAI' : '') +
+        ' · Despachos_Cavas ' +
         (data.filasDespachosCavas != null ? data.filasDespachosCavas : '—') +
         '.' +
+        rangoDec +
         avisoVinc;
     } else if (metaSirt) {
       metaSirt.textContent =
@@ -1410,6 +1514,269 @@ function updateDashboard(data) {
 }
 
 // ══════════════════════════════════════════════════════
+// VISTAS SIRT — En cava (consulta 2) y Salidas (consulta 1)
+// ══════════════════════════════════════════════════════
+var SIRT_PREVIEW_MAX = 250;
+
+function renderTablaEnCavaSirt(filas, totalFilas) {
+  var tbody = document.getElementById('tablaEnCavaSirt');
+  if (!tbody) return;
+  if (!filas || !filas.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Sin registros en cava para el rango consultado.</td></tr>';
+    return;
+  }
+  var slice = filas.slice(0, SIRT_PREVIEW_MAX);
+  var html = slice
+    .map(function (f) {
+      return (
+        '<tr><td>' +
+        escapeHtml(f.ingresoCava || '') +
+        '</td><td>' +
+        escapeHtml(f.codigo || '') +
+        '</td><td>' +
+        escapeHtml(f.descripcion || '') +
+        '</td><td>' +
+        escapeHtml(f.propietario || '') +
+        '</td><td>' +
+        escapeHtml(f.destino || '') +
+        '</td><td>' +
+        escapeHtml(f.riel || '') +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  if (totalFilas > slice.length) {
+    html +=
+      '<tr><td colspan="6" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      slice.length +
+      ' de ' +
+      totalFilas +
+      ' filas.</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function renderTablaSalidasCavaSirt(filas, totalFilas) {
+  var tbody = document.getElementById('tablaSalidasCavaSirt');
+  if (!tbody) return;
+  if (!filas || !filas.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Sin salidas de cava para el rango consultado.</td></tr>';
+    return;
+  }
+  var slice = filas.slice(0, SIRT_PREVIEW_MAX);
+  var html = slice
+    .map(function (f) {
+      return (
+        '<tr><td>' +
+        escapeHtml(f.fechaSalida || '') +
+        '</td><td>' +
+        escapeHtml(f.fechaIngreso || '') +
+        '</td><td>' +
+        escapeHtml(f.codigo || '') +
+        '</td><td>' +
+        escapeHtml(f.descripcion || '') +
+        '</td><td>' +
+        escapeHtml(f.propietario || '') +
+        '</td><td>' +
+        escapeHtml(f.destino || '') +
+        '</td><td>' +
+        escapeHtml(f.codigoNuevaSucursal || '') +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  if (totalFilas > slice.length) {
+    html +=
+      '<tr><td colspan="7" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      slice.length +
+      ' de ' +
+      totalFilas +
+      ' filas.</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function renderTablaDecomisosSirt(filas, totalFilas) {
+  var tbody = document.getElementById('tablaDecomisosSirt');
+  if (!tbody) return;
+  if (!filas || !filas.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Sin decomisos en el rango automático (7 días).</td></tr>';
+    return;
+  }
+  var slice = filas.slice(0, SIRT_PREVIEW_MAX);
+  var html = slice
+    .map(function (f) {
+      return (
+        '<tr><td>' +
+        escapeHtml((f.fecha || '') + (f.hora ? ' ' + f.hora : '')) +
+        '</td><td>' +
+        escapeHtml(f.codigo || '') +
+        '</td><td>' +
+        escapeHtml(f.producto || '') +
+        '</td><td>' +
+        escapeHtml(f.puesto || '') +
+        '</td><td>' +
+        escapeHtml(f.causa || '') +
+        '</td><td>' +
+        escapeHtml(f.responsable || '') +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  if (totalFilas > slice.length) {
+    html +=
+      '<tr><td colspan="6" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      slice.length +
+      ' de ' +
+      totalFilas +
+      ' filas.</td></tr>';
+  }
+  tbody.innerHTML = html;
+}
+
+function cargarVistaDecomisosSirt() {
+  var meta = document.getElementById('decomisosSirtPreviewMeta');
+  if (meta) meta.textContent = 'Consultando SIRT (SAI)…';
+  showSpinner('Consultando decomisos…', { light: true });
+  google.script.run
+    .withSuccessHandler(function (res) {
+      hideSpinner({ light: true });
+      if (!res || !res.success) {
+        if (meta) meta.textContent = res && res.message ? res.message : 'Error al consultar';
+        renderTablaDecomisosSirt([], 0);
+        return;
+      }
+      window._uxPreviewCache.decomisos = res.filas || [];
+      if (meta) {
+        meta.textContent =
+          (res.desde || '?') +
+          ' → ' +
+          (res.hasta || '?') +
+          ' (auto ' +
+          (res.lookbackDias || 7) +
+          ' días) · ' +
+          (res.totalFilas || 0) +
+          ' filas';
+      }
+      renderTablaDecomisosSirt(res.filas || [], res.totalFilas || 0);
+      var q = document.getElementById('searchDecomisosSirt');
+      if (q && q.value) uxBuscarDecomisosSirt(q.value);
+    })
+    .withFailureHandler(function (e) {
+      hideSpinner({ light: true });
+      var msg = e && e.message ? e.message : String(e);
+      if (meta) meta.textContent = 'Error';
+      renderTablaDecomisosSirt([], 0);
+      showAlert('decAlert', 'error', msg, { persistent: true, technical: msg });
+    })
+    .consultarDecomisosDesdeSIRT(leerFechaGlobal());
+}
+
+function cargarVistaEnCava() {
+  var meta = document.getElementById('enCavaPreviewMeta');
+  if (meta) meta.textContent = 'Consultando SIRT…';
+  showSpinner('Consultando en cava…', { light: true });
+  google.script.run
+    .withSuccessHandler(function (res) {
+      hideSpinner({ light: true });
+      if (!res || !res.success) {
+        if (meta) meta.textContent = res && res.message ? res.message : 'Error al consultar';
+        renderTablaEnCavaSirt([], 0);
+        return;
+      }
+      window._uxPreviewCache.enCava = res.filas || [];
+      var modo =
+        res.modo === 'rango' && res.desde
+          ? 'Día ' + res.desde + (res.hasta !== res.desde ? ' → ' + res.hasta : '')
+          : 'Lookback ' + (res.lookbackDias || 30) + ' días';
+      if (meta) {
+        meta.textContent =
+          modo + ' · ' + res.totalFilas + ' filas · ' + (res.totalJuegos || 0) + ' juegos viscerales';
+      }
+      renderTablaEnCavaSirt(res.filas || [], res.totalFilas || 0);
+      var q = document.getElementById('searchEnCava');
+      if (q && q.value) uxBuscarEnCava(q.value);
+    })
+    .withFailureHandler(function (e) {
+      hideSpinner({ light: true });
+      var msg = e && e.message ? e.message : String(e);
+      if (meta) meta.textContent = 'Error';
+      renderTablaEnCavaSirt([], 0);
+      showAlert('decAlert', 'error', msg, { persistent: true, technical: msg });
+    })
+    .consultarEnCavaDesdeSIRT(leerFechaGlobal());
+}
+
+function cargarVistaSalidasCava() {
+  var meta = document.getElementById('salidasCavaPreviewMeta');
+  if (meta) meta.textContent = 'Consultando SIRT…';
+  showSpinner('Consultando salidas…', { light: true });
+  google.script.run
+    .withSuccessHandler(function (res) {
+      hideSpinner({ light: true });
+      if (!res || !res.success) {
+        if (meta) meta.textContent = res && res.message ? res.message : 'Error al consultar';
+        renderTablaSalidasCavaSirt([], 0);
+        return;
+      }
+      window._uxPreviewCache.salidas = res.filas || [];
+      var modo =
+        res.modo === 'rango' && res.desde
+          ? 'Día ' + res.desde + (res.hasta !== res.desde ? ' → ' + res.hasta : '')
+          : 'Lookback ' + (res.lookbackDias || 30) + ' días';
+      if (meta) {
+        meta.textContent =
+          modo + ' · ' + res.totalFilas + ' filas' + (res.turno ? ' · turno ' + res.turno : '');
+      }
+      renderTablaSalidasCavaSirt(res.filas || [], res.totalFilas || 0);
+      var q = document.getElementById('searchSalidasCava');
+      if (q && q.value) uxBuscarSalidasCava(q.value);
+    })
+    .withFailureHandler(function (e) {
+      hideSpinner({ light: true });
+      var msg = e && e.message ? e.message : String(e);
+      if (meta) meta.textContent = 'Error';
+      renderTablaSalidasCavaSirt([], 0);
+      showAlert('despAlert', 'error', msg, { persistent: true, technical: msg });
+    })
+    .consultarSalidasCavaDesdeSIRT(leerFechaGlobal());
+}
+
+function uxBuscarDecomisosSirt(q) {
+  var n = uxFilterTable('tablaDecomisosSirt', q, [0, 1, 2, 3, 4, 5]);
+  var m = document.getElementById('decomisosSirtPreviewMeta');
+  if (m && q) m.textContent = (m.textContent.split(' · ')[0] || m.textContent) + ' · ' + n + ' visibles';
+}
+function uxBuscarEnCava(q) {
+  uxFilterTable('tablaEnCavaSirt', q, [0, 1, 2, 3, 4, 5]);
+}
+function uxBuscarSalidasCava(q) {
+  uxFilterTable('tablaSalidasCavaSirt', q, [0, 1, 2, 3, 4, 5, 6]);
+}
+function uxExportDecomisosSirt() {
+  var rows = (window._uxPreviewCache.decomisos || []).map(function (f) {
+    return [f.fecha + ' ' + (f.hora || ''), f.codigo, f.producto, f.puesto, f.causa, f.responsable];
+  });
+  exportRowsToCsv('decomisos_sirt.csv', ['Fecha', 'Codigo', 'Subproducto', 'Puesto', 'Causa', 'Responsable'], rows);
+}
+function uxExportEnCava() {
+  var rows = (window._uxPreviewCache.enCava || []).map(function (f) {
+    return [f.ingresoCava, f.codigo, f.descripcion, f.propietario, f.destino, f.riel];
+  });
+  exportRowsToCsv('en_cava.csv', ['Ingreso', 'Codigo', 'Subproducto', 'Propietario', 'Destino', 'Riel'], rows);
+}
+function uxExportSalidasCava() {
+  var rows = (window._uxPreviewCache.salidas || []).map(function (f) {
+    return [f.fechaSalida, f.fechaIngreso, f.codigo, f.descripcion, f.propietario, f.destino, f.codigoNuevaSucursal];
+  });
+  exportRowsToCsv(
+    'salidas_cava.csv',
+    ['Salida', 'Ingreso', 'Codigo', 'Subproducto', 'Propietario', 'Destino', 'CodSucursal'],
+    rows
+  );
+}
+
+// ══════════════════════════════════════════════════════
 // DECOMISOS
 // ══════════════════════════════════════════════════════
 function onFileSelected(num) {
@@ -1432,7 +1799,6 @@ function procesarDecomisos() {
   showSpinner('Sincronizando desde base de datos SIRT y cruzando decomisos...');
   google.script.run.withSuccessHandler(function(res){
     hideSpinner();
-    pintarJsonBackend('decBackendJson', res, null);
     if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}
     var ses = state.dashboardVista === 'sesion';
     var baseOk = '✓ ' + res.totalProductos + ' productos en ' + res.totalDestinos + ' destinos · Fecha: <strong>' + fechaTxt + '</strong>';
@@ -1445,11 +1811,10 @@ function procesarDecomisos() {
       var bloqueVincBd =
         vDec &&
         vDec.filasEnRango > 0 &&
-        vDec.conCodigoMaquina === 0 &&
-        vDec.conIdRegistroSesion === 0
-          ? '<br><br><strong>Datos en PostgreSQL:</strong> En el rango consultado de <code>sai.decomiso</code> hay <strong>' +
+        vDec.conIdProducto === 0
+          ? '<br><br><strong>Datos en SIRT (SAI):</strong> En el rango automático de decomisos hay <strong>' +
             escapeHtml(String(vDec.filasEnRango)) +
-            '</strong> filas, pero <strong>ninguna</strong> trae <code>codigo_maquina</code> ni <code>id_registro_sesion</code>. La columna ID del reporte usa entonces el id interno (<code>d.id</code>), que no coincide con <code>id_producto</code> de Estado_Cavas. Corrija captura o ETL en SIRT para que esos campos se guarden como en el Excel de planta.'
+            '</strong> filas, pero <strong>ninguna</strong> trae código de animal reconocible para cruzar con Estado_Cavas.'
           : '';
       var diag =
         res.muestraIdsEstado && res.muestraIdsEstado.length
@@ -1467,19 +1832,24 @@ function procesarDecomisos() {
       showAlert(
         'decAlert',
         'warn',
-        '0 decomisos por cruce: hay datos en SIRT para ese día pero <strong>ningún ID producto</strong> de Estado_Cavas coincide con Reporte_Decomisos (columna ID).' +
+        '0 decomisos por cruce: hay productos en cava para esa fecha, pero ningún código coincide con el reporte de decomisos del período consultado.' +
           filasInf +
           (ses
-            ? ' <br><br>Está en vista <strong>«Sesión»</strong>: los datos son la <strong>última carga guardada</strong> en el servidor (pueden mezclarse turnos o fechas). Active <strong>«SIRT día»</strong>, confirme la fecha y pulse otra vez <strong>Procesar desde SIRT</strong> para leer solo la base.'
+            ? ' <br><br>Está en vista <strong>«Sesión»</strong>: los datos son la <strong>última carga guardada</strong> en el servidor. Active <strong>«SIRT día»</strong>, confirme la fecha y pulse otra vez <strong>Cargar y procesar</strong>.'
             : '') +
-          diag
+          diag,
+        { persistent: true, rawHtml: true }
       );
     } else {
       showAlert('decAlert', 'success', baseOk + filasInf + (ses ? ' <em>(Vista Sesión — use «SIRT día» para auto-actualizar al cambiar fecha.)</em>' : ''));
     }
     renderTablaDecomisos(res.resultados);state.hayResultados=res.totalProductos>0;
-    document.getElementById('btnPDF').disabled=!state.hayResultados;loadDashboardData();
-  }).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).prepararModuloDecomisosDesdeSIRT(filtro);
+    document.getElementById('btnPDF').disabled=!state.hayResultados;loadDashboardData();cargarVistaEnCava();cargarVistaDecomisosSirt();
+  }).withFailureHandler(function(e){
+    hideSpinner();
+    var msg=e&&e.message?e.message:String(e);
+    showAlert('decAlert','error',msg,{persistent:true,technical:msg});
+  }).prepararModuloDecomisosDesdeSIRT(filtro);
 }
 function generarPDF() {
   showSpinner('Generando PDF...');
@@ -1487,13 +1857,6 @@ function generarPDF() {
 }
 function loadResumenDecomisos() {
   google.script.run.withSuccessHandler(function(res){
-    if (res) {
-      pintarJsonBackend(
-        'decBackendJson',
-        { _fuente: 'getResumenDecomisos', respuesta: res },
-        null
-      );
-    }
     if(res&&res.success&&res.resultados&&res.resultados.length>0){renderTablaDecomisos(res.resultados);state.hayResultados=true;document.getElementById('btnPDF').disabled=false;}}).withFailureHandler(function(){}).getResumenDecomisos();
 }
 function renderTablaDecomisos(resultados) {
@@ -1537,13 +1900,18 @@ function procesarDespachos() {
   google.script.run.withSuccessHandler(function(res){
     hideSpinner();
     if(!res||!res.success){showAlert('despAlert','error','Error: '+(res?res.message:''));return;}
-    showAlert('despAlert','success','✓ Fecha <strong>' + fechaTxt + '</strong> · Turno <strong>'+res.turno+'</strong> · '+res.totalPuestos+' puestos | '+res.totalJuegos+' juegos');
+    var avisoRango = res.avisoRango ? ('<br><small style="color:#92400e;">' + escapeHtml(String(res.avisoRango)) + '</small>') : '';
+    showAlert('despAlert','success','✓ Fecha <strong>' + fechaTxt + '</strong> · Turno <strong>'+res.turno+'</strong> · '+res.totalPuestos+' puestos | '+res.totalJuegos+' juegos' + avisoRango,{rawHtml:true});
     seleccionarTurno(res.turno);
     document.getElementById('statJuegos').textContent=res.totalJuegos;
     document.getElementById('statPuestos').textContent=res.totalPuestos;
-    renderTablaDespachos(res);loadDashboardData();
+    renderTablaDespachos(res);loadDashboardData();cargarVistaSalidasCava();
     cargarCrudasDespachos();
-  }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).prepararModuloDespachosDesdeSIRT(turnoSeleccionado, filtro);
+  }).withFailureHandler(function(e){
+    hideSpinner();
+    var msg=e&&e.message?e.message:String(e);
+    showAlert('despAlert','error',msg,{persistent:true,technical:msg});
+  }).prepararModuloDespachosDesdeSIRT(turnoSeleccionado, filtro);
 }
 // Variable global para códigos con cruda
 var _codigosCrudas = {};
@@ -1567,16 +1935,18 @@ function renderTablaDespachos(res) {
   limpiarBusqueda();
   var datos=res.resultado;
   if(!datos||datos.length===0){
-    document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">Sin datos para el turno '+res.turno+'.</td></tr>';
+    document.getElementById('despTbody').innerHTML='<tr><td colspan="6" class="empty-state">Sin datos para el turno '+res.turno+'.</td></tr>';
     return;
   }
   var cols=["Cabeza","Patas y Manos","Visceras Blancas","Visceras Rojas"];
+  var displayCols=["Juegos"].concat(cols);
   document.getElementById('despThead').innerHTML=
-    '<tr><th>Puesto</th>'+cols.map(function(c){return '<th class="num">'+c+'</th>';}).join('')+'</tr>';
-  var tots={Cabeza:0,"Patas y Manos":0,"Visceras Blancas":0,"Visceras Rojas":0};
+    '<tr><th>Puesto</th>'+displayCols.map(function(c){return '<th class="num">'+c+'</th>';}).join('')+'</tr>';
+  var tots={Juegos:0,Cabeza:0,"Patas y Manos":0,"Visceras Blancas":0,"Visceras Rojas":0};
   var incompletos=0;
   var html=datos.map(function(r){
     cols.forEach(function(c){tots[c]+=(r[c]||0);});
+    tots.Juegos+=(r.Juegos||0);
     var vals=cols.map(function(c){return r[c]||0;});
     var minVal=Math.min.apply(null,vals);
     var maxVal=Math.max.apply(null,vals);
@@ -1588,9 +1958,9 @@ function renderTablaDespachos(res) {
     var badge=incompleto?'<span style="font-size:0.68rem;background:#ef4444;color:white;border-radius:3px;padding:1px 5px;margin-left:5px;">incompleto</span>':'';
     return '<tr class="clickable" ondblclick="abrirDetalle(this)" data-puesto="'+pe+'" style="'+rowBg+'">'
       +'<td>'+r.puesto+badge+'</td>'
-      +cols.map(function(c){
+      +displayCols.map(function(c){
         var v=r[c]||0;
-        var cellStyle=(incompleto&&v<maxVal)?'color:#dc2626;font-weight:700;':'';
+        var cellStyle=(c!=='Juegos'&&incompleto&&v<maxVal)?'color:#dc2626;font-weight:700;':'';
         // Círculo amarillo si VB y el puesto tiene cruda
         var esCruda = (c==='Visceras Blancas') && _codigosCrudas[pe_raw];
         var cellClass = esCruda ? 'num cruda-cell' : 'num';
@@ -1600,7 +1970,7 @@ function renderTablaDespachos(res) {
       +'</tr>';
   }).join('');
   // Aviso eliminado — el resaltado rojo ya indica incompletos visualmente
-  html+='<tr class="total-row"><td><strong>TOTAL</strong></td>'+cols.map(function(c){return '<td class="num"><strong>'+tots[c]+'</strong></td>';}).join('')+'</tr>';
+  html+='<tr class="total-row"><td><strong>TOTAL</strong></td>'+displayCols.map(function(c){return '<td class="num"><strong>'+tots[c]+'</strong></td>';}).join('')+'</tr>';
   document.getElementById('despTbody').innerHTML=html;
 }
 function abrirDetalle(elOrStr) {
@@ -1626,7 +1996,7 @@ function confirmarLimpiar() {
     document.getElementById('uploadBoxDesp').classList.remove('has-file');document.getElementById('btnProcesarDesp').disabled=false;
     document.getElementById('statJuegos').textContent='—';document.getElementById('statPuestos').textContent='—';
     document.getElementById('despThead').innerHTML='';
-    document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr>';
+    document.getElementById('despTbody').innerHTML='<tr><td colspan="6" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr>';
     inicializarSelectorTurno();hideAlert('despAlert');
     showAlert('despAlert','success','✓ Operación limpiada. Lista para el próximo turno.');loadDashboardData();
   }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).limpiarDespachos();
@@ -2613,7 +2983,7 @@ function confirmarCerrarOperacion() {
       document.getElementById('statJuegos').textContent = '—';
       document.getElementById('statPuestos').textContent = '—';
       document.getElementById('despThead').innerHTML = '';
-      document.getElementById('despTbody').innerHTML = '<tr><td colspan="5" class="empty-state">Operación cerrada. Lista para el próximo turno.</td></tr>';
+      document.getElementById('despTbody').innerHTML = '<tr><td colspan="6" class="empty-state">Operación cerrada. Lista para el próximo turno.</td></tr>';
       inicializarSelectorTurno();
       loadDashboardData();
     })
@@ -3084,6 +3454,7 @@ function mostrarResumenGeneralPlanilla() {
     .getResumenTodosOPLs();
 }
 </script>
+<script src="/gestor-ux.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
 </body>
 </html>

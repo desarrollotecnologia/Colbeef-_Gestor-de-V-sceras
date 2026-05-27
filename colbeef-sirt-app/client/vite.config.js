@@ -9,10 +9,12 @@ export default defineConfig({
   plugins: [react()],
   root: __dirname,
   server: {
-    port: 5173,
+    host: true,
+    port: Number(process.env.VITE_PORT || 5173),
+    strictPort: false,
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3001',
+        target: process.env.VITE_API_PROXY || 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },
@@ -24,6 +26,7 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         gestor: path.resolve(__dirname, 'gestor.html'),
+        gestorV2: path.resolve(__dirname, 'gestor-v2.html'),
       },
     },
   },

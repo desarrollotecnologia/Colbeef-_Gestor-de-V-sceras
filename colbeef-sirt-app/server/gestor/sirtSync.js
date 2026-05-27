@@ -1,17 +1,48 @@
-import { query } from '../db.js';
-import { mapTipoProductoNombre } from './engineUtils.js';
-import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from './sql/despachosColbeefGrouped.js';
+﻿import { query } from '../db.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
-/** Si from=to (un día), ampliar inicio del filtro de sai.decomiso (días hacia atrás). En planta los decomisos suelen quedar con fecha_registro del día hábil anterior al corte de estado. 0 = solo ese día. */
-const DECOMISO_EXTRA_DAYS_BEFORE = Math.max(
-  0,
-  Math.min(7, Number(process.env.SIRT_DECOMISO_EXTRA_DAYS_BEFORE ?? 1))
+const CAVA_LOOKBACK_DAYS = Math.max(
+  1,
+  Math.min(30, Number(process.env.SIRT_CAVA_LOOKBACK_DAYS ?? 30))
 );
-const DECOMISO_EXTRA_DAYS_AFTER = Math.max(
-  0,
-  Math.min(7, Number(process.env.SIRT_DECOMISO_EXTRA_DAYS_AFTER ?? 0))
+const SALIDAS_CAVA_LOOKBACK_DAYS = Math.max(
+  1,
+  Math.min(30, Number(process.env.SIRT_SALIDAS_CAVA_LOOKBACK_DAYS ?? 30))
 );
+/** Días hacia atrás desde la fecha de consulta (automático; el usuario no configura esto). */
+const DECOMISO_LOOKBACK_DAYS = Math.max(
+  1,
+  Math.min(30, Number(process.env.SIRT_DECOMISO_LOOKBACK_DAYS ?? 7))
+);
+
+const TIPOS_SUBPRODUCTO = `('Visceras Rojas', 'Visceras Blancas', 'Cabeza', 'Patas y Manos')`;
+
+/** Joins comunes a consultas de cava (en stock y salidas). */
+const SQL_CAVA_FROM = `
+    FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
+    JOIN trazabilidad_proceso.parte_producto pp
+      ON pp.id = ppcr.id_parte_producto
+     AND pp.id_producto::text = ppcr.id_producto::text
+    JOIN trazabilidad_proceso.tipo_parte_producto tpp
+      ON tpp.id = pp.id_tipo_parte_producto
+     AND tpp.nombre IN ${TIPOS_SUBPRODUCTO}
+    JOIN trazabilidad_proceso.producto p
+      ON p.id::text = pp.id_producto::text
+    JOIN trazabilidad_proceso.producto_empresa pe
+      ON pe.id_producto::text = p.id::text
+     AND pe.activo = true
+    JOIN organizaciones.empresa e3
+      ON e3.id = pe.id_empresa
+    LEFT JOIN trazabilidad_proceso.parte_producto_empresa ppe
+      ON ppe.id_producto::text = pp.id_producto::text
+     AND ppe.id_parte_producto = pp.id
+    LEFT JOIN trazabilidad_proceso.parte_producto_empresa_local ppel
+      ON ppel.id_parte_producto_empresa = ppe.id
+    LEFT JOIN organizaciones.sucursal s
+      ON s.id = ppel.id_local
+    LEFT JOIN trazabilidad_proceso.destino de
+      ON de.id = s.id_destino
+`;
 
 function isoAddDays(iso, delta) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -20,147 +51,330 @@ function isoAddDays(iso, delta) {
   return new Date(t).toISOString().slice(0, 10);
 }
 
-/** Para un solo día SIRT, el reporte de decomisos a menudo viene con fecha_registro desfasada (ej. 13 vs estado 14). */
-function rangoEfectivoDecomiso(from, to) {
-  if (!from || !to || from !== to) return { from, to };
-  return {
-    from: isoAddDays(from, -DECOMISO_EXTRA_DAYS_BEFORE),
-    to: isoAddDays(to, DECOMISO_EXTRA_DAYS_AFTER),
-  };
-}
-
 function normDate(v) {
   const s = String(v || '').trim();
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null;
 }
 
-/** 14 columnas B–O (índices 0..13) */
+function fmtDateCell(v) {
+  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  return String(v ?? '').trim();
+}
+
+function fmtDateTimeCell(v) {
+  if (v instanceof Date) {
+    const d = v;
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+  return String(v ?? '').trim();
+}
+
+function hoyIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Rango automático de decomisos: desde (fecha tope − N días) hasta fecha tope (inclusive).
+ * La fecha tope es la del encabezado (`date`/`from`/`to`) o hoy si no se indica.
+ */
+export function rangoDecomisosAutomatico(range = {}) {
+  const to =
+    normDate(range.to) || normDate(range.from) || normDate(range.date) || hoyIso();
+  const from = isoAddDays(to, -DECOMISO_LOOKBACK_DAYS);
+  return { from, to, lookbackDias: DECOMISO_LOOKBACK_DAYS };
+}
+
+const SQL_DECOMISO_FROM = `
+    FROM sai.inspeccion i
+    JOIN trazabilidad_proceso.parte_producto pp
+      ON pp.id = i.id_parte_producto
+     AND pp.id_producto::text = i.id_producto::text
+    JOIN trazabilidad_proceso.tipo_parte_producto tpp_puesto
+      ON tpp_puesto.id = pp.id_tipo_parte_producto
+    JOIN sai.inspeccion_decomiso id_dec
+      ON id_dec.id_inspeccion = i.id
+    JOIN sai.decomiso "dec"
+      ON "dec".id = id_dec.id_decomiso
+    LEFT JOIN trazabilidad_proceso.tipo_parte_producto tpp_sub
+      ON tpp_sub.id = "dec".id_tipo_parte_producto
+    LEFT JOIN sai.decomiso_enfermedad de_enf
+      ON de_enf.id_decomiso = "dec".id
+    LEFT JOIN sai.enfermedad enf
+      ON enf.id = de_enf.id_enfermedad
+`;
+
+function buildPuestoDespacho(r) {
+  return [r.sucursal_origen || '', r.destino || '', r.riel ? `Riel ${r.riel}` : ''].filter(Boolean).join(' / ');
+}
+
+/** Matriz 14 columnas (Estado_Cavas / productos en cava). */
+export function estadoCavaRowToDto(fila) {
+  return {
+    codigo: String(fila[0] ?? '').trim(),
+    descripcion: String(fila[1] ?? '').trim(),
+    pesoPie: String(fila[2] ?? '').trim(),
+    propietario: String(fila[3] ?? '').trim(),
+    ingresoCava: String(fila[4] ?? '').trim(),
+    sucursalOrigen: String(fila[5] ?? '').trim(),
+    destino: String(fila[8] ?? '').trim(),
+    riel: String(fila[7] ?? '').trim(),
+    observaciones: String(fila[13] ?? '').trim(),
+  };
+}
+
+/** Matriz 13 columnas (Despachos_Cavas / salidas de cava). */
+export function despachoCavaRowToDto(fila) {
+  return {
+    fechaSalida: String(fila[0] ?? '').trim(),
+    fechaIngreso: String(fila[1] ?? '').trim(),
+    codigo: String(fila[3] ?? '').trim(),
+    descripcion: String(fila[7] ?? '').trim(),
+    pesoPie: String(fila[5] ?? '').trim(),
+    propietario: String(fila[4] ?? '').trim(),
+    destino: String(fila[8] ?? '').trim(),
+    codigoNuevaSucursal: String(fila[10] ?? '').trim(),
+    puesto: String(fila[9] ?? '').trim(),
+    observaciones: String(fila[12] ?? '').trim(),
+  };
+}
+
+/**
+ * Consulta 2 — Subproductos en cava (sin fecha_salida).
+ * Equivalente a Estado_Cavas del gestor.
+ */
 export async function fetchEstadoCavasRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
+  const asOf = to || from;
   const sql = `
     SELECT
-      pp.id_producto::text AS c0,
-      t.nombre::text AS c1,
-      COALESCE(NULLIF(TRIM(pp.identificacion), ''), 'SIN PROPIETARIO')::text AS c3,
-      to_char(pp.fecha_registro, 'DD/MM/YYYY HH24:MI')::text AS c4,
-      COALESCE(pp.con_destino, '')::text AS c8,
-      t.nombre::text AS c6_tipo,
-      COALESCE(pp.observaciones, '')::text AS c13
-    FROM trazabilidad_proceso.parte_producto pp
-    JOIN trazabilidad_proceso.tipo_parte_producto t ON t.id = pp.id_tipo_parte_producto
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), ppcr.id_producto::text, pp.id_producto::text) AS codigo,
+      tpp.nombre::text AS descripcion,
+      COALESCE(p.peso_animal_pie::text, '') AS peso_pie,
+      COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
+      ppcr.fecha_ingreso AS fecha_ingreso,
+      COALESCE(s.nombre, '')::text AS sucursal_origen,
+      COALESCE(de.nombre, '')::text AS destino,
+      COALESCE(ppcr.id_riel::text, '') AS riel,
+      COALESCE(pp.observaciones, '')::text AS observaciones
+    ${SQL_CAVA_FROM}
     WHERE (
-      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
-      OR pp.fecha_registro >= (CURRENT_DATE - $1::int)
-    )
-      AND ($2::date IS NULL OR pp.fecha_registro::date >= $2::date)
-      AND ($3::date IS NULL OR pp.fecha_registro::date <= $3::date)
-      AND (
-        t.nombre ILIKE '%visc%'
-        OR t.nombre ILIKE '%cabeza%'
-        OR t.nombre ILIKE '%pata%'
-        OR t.nombre ILIKE '%mano%'
+      (
+        $4::date IS NOT NULL
+        AND ppcr.fecha_ingreso::date <= $4::date
+        AND ppcr.fecha_ingreso::date >= ($4::date - $1::int)
+        AND (ppcr.fecha_salida IS NULL OR ppcr.fecha_salida::date > $4::date)
       )
-    ORDER BY pp.fecha_registro DESC
+      OR (
+        $4::date IS NULL
+        AND ppcr.fecha_salida IS NULL
+        AND ppcr.fecha_ingreso >= (CURRENT_DATE - $1::int)
+        AND ($2::date IS NULL OR ppcr.fecha_ingreso::date >= $2::date)
+        AND ($3::date IS NULL OR ppcr.fecha_ingreso::date <= $3::date)
+      )
+    )
+    ORDER BY ppcr.fecha_ingreso DESC
     LIMIT 40000
   `;
-  const { rows } = await query(sql, [SYNC_DAYS, from, to]);
+  const { rows } = await query(sql, [CAVA_LOOKBACK_DAYS, from, to, asOf]);
   return rows.map((r) => {
     const out = new Array(14).fill('');
-    out[0] = r.c0;
-    out[1] = r.c1;
-    out[3] = r.c3;
-    out[4] = r.c4;
-    out[6] = r.c6_tipo;
-    out[8] = r.c8;
-    out[13] = r.c13;
+    out[0] = r.codigo;
+    out[1] = r.descripcion;
+    out[2] = r.peso_pie;
+    out[3] = r.propietario;
+    out[4] = fmtDateTimeCell(r.fecha_ingreso);
+    out[5] = r.sucursal_origen;
+    out[6] = r.descripcion;
+    out[7] = r.riel;
+    out[8] = r.destino;
+    out[13] = r.observaciones;
     return out;
   });
 }
 
-const DECOMISO_WHERE = `
-    WHERE (
-      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
-      OR d.fecha_registro >= (CURRENT_DATE - $1::int)
-    )
-      AND ($2::date IS NULL OR d.fecha_registro::date >= $2::date)
-      AND ($3::date IS NULL OR d.fecha_registro::date <= $3::date)
-`;
+/** DTO detallado para UI (consulta SAI.decomiso). */
+export function decomisoDetalleToDto(r) {
+  const fecha =
+    r.fecha_registro instanceof Date
+      ? r.fecha_registro.toISOString().slice(0, 10)
+      : fmtDateCell(r.fecha_registro);
+  return {
+    codigo: String(r.codigo ?? '').trim(),
+    puesto: String(r.puesto ?? '').trim(),
+    producto: String(r.subproducto ?? '').trim(),
+    peso: String(r.peso ?? '').trim(),
+    fecha,
+    hora: String(r.hora_registro ?? '').trim(),
+    responsable: String(r.responsable ?? '').trim(),
+    causa: String(r.causa ?? '').trim(),
+    observaciones: String(r.observacion ?? '').trim(),
+  };
+}
+
+/** Matriz Reporte_Decomisos (6 cols) para cruce con Estado_Cavas. */
+function mapDecomisoRowToReporteMatrix(r) {
+  const fecha =
+    r.fecha_registro instanceof Date
+      ? r.fecha_registro.toISOString().slice(0, 10)
+      : fmtDateCell(r.fecha_registro);
+  const codigo = String(r.codigo ?? '').trim();
+  return [
+    codigo,
+    fecha,
+    String(r.subproducto ?? '').trim() || 'Subproducto',
+    '1',
+    String(r.causa ?? '').trim() || 'Por especificar',
+    String(r.responsable ?? '').trim(),
+    String(r.puesto ?? '').trim(),
+    String(r.hora_registro ?? '').trim(),
+    String(r.peso ?? '').trim(),
+    String(r.observacion ?? '').trim(),
+  ];
+}
 
 /**
- * Filas del reporte (como hoja Excel) + conteos de vínculo a trazabilidad en el mismo rango de fechas.
- * Si codigo_maquina e id_registro_sesion vienen vacíos en BD, la columna ID cae en d.id y el cruce con parte_producto da 0 aunque haya filas.
+ * Reporte_Decomisos desde SAI (inspección + decomiso + enfermedad).
+ * Ventana automática: últimos N días hasta la fecha de consulta (por defecto 7).
  */
 export async function fetchReporteDecomisosRows(range = {}) {
-  const fromRaw = normDate(range.from);
-  const toRaw = normDate(range.to);
-  const { from, to } = rangoEfectivoDecomiso(fromRaw, toRaw);
-  const params = [SYNC_DAYS, from, to];
+  const { from, to, lookbackDias } = rangoDecomisosAutomatico(range);
+  const params = [from, to];
   const sqlRows = `
     SELECT
-      COALESCE(NULLIF(TRIM(d.codigo_maquina), ''), d.id::text) AS id,
-      d.fecha_registro AS fr,
-      t.nombre AS producto,
-      d.peso::text AS cantidad,
-      COALESCE(d.observacion, '') AS motivo,
-      ''::text AS responsable
-    FROM sai.decomiso d
-    JOIN trazabilidad_proceso.tipo_parte_producto t ON t.id = d.id_tipo_parte_producto
-    ${DECOMISO_WHERE}
-    ORDER BY d.fecha_registro DESC
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), pp.id_producto::text) AS codigo,
+      tpp_puesto.nombre::text AS puesto,
+      COALESCE(tpp_sub.nombre, 'Subproducto')::text AS subproducto,
+      COALESCE("dec".peso::text, '') AS peso,
+      "dec".fecha_registro AS fecha_registro,
+      to_char("dec".hora_registro, 'HH24:MI') AS hora_registro,
+      COALESCE(NULLIF(TRIM("dec".user_name), ''), '') AS responsable,
+      COALESCE(enf.nombre, 'Por especificar')::text AS causa,
+      COALESCE("dec".observacion, '')::text AS observacion
+    ${SQL_DECOMISO_FROM}
+    WHERE "dec".fecha_registro::date BETWEEN $1::date AND $2::date
+    ORDER BY "dec".fecha_registro DESC, "dec".hora_registro DESC
     LIMIT 50000
   `;
   const sqlStats = `
     SELECT
       COUNT(*)::int AS filas_en_rango,
-      COUNT(NULLIF(TRIM(d.codigo_maquina), ''))::int AS con_codigo_maquina,
-      COUNT(d.id_registro_sesion)::int AS con_id_registro_sesion
-    FROM sai.decomiso d
-    ${DECOMISO_WHERE}
+      COUNT(DISTINCT COALESCE(NULLIF(TRIM(pp.identificacion), ''), pp.id_producto::text))::int AS con_codigo
+    ${SQL_DECOMISO_FROM}
+    WHERE "dec".fecha_registro::date BETWEEN $1::date AND $2::date
   `;
   const [main, stats] = await Promise.all([query(sqlRows, params), query(sqlStats, params)]);
   const st = stats.rows[0] || {};
-  const vinculo = {
-    filasEnRango: Number(st.filas_en_rango || 0),
-    conCodigoMaquina: Number(st.con_codigo_maquina || 0),
-    conIdRegistroSesion: Number(st.con_id_registro_sesion || 0),
+  const detalle = main.rows.map(decomisoDetalleToDto);
+  const rows = main.rows.map(mapDecomisoRowToReporteMatrix);
+  return {
+    rows,
+    detalle,
+    vinculo: {
+      fuente: 'sai.decomiso',
+      desde: from,
+      hasta: to,
+      lookbackDias,
+      filasEnRango: Number(st.filas_en_rango || 0),
+      conIdProducto: Number(st.con_codigo || 0),
+      conTipoProducto: detalle.length,
+      conCodigoMaquina: Number(st.con_codigo || 0),
+      conIdRegistroSesion: detalle.length,
+    },
   };
-  const rows = main.rows.map((r) => [
-    r.id,
-    r.fr instanceof Date ? r.fr.toISOString().slice(0, 10) : String(r.fr ?? ''),
-    r.producto,
-    r.cantidad,
-    r.motivo,
-    r.responsable,
-  ]);
-  return { rows, vinculo };
 }
 
+/** Vista previa de decomisos SIRT para el frontend. */
+export async function consultarDecomisosDesdeSirt(range = {}) {
+  const pack = await fetchReporteDecomisosRows(range);
+  return {
+    success: true,
+    desde: pack.vinculo.desde,
+    hasta: pack.vinculo.hasta,
+    lookbackDias: pack.vinculo.lookbackDias,
+    totalFilas: pack.detalle.length,
+    filas: pack.detalle,
+    vinculo: pack.vinculo,
+  };
+}
+
+/**
+ * Consulta 1 — Salidas de cava (con fecha_salida).
+ * Equivalente a Despachos_Cavas del gestor.
+ */
 export async function fetchDespachosCavasRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
-  const days = Math.min(SYNC_DAYS, 60);
   const sql = `
     SELECT
-      v.lote_interno::text AS id,
-      v.propietario::text AS prop,
-      v.categoria::text AS cat,
-      v.descripcion_productos::text AS descr,
-      v.orden_despacho::text AS orden,
-      v.placa_vehiculo::text AS placa
-    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
-    ORDER BY v.fecha_despacho_planta DESC
+      ppcr.fecha_salida AS fecha_salida,
+      ppcr.fecha_ingreso AS fecha_ingreso,
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), ppcr.id_producto::text, pp.id_producto::text) AS codigo,
+      tpp.nombre::text AS descripcion,
+      COALESCE(p.peso_animal_pie::text, '') AS peso_pie,
+      COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
+      COALESCE(s.nombre, '')::text AS sucursal_origen,
+      COALESCE(de.nombre, '')::text AS destino,
+      split_part(COALESCE(de.nombre, ''), '/', 1) AS codigo_nueva_sucursal,
+      COALESCE(ppcr.id_riel::text, '') AS riel,
+      COALESCE(pp.observaciones, '')::text AS observaciones
+    ${SQL_CAVA_FROM}
+    WHERE (
+      ($2::date IS NOT NULL OR $3::date IS NOT NULL)
+      OR ppcr.fecha_salida >= (CURRENT_DATE - $1::int)
+    )
+      AND ppcr.fecha_salida IS NOT NULL
+      AND ($2::date IS NULL OR ppcr.fecha_salida::date >= $2::date)
+      AND ($3::date IS NULL OR ppcr.fecha_salida::date <= $3::date)
+    ORDER BY ppcr.fecha_salida DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [days, from, to]);
+  const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
   return rows.map((r) => {
-    const tipo = mapTipoProductoNombre(r.cat || r.descr || '');
-    const puesto = [r.orden || '', r.placa || '', r.descr || ''].filter(Boolean).join(' / ');
     const row = new Array(13).fill('');
-    row[3] = r.id || '';
-    row[4] = r.prop || '';
-    row[7] = tipo;
-    row[9] = puesto;
+    row[0] = fmtDateCell(r.fecha_salida);
+    row[1] = fmtDateCell(r.fecha_ingreso);
+    row[3] = r.codigo || '';
+    row[4] = r.propietario || '';
+    row[5] = r.peso_pie || '';
+    row[7] = r.descripcion || '';
+    row[8] = r.destino || '';
+    row[9] = buildPuestoDespacho(r);
+    row[10] = String(r.codigo_nueva_sucursal || '').trim();
+    row[12] = r.observaciones || '';
     return row;
   });
+}
+
+/** Payload listo para API/RPC — productos en cava. */
+export async function consultarEnCavaDesdeSirt(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
+  const filas = await fetchEstadoCavasRows(range);
+  return {
+    success: true,
+    modo: from && to ? 'rango' : 'lookback',
+    desde: from,
+    hasta: to,
+    lookbackDias: from && to ? null : CAVA_LOOKBACK_DAYS,
+    totalFilas: filas.length,
+    filas: filas.map(estadoCavaRowToDto),
+  };
+}
+
+/** Payload listo para API/RPC — salidas de cava. */
+export async function consultarSalidasCavaDesdeSirt(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
+  const filas = await fetchDespachosCavasRows(range);
+  return {
+    success: true,
+    modo: from && to ? 'rango' : 'lookback',
+    desde: from,
+    hasta: to,
+    lookbackDias: from && to ? null : SALIDAS_CAVA_LOOKBACK_DAYS,
+    totalFilas: filas.length,
+    filas: filas.map(despachoCavaRowToDto),
+  };
 }

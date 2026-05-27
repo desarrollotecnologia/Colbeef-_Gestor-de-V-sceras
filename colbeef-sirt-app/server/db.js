@@ -7,6 +7,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const readOnly = String(process.env.POSTGRES_READ_ONLY || 'true').toLowerCase() === 'true';
+const useSsl = String(process.env.POSTGRES_SSL || 'false').toLowerCase() === 'true';
 
 export const pool = new pg.Pool({
   host: process.env.POSTGRES_HOST,
@@ -17,6 +18,7 @@ export const pool = new pg.Pool({
   max: 8,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 15_000,
+  ssl: useSsl ? { rejectUnauthorized: false } : undefined,
 });
 
 /**
