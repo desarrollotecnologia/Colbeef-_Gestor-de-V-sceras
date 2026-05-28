@@ -241,7 +241,8 @@ app.get('/api/despachos/detalle/:puesto', async (req, res) => {
     const despachos = await gestor.consultarSalidasCavaDesdeSIRT(range);
     if (!despachos.success) return res.status(500).json({ success: false, message: 'No se pudo consultar despachos.' });
     const filas = getDetallePuesto(despachos.filas || [], puesto, turno || undefined);
-    res.json({ success: true, puesto, filas });
+    const turnoUsado = turno || despachos.turno || '';
+    res.json({ success: true, puesto, turno: turnoUsado, filas });
   } catch (e) {
     apiError(res, e);
   }

@@ -694,16 +694,26 @@ export async function getResumenDespachoActual() {
 
 export async function getDetallesPuesto(puesto) {
   const s = await loadState();
+  const turno = String(s.resumenDespachos?.turno || '').trim();
   const filas = [];
   s.despachosCavas.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const prop = String(fila[4] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
     const pFila = String(fila[9] ?? '').trim();
-    if (pFila === puesto && id) filas.push({ id, propietario: prop, tipo });
+    if (pFila === puesto && id) filas.push({ id, codigoBase: codigoBase(id), propietario: prop, tipo });
   });
-  filas.sort((a, b) => a.tipo.localeCompare(b.tipo));
-  return { success: true, puesto, filas };
+  filas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.id.localeCompare(b.id));
+  return { success: true, puesto, turno, filas };
+}
+
+export async function guardarFechaInicioOperacion() {
+  const s = await loadState();
+  if (!s.fechaInicioOperacion) {
+    s.fechaInicioOperacion = new Date().toISOString();
+    await saveState(s);
+  }
+  return { success: true, fechaInicioOperacion: s.fechaInicioOperacion };
 }
 
 export async function limpiarDespachos() {
@@ -755,8 +765,12 @@ export async function calcularProgresoOPL(totalJuegosParam) {
       progreso: 100,
       fecha,
     }));
+    if (turno && rd.historicoGuardadoFlag !== '1') {
+      await guardarHistoricoOPLInternal(s, ESTADO_COMPLETO);
+      rd.historicoGuardadoFlag = '1';
+    }
     await saveState(s);
-    return { success: true, turno: '', progreso: [], operacionFinalizada: true, fecha, totalJuegos: 0 };
+    return { success: true, turno: turno || '', progreso: [], operacionFinalizada: true, fecha, totalJuegos: 0 };
   }
 
   if (!turno) return { success: false, message: 'Sin turno activo.' };
@@ -1627,86 +1641,6 @@ export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual
     cancelaciones: cancelados,
     cambios,
     mensaje: `Adicionales: ${nuevas.length}. Cancelaciones: ${cancelados}. Cambios de destino: ${cambios}.`,
-  };
-}
-
-const CAVAS_DEFAULT = [
-  { grupo: 'V. Rojas & Blancas (V.Rojas)', carros: 40, capPorCarro: 20, inventario: 0 },
-  { grupo: 'V. Rojas & Blancas (V.Blancas)', carros: 22, capPorCarro: 25, inventario: 0 },
-  { grupo: 'V. Acondicionamiento', carros: 22, capPorCarro: 25, inventario: 0 },
-  { grupo: 'Patas & Manos', carros: 80, capPorCarro: 9, inventario: 0 },
-  { grupo: 'Cabezas', carros: 80, capPorCarro: 9, inventario: 0 },
-];
-
-const PERCHEROS_DEFAULT = [
-  { cava: 'V. Rojas & Blancas', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
-  { cava: 'V. Acondicionamiento', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
-  { cava: 'Patas & Cabezas', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
-  { cava: 'Recepción', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
-  { cava: 'Retenidos', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
-];
-
-export async function getInformeDatos() {
-  const s = await loadState();
-  if (s.informe) return { success: true, ...s.informe };
-  return {
-    success: true,
-    fecha: fmtDateOnly(),
-    completos: 0,
-    incompletos: 0,
-    beneficioDia: 0,
-    stockTotal: 100,
-    danados: 2,
-    novedades: [],
-    cavas: CAVAS_DEFAULT,
-    percheros: PERCHEROS_DEFAULT,
-  };
-}
-
-export async function guardarInformeDatos(json) {
-  const s = await loadState();
-  try {
-    s.informe = typeof json === 'string' ? JSON.parse(json) : json;
-    await saveState(s);
-    return { success: true };
-  } catch (e) {
-    return { success: false, message: e.message };
-  }
-}
-
-export async function limpiarInformeDatos() {
-  const s = await loadState();
-  s.informe = null;
-  await saveState(s);
-  return { success: true };
-}
-
-export async function generarInformeHTML(_json) {
-  const payload = typeof _json === 'string' ? JSON.parse(_json || '{}') : _json || {};
-  const d = await getInformeDatos();
-  if (!d.success) return d;
-  const inclInv = payload.inv !== false;
-  const inclCavas = payload.cavas !== false;
-  const inclPerch = payload.percheros !== false;
-  const cavasRows = (d.cavas || []).map((c) => {
-    const cap = Number(c.carros || 0) * Number(c.capPorCarro || 0);
-    const inv = Number(c.inventario || 0);
-    const pct = cap > 0 ? Math.round((inv / cap) * 100) : 0;
-    return `<tr><td>${c.grupo}</td><td>${c.carros}</td><td>${cap}</td><td>${inv}</td><td>${pct}%</td></tr>`;
-  });
-  const novRows = (d.novedades || [])
-    .map((n) => `<tr><td>${n.cod || ''}</td><td>${n.desc || ''}</td></tr>`)
-    .join('');
-  const percRows = (d.percheros || [])
-    .map(
-      (p) =>
-        `<tr><td>${p.cava || ''}</td><td>${p.blancas || 0}</td><td>${p.rojas || 0}</td><td>${p.patasManos || 0}</td><td>${p.cabezas || 0}</td><td>${p.crudas || 0}</td></tr>`
-    )
-    .join('');
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Informe diario</title><style>body{font-family:Arial,sans-serif;padding:20px}table{border-collapse:collapse;width:100%;margin:12px 0}th,td{border:1px solid #ddd;padding:8px;text-align:center}th{background:#f3f4f6}.kpi{display:inline-block;margin-right:12px;padding:10px;border:1px solid #e5e7eb;border-radius:6px}</style></head><body><h1>Informe Diario - ${d.fecha}</h1><div><span class="kpi">Completos: <b>${d.completos}</b></span><span class="kpi">Incompletos: <b>${d.incompletos}</b></span><span class="kpi">Beneficio dia: <b>${d.beneficioDia}</b></span><span class="kpi">Stock total: <b>${d.stockTotal}</b></span></div>${inclInv ? `<h2>Novedades</h2><table><tr><th>Codigo</th><th>Detalle</th></tr>${novRows || '<tr><td colspan="2">Sin novedades</td></tr>'}</table>` : ''}${inclCavas ? `<h2>Ocupacion cavas</h2><table><tr><th>Cava</th><th>Carros</th><th>Capacidad</th><th>Inventario</th><th>%</th></tr>${cavasRows.join('')}</table>` : ''}${inclPerch ? `<h2>Percheros</h2><table><tr><th>Cava</th><th>Blancas</th><th>Rojas</th><th>Patas/Manos</th><th>Cabezas</th><th>Crudas</th></tr>${percRows}</table>` : ''}</body></html>`;
-  return {
-    success: true,
-    html,
   };
 }
 

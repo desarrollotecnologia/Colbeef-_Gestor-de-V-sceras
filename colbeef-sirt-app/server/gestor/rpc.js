@@ -1,4 +1,5 @@
 import * as engine from './engine.js';
+import * as informe from './informe.js';
 
 const handlers = {
   initializeSheets: engine.initializeSheets,
@@ -14,10 +15,11 @@ const handlers = {
   getDetallesPuesto: engine.getDetallesPuesto,
   limpiarDespachos: engine.limpiarDespachos,
   getPuestosCrudas: engine.getPuestosCrudas,
-  getInformeDatos: engine.getInformeDatos,
-  guardarInformeDatos: engine.guardarInformeDatos,
-  limpiarInformeDatos: engine.limpiarInformeDatos,
-  generarInformeHTML: engine.generarInformeHTML,
+  getInformeDatos: informe.getInformeDatos,
+  guardarInformeDatos: informe.guardarInformeDatos,
+  limpiarInformeDatos: informe.limpiarInformeDatos,
+  generarInformeHTML: informe.generarInformeHTML,
+  guardarFechaInicioOperacion: engine.guardarFechaInicioOperacion,
   getProgresoOPL: engine.getProgresoOPL,
   calcularProgresoOPL: engine.calcularProgresoOPL,
   getOplConfig: engine.getOplConfig,

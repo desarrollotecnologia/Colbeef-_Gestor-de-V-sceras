@@ -110,6 +110,7 @@ function buildPuestoDespacho(r) {
 
 /** Matriz 14 columnas (Estado_Cavas / productos en cava). */
 export function estadoCavaRowToDto(fila) {
+  const obs = String(fila[13] ?? '').trim();
   return {
     codigo: String(fila[0] ?? '').trim(),
     descripcion: String(fila[1] ?? '').trim(),
@@ -119,17 +120,20 @@ export function estadoCavaRowToDto(fila) {
     sucursalOrigen: String(fila[5] ?? '').trim(),
     destino: String(fila[8] ?? '').trim(),
     riel: String(fila[7] ?? '').trim(),
-    observaciones: String(fila[13] ?? '').trim(),
+    observaciones: obs,
+    observacion: obs,
   };
 }
 
 /** Matriz 13 columnas (Despachos_Cavas / salidas de cava). */
 export function despachoCavaRowToDto(fila) {
+  const tipo = String(fila[7] ?? '').trim();
   return {
     fechaSalida: String(fila[0] ?? '').trim(),
     fechaIngreso: String(fila[1] ?? '').trim(),
     codigo: String(fila[3] ?? '').trim(),
-    descripcion: String(fila[7] ?? '').trim(),
+    descripcion: tipo,
+    tipoProducto: tipo,
     pesoPie: String(fila[5] ?? '').trim(),
     propietario: String(fila[4] ?? '').trim(),
     destino: String(fila[8] ?? '').trim(),
