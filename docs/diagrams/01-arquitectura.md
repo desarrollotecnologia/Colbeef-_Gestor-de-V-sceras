@@ -41,7 +41,7 @@ flowchart TB
     state[gestor-state.json]
   end
 
-  FE[Frontend — gestor.html + gestor-v2.js<br/>CSS vars · auto-refresh 60s]
+  FE[Frontend — gestor.html<br/>CSS vars · auto-refresh 60s]
 
   ext_salidas --> api_sync
   ext_productos --> api_sync

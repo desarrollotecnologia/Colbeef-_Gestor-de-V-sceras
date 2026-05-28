@@ -26,7 +26,6 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, 'index.html'),
         gestor: path.resolve(__dirname, 'gestor.html'),
-        gestorV2: path.resolve(__dirname, 'gestor-v2.html'),
       },
     },
   },

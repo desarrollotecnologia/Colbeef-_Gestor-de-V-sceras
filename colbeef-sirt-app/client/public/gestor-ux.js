@@ -73,25 +73,47 @@
       ' (7 días auto)</span>';
   }
 
-  function setConnectionStatus(ok, detail) {
+  function setConnectionStatus(ok, label, detail) {
     var dot = document.getElementById('uxConnDot');
     var lbl = document.getElementById('uxConnLabel');
     if (!dot || !lbl) return;
     dot.className = 'ux-conn-dot ' + (ok ? 'ux-conn-ok' : 'ux-conn-bad');
-    lbl.textContent = ok ? 'SIRT conectado' : 'Sin conexión';
+    lbl.textContent = label || (ok ? 'SIRT conectado' : 'Sin conexión');
     lbl.title = detail || '';
   }
 
   function pollHealth() {
     fetch('/api/health', { method: 'GET' })
       .then(function (r) {
-        return r.json();
+        return r.json().then(function (d) {
+          return { httpOk: r.ok, data: d };
+        });
       })
-      .then(function (d) {
-        setConnectionStatus(Boolean(d && d.ok && d.db), d && d.db ? 'Base de datos OK' : 'Sin BD');
+      .then(function (res) {
+        var d = res.data;
+        if (d && d.ok && d.db) {
+          setConnectionStatus(true, 'SIRT conectado', 'Base de datos OK');
+          return;
+        }
+        if (d && d.ok && !d.db) {
+          setConnectionStatus(false, 'BD sin conexión', d.message || 'No se pudo leer PostgreSQL');
+          return;
+        }
+        setConnectionStatus(
+          false,
+          'BD sin conexión',
+          (d && d.message) || 'Revise POSTGRES_* en .env y que el servidor SIRT esté accesible'
+        );
       })
       .catch(function (e) {
-        setConnectionStatus(false, String(e.message || e));
+        setConnectionStatus(
+          false,
+          'Servidor apagado',
+          'Inicie la aplicación (start.bat) en el PC ' +
+            (window.location.hostname || 'del servidor') +
+            '. ' +
+            String(e.message || e)
+        );
       });
   }
 

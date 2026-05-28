@@ -4,18 +4,13 @@
 - **Datos operativos**: se **leen directamente desde PostgreSQL/SIRT**. El único upload manual es el `.xlsx` de **Salidas de Cava Adicionales**.
 - **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/planilla`, `/api/adicionales`, `/api/historico`, `/api/analytics`).
 
-## Gestor v2 (recomendado — interfaz operativa)
+## Gestor (interfaz única)
 
-Abra **http://localhost:3001/gestor-v2.html** (o el enlace de red que muestra el servidor).
+Abra **http://localhost:3001/gestor.html** (o el enlace de red que muestra el servidor, p. ej. `http://192.168.20.205:3001/gestor.html`).
 
-- Pestañas: **Tablero · Stock en cava · Decomisos · Despachos**
-- **Consulta BD**: lee SIRT en vivo sin guardar
-- **Actualizar día**: guarda la operación completa en el servidor
-- Sin nombres de hojas Excel (`Estado_Cavas`, etc.)
+Incluye tablero, decomisos, despachos, OPL, crudas, planilla, informes, PDF, analytics y adicionales. Los enlaces antiguos a `/gestor-v2.html` redirigen automáticamente aquí.
 
-La [versión clásica](/gestor.html) conserva Informe, PDF, Analytics y Planilla.
-
-## Gestor clásico (Apps Script)
+## Desarrollo con recarga (Vite)
 
 1. Terminal 1: `node server/index.js`
 2. Terminal 2: `npm run dev:client`

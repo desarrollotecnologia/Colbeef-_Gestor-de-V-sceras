@@ -11,6 +11,8 @@ import { getDespachosPorPropietario, getCategoriasVw } from './services/metrics.
 import { buildExcelBuffer, buildPdfBuffer } from './services/exportReport.js';
 import { dispatchRpc } from './gestor/rpc.js';
 import * as gestor from './gestor/engine.js';
+import { procesarDespachos, getDetallePuesto } from './logic/despachos.logic.js';
+import { setPuestosCrudas } from './logic/crudas.logic.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -56,9 +58,15 @@ app.get('/api/health', async (_req, res) => {
 app.get('/api/info', (req, res) => {
   const lan = getLanAddresses();
   const preferred = String(process.env.LAN_SHARE_IP || '').trim();
-  const ips = preferred && lan.includes(preferred) ? [preferred, ...lan.filter((ip) => ip !== preferred)] : lan;
-  const gestorPath = '/gestor-v2.html';
+  const ips =
+    preferred && !lan.includes(preferred)
+      ? [preferred, ...lan]
+      : preferred
+        ? [preferred, ...lan.filter((ip) => ip !== preferred)]
+        : lan;
+  const gestorPath = '/gestor.html';
   const share = (ip, port) => `http://${ip}:${port}${gestorPath}`;
+  const shareIp = preferred || ips[0] || '127.0.0.1';
   res.json({
     success: true,
     mode: isProd ? 'production' : 'development',
@@ -76,7 +84,7 @@ app.get('/api/info', (req, res) => {
       gestorDev: share(ip, VITE_DEV_PORT),
       gestorProd: share(ip, PORT),
     })),
-    recommended: ips.length ? share(ips[0], PORT) : share('127.0.0.1', PORT),
+    recommended: share(shareIp, PORT),
   });
 });
 
@@ -113,8 +121,8 @@ app.get('/api/dashboard', async (req, res) => {
   }
 });
 
-/** Productos en cava (Estado_Cavas) — consulta 2. */
-app.get('/api/salidas', async (req, res) => {
+/** Stock en cava (Estado_Cavas) — productos que AÚN NO han salido. */
+app.get('/api/en-cava', async (req, res) => {
   try {
     const range = parseGestorRange(req);
     const data = await gestor.consultarEnCavaDesdeSIRT(range);
@@ -124,11 +132,22 @@ app.get('/api/salidas', async (req, res) => {
   }
 });
 
-/** Alias explícito: inventario en cava. */
-app.get('/api/en-cava', async (req, res) => {
+/** Alias de /api/en-cava para compatibilidad. */
+app.get('/api/stock', async (req, res) => {
   try {
     const range = parseGestorRange(req);
     const data = await gestor.consultarEnCavaDesdeSIRT(range);
+    res.json(data);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+/** Salidas de cava (Despachos_Cavas) — productos que YA salieron (fecha_salida IS NOT NULL). */
+app.get('/api/salidas', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    const data = await gestor.consultarSalidasCavaDesdeSIRT(range);
     res.json(data);
   } catch (e) {
     apiError(res, e);
@@ -175,12 +194,21 @@ app.get('/api/decomisos/pdf', async (_req, res) => {
   }
 });
 
-/** Salidas de cava (Despachos_Cavas) — consulta 1. */
+/** Alias de /api/salidas para compatibilidad. */
 app.get('/api/despachos', async (req, res) => {
   try {
     const range = parseGestorRange(req);
-    const data = await gestor.consultarSalidasCavaDesdeSIRT(range);
-    res.json(data);
+    const [despachos, enCava] = await Promise.all([
+      gestor.consultarSalidasCavaDesdeSIRT(range),
+      gestor.consultarEnCavaDesdeSIRT(range),
+    ]);
+    if (!despachos.success || !enCava.success) {
+      return res.status(500).json({ success: false, message: 'No se pudieron consultar datos SIRT.' });
+    }
+    const turnoForzado = String(req.query.turno || '').trim();
+    const out = procesarDespachos(despachos.filas || [], turnoForzado || undefined);
+    const puestosCrudas = [...setPuestosCrudas(enCava.filas || [], despachos.filas || [], out.turno)];
+    res.json({ success: true, ...out, puestosCrudas });
   } catch (e) {
     apiError(res, e);
   }
@@ -188,7 +216,32 @@ app.get('/api/despachos', async (req, res) => {
 
 app.post('/api/despachos/procesar', async (req, res) => {
   try {
-    res.json(await gestor.prepararModuloDespachosDesdeSIRT(req.body?.turno || '', parseGestorRange(req)));
+    const range = parseGestorRange(req);
+    const turnoForzado = String(req.body?.turno || req.query.turno || '').trim();
+    const out = await gestor.prepararModuloDespachosDesdeSIRT(turnoForzado, range);
+    if (!out?.success) return res.status(400).json(out || { success: false, message: 'No se pudo procesar despachos.' });
+    const enCava = await gestor.consultarEnCavaDesdeSIRT(range);
+    const despachos = await gestor.consultarSalidasCavaDesdeSIRT(range);
+    const puestosCrudas =
+      enCava.success && despachos.success
+        ? [...setPuestosCrudas(enCava.filas || [], despachos.filas || [], out.turno)]
+        : [];
+    res.json({ ...out, puestosCrudas });
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/despachos/detalle/:puesto', async (req, res) => {
+  try {
+    const range = parseGestorRange(req);
+    const turno = String(req.query.turno || '').trim();
+    const puesto = String(req.params.puesto || '').trim();
+    if (!puesto) return res.status(400).json({ success: false, message: 'Falta puesto.' });
+    const despachos = await gestor.consultarSalidasCavaDesdeSIRT(range);
+    if (!despachos.success) return res.status(500).json({ success: false, message: 'No se pudo consultar despachos.' });
+    const filas = getDetallePuesto(despachos.filas || [], puesto, turno || undefined);
+    res.json({ success: true, puesto, filas });
   } catch (e) {
     apiError(res, e);
   }
@@ -346,23 +399,24 @@ app.get('/api/export/resumen.pdf', async (req, res) => {
 const clientRoot = path.join(__dirname, '..', 'client');
 const clientDir = isProd ? path.join(clientRoot, 'dist') : clientRoot;
 
-if (isProd) {
-  app.use(express.static(clientDir));
-} else {
-  app.use(express.static(path.join(clientRoot, 'public')));
-}
-
+/** Rutas del gestor antes de static: evita servir archivos v2 antiguos. */
 app.get('/', (_req, res) => {
-  res.redirect(302, '/gestor-v2.html');
+  res.redirect(302, '/gestor.html');
 });
 
 app.get('/gestor.html', (_req, res) => {
   res.sendFile(path.join(isProd ? clientDir : clientRoot, 'gestor.html'));
 });
 
-app.get('/gestor-v2.html', (_req, res) => {
-  res.sendFile(path.join(isProd ? clientDir : clientRoot, 'gestor-v2.html'));
+app.get(['/gestor-v2.html', '/gestor-v2.js'], (_req, res) => {
+  res.redirect(302, '/gestor.html');
 });
+
+if (isProd) {
+  app.use(express.static(clientDir));
+} else {
+  app.use(express.static(path.join(clientRoot, 'public')));
+}
 
 if (isProd) {
   app.get('*', (req, res, next) => {
@@ -388,13 +442,12 @@ app.listen(PORT, BIND_HOST, () => {
   const primary = pref && lan.includes(pref) ? pref : lan[0];
   console.log(`Colbeef SIRT API escuchando en ${BIND_HOST}:${PORT} (${isProd ? 'producción' : 'desarrollo'})`);
   console.log(`  API  http://127.0.0.1:${PORT}/api/health`);
-  console.log(`  Gestor v2 http://127.0.0.1:${PORT}/gestor-v2.html`);
-  console.log(`  Gestor clásico http://127.0.0.1:${PORT}/gestor.html`);
-  for (const ip of lan) console.log(`  Gestor v2 (compartir) http://${ip}:${PORT}/gestor-v2.html`);
+  console.log(`  Gestor http://127.0.0.1:${PORT}/gestor.html`);
+  for (const ip of lan) console.log(`  Gestor (compartir) http://${ip}:${PORT}/gestor.html`);
   if (!isProd) {
     console.log(`  Gestor con recarga en vivo (Vite) http://127.0.0.1:${VITE_DEV_PORT}/gestor.html`);
   }
-  if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor-v2.html`);
+  if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor.html`);
 });
 
 process.on('SIGINT', async () => {

@@ -20,19 +20,11 @@
           <span>Operativa</span>
         </div>
         <p style={{ color: 'var(--gris)', marginTop: 0, lineHeight: 1.5 }}>
-          El gestor completo (decomisos, despachos, planilla, analytics) está en una sola pantalla optimizada
-          para operación diaria.
+          Decomisos, despachos, planilla, analytics, informes y PDF en una sola pantalla.
         </p>
-        <a className="btn btn-primary" href="/gestor-v2.html" style={{ marginTop: '0.5rem' }}>
-          Abrir Gestor v2 (recomendado)
+        <a className="btn btn-primary" href="/gestor.html" style={{ marginTop: '0.5rem' }}>
+          Abrir Gestor
         </a>
-        <a className="btn btn-secondary" href="/gestor.html" style={{ marginTop: '0.5rem', marginLeft: '0.5rem' }}>
-          Versión clásica
-        </a>
-        <p style={{ fontSize: '0.8rem', color: 'var(--gris)', marginTop: '1rem' }}>
-          En v2: pestañas por operación (stock, decomisos, despachos) y botón único{' '}
-          <strong>Actualizar día</strong> para guardar la sesión. Decomisos: últimos 7 días hasta la fecha elegida.
-        </p>
       </div>
     </div>
   );

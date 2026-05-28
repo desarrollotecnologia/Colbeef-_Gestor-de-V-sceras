@@ -39,6 +39,7 @@ Documentación en **Mermaid** (editable en `.mmd` y vista previa en `.md` en Git
 
 ## Notas vs. código actual (`colbeef-sirt-app`)
 
+- **Interfaz única:** `http://<IP>:3001/gestor.html` (enlace recomendado en LAN).
 - **Sync AppSheet:** en el diagrama aparece como `POST /sync/*` (diseño objetivo). Hoy la carga desde SIRT va por `sirtSync.js` y RPC (`sincronizarSesionDesdeSirtPorFecha`, etc.).
 - **Planilla:** en UI se usa RPC `consolidarDatos`; la API expone `GET /api/planilla` (consolida y devuelve datos).
 - **Persistencia:** PostgreSQL vía `pg`; estado de sesión del gestor en `gestor-state.json` (no Prisma en este repo).
