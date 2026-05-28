@@ -1,6 +1,7 @@
 $ErrorActionPreference = "Continue"
 $projectDir = Split-Path -Parent $PSScriptRoot
 $logPath = Join-Path $projectDir "service-install.log"
+. (Join-Path $PSScriptRoot "firewall-port.ps1")
 
 function Log($msg) {
   $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $msg"
@@ -23,7 +24,9 @@ if (-not $isAdmin) {
 }
 
 Set-Location $projectDir
-Log "CWD: $(Get-Location)"
+$port = Get-ServerPort -Root $projectDir
+$lanIp = Get-LanShareIp -Root $projectDir
+Log "CWD: $(Get-Location) | Puerto: $port"
 
 Write-Host ""
 Write-Host "=== Paso 1/2: Registrando servicio de Windows ===" -ForegroundColor Cyan
@@ -37,23 +40,11 @@ try {
 }
 
 Write-Host ""
-Write-Host "=== Paso 2/2: Abriendo puerto 8013 en Firewall de Windows ===" -ForegroundColor Cyan
+Write-Host "=== Paso 2/2: Abriendo puerto $port en Firewall de Windows ===" -ForegroundColor Cyan
 try {
-  $existing = Get-NetFirewallRule -DisplayName "Colbeef SIRT API 8013" -ErrorAction SilentlyContinue
-  if ($existing) {
-    Log "Regla de firewall ya existe, se sobrescribe."
-    Remove-NetFirewallRule -DisplayName "Colbeef SIRT API 8013" -ErrorAction SilentlyContinue
-  }
-  New-NetFirewallRule -DisplayName "Colbeef SIRT API 8013" `
-    -Description "Permite trafico entrante TCP al servicio Colbeef SIRT API en el puerto 8013." `
-    -Direction Inbound `
-    -Action Allow `
-    -Protocol TCP `
-    -LocalPort 8013 `
-    -Profile Any `
-    -Enabled True | Out-Null
-  Log "Regla de firewall 'Colbeef SIRT API 8013' creada (TCP/8013, Inbound, Allow, Any profile)."
-  Write-Host "[OK] Firewall: puerto 8013 abierto." -ForegroundColor Green
+  $ruleName = Update-ColbeefFirewall -Port $port
+  Log "Regla de firewall '$ruleName' creada (TCP/$port, Inbound, Allow, Any profile)."
+  Write-Host "[OK] Firewall: puerto $port abierto." -ForegroundColor Green
 } catch {
   Log "ERROR firewall: $($_.Exception.Message)"
   Write-Host "ERROR firewall: $($_.Exception.Message)" -ForegroundColor Red
@@ -69,6 +60,11 @@ if ($svc) {
   Write-Host "Servicio NO instalado." -ForegroundColor Red
   Log "Servicio NO instalado."
 }
+
+Write-Host ""
+Write-Host "Enlaces:" -ForegroundColor Cyan
+Write-Host "  http://localhost:$port/gestor.html"
+if ($lanIp) { Write-Host "  http://${lanIp}:$port/gestor.html" }
 
 Write-Host ""
 Write-Host "Esta ventana se cerrara en 30 segundos..." -ForegroundColor Gray

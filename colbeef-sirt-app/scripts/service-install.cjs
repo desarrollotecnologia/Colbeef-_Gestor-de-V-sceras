@@ -1,9 +1,22 @@
 /* eslint-disable */
+const fs = require('fs');
 const path = require('path');
 const { Service } = require('node-windows');
 
 const projectRoot = path.resolve(__dirname, '..');
 const scriptPath = path.join(projectRoot, 'server', 'index.js');
+
+function readServerPort() {
+  const envPath = path.join(projectRoot, '.env');
+  if (!fs.existsSync(envPath)) return 3001;
+  for (const line of fs.readFileSync(envPath, 'utf8').split(/\r?\n/)) {
+    const match = line.match(/^\s*SERVER_PORT\s*=\s*(\d+)/);
+    if (match) return Number(match[1]);
+  }
+  return 3001;
+}
+
+const serverPort = readServerPort();
 
 const svc = new Service({
   name: 'Colbeef SIRT API',
@@ -30,7 +43,7 @@ svc.on('alreadyinstalled', () => {
 
 svc.on('start', () => {
   console.log('[OK] Servicio iniciado:', svc.name);
-  console.log('     Verifica con: http://localhost:8013/api/health');
+  console.log('     Verifica con: http://localhost:' + serverPort + '/gestor.html');
 });
 
 svc.on('error', (err) => {

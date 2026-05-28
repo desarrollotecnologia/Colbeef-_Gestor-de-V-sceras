@@ -3,6 +3,7 @@ setlocal
 title Colbeef SIRT API - Desinstalacion de servicio
 
 cd /d "%~dp0"
+call "%~dp0scripts\read-env-port.bat"
 
 echo ============================================================
 echo   Colbeef SIRT API - Desinstalacion del Servicio de Windows
@@ -21,8 +22,8 @@ echo --- Paso 1/2: Desinstalando servicio "Colbeef SIRT API" ---
 node "scripts\service-uninstall.cjs"
 
 echo.
-echo --- Paso 2/2: Eliminando regla de firewall ---
-powershell -NoProfile -Command "Get-NetFirewallRule -DisplayName 'Colbeef SIRT API 8013' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue; Write-Host '[OK] Regla de firewall eliminada (si existia).'"
+echo --- Paso 2/2: Eliminando reglas de firewall ---
+powershell -NoProfile -Command "@('Colbeef SIRT API 3001','Colbeef SIRT API 8013','Colbeef SIRT API %SERVER_PORT%') | ForEach-Object { Remove-NetFirewallRule -DisplayName $_ -ErrorAction SilentlyContinue }; Write-Host '[OK] Reglas de firewall eliminadas (si existian).'"
 
 echo.
 pause

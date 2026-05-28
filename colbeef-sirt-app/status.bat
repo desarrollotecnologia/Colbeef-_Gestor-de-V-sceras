@@ -2,24 +2,30 @@
 setlocal
 title Colbeef SIRT API - Estado
 cd /d "%~dp0"
+call "%~dp0scripts\read-env-port.bat"
 
 echo ============================================================
 echo   Colbeef SIRT API - Estado del servidor
 echo ============================================================
 echo.
+echo Puerto configurado: %SERVER_PORT%
+echo.
 
-netstat -ano | findstr ":3001 " | findstr "LISTENING" >nul 2>&1
+netstat -ano | findstr ":%SERVER_PORT% " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% EQU 0 (
-    echo [ACTIVO] El servidor esta corriendo en el puerto 3001.
+    echo [ACTIVO] El servidor esta corriendo en el puerto %SERVER_PORT%.
     echo.
-    echo Gestor:    http://localhost:3001/gestor.html
-    echo Health:    http://localhost:3001/api/health
+    echo Gestor:    http://localhost:%SERVER_PORT%/gestor.html
+    echo Health:    http://localhost:%SERVER_PORT%/api/health
     echo.
     echo Proceso:
-    netstat -ano | findstr ":3001 " | findstr "LISTENING"
+    netstat -ano | findstr ":%SERVER_PORT% " | findstr "LISTENING"
 ) else (
-    echo [DETENIDO] No hay proceso escuchando en el puerto 3001.
+    echo [DETENIDO] No hay proceso escuchando en el puerto %SERVER_PORT%.
 )
+
+echo.
+sc query "Colbeef SIRT API" 2>nul | findstr /R "SERVICE_NAME STATE"
 
 echo.
 echo --- Ultimas lineas del log ---
