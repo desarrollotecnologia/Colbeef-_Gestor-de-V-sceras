@@ -39,38 +39,11 @@
   window.uxFriendlyError = friendlyError;
 
   function updateVistaBadge() {
-    var el = document.getElementById('uxVistaBadge');
-    if (!el || typeof state === 'undefined') return;
-    var sirt = state.dashboardVista === 'sirt';
-    el.className = 'ux-vista-badge ' + (sirt ? 'ux-vista-sirt' : 'ux-vista-sesion');
-    el.textContent = sirt ? '● Consultando SIRT en vivo' : '● Vista sesión guardada';
-    el.title = sirt
-      ? 'Lee la base de datos según la fecha del encabezado.'
-      : 'Muestra la última operación guardada en este servidor (no consulta SIRT al cambiar fecha).';
-    var bS = document.getElementById('btnVistaSirt');
-    var bE = document.getElementById('btnVistaSesion');
-    if (bS) bS.setAttribute('aria-pressed', sirt ? 'true' : 'false');
-    if (bE) bE.setAttribute('aria-pressed', sirt ? 'false' : 'true');
+    /* Vista fija: SIRT del día (fecha del equipo). */
   }
 
   function updateFechaChips() {
-    var box = document.getElementById('uxFechaChips');
-    if (!box || typeof getFechaGlobalISO !== 'function') return;
-    var iso = getFechaGlobalISO();
-    var txt = typeof fechaISOaTexto === 'function' ? fechaISOaTexto(iso) : iso;
-    var d7 = isoAddDays(iso, -7);
-    box.innerHTML =
-      '<span class="ux-chip" title="Productos aún en cava">📦 En cava: día ' +
-      txt +
-      '</span>' +
-      '<span class="ux-chip" title="Salidas registradas en cava">📤 Salidas: día ' +
-      txt +
-      '</span>' +
-      '<span class="ux-chip ux-chip-warn" title="Calculado automáticamente">🏷️ Decomisos: ' +
-      (typeof fechaISOaTexto === 'function' ? fechaISOaTexto(d7) : d7) +
-      ' → ' +
-      txt +
-      ' (7 días auto)</span>';
+    /* Chips de rango eliminados — solo fecha en encabezado. */
   }
 
   function setConnectionStatus(ok, label, detail) {
@@ -78,7 +51,7 @@
     var lbl = document.getElementById('uxConnLabel');
     if (!dot || !lbl) return;
     dot.className = 'ux-conn-dot ' + (ok ? 'ux-conn-ok' : 'ux-conn-bad');
-    lbl.textContent = label || (ok ? 'SIRT conectado' : 'Sin conexión');
+    lbl.textContent = label || (ok ? 'Conectado' : 'Sin conexión');
     lbl.title = detail || '';
   }
 
@@ -92,27 +65,24 @@
       .then(function (res) {
         var d = res.data;
         if (d && d.ok && d.db) {
-          setConnectionStatus(true, 'SIRT conectado', 'Base de datos OK');
+          setConnectionStatus(true, 'Conectado', 'Base de datos OK');
           return;
         }
         if (d && d.ok && !d.db) {
-          setConnectionStatus(false, 'BD sin conexión', d.message || 'No se pudo leer PostgreSQL');
+          setConnectionStatus(false, 'Sin conexión', d.message || 'No se pudo leer PostgreSQL');
           return;
         }
         setConnectionStatus(
           false,
-          'BD sin conexión',
-          (d && d.message) || 'Revise POSTGRES_* en .env y que el servidor SIRT esté accesible'
+          'Sin conexión',
+          (d && d.message) || 'Revise la conexión a la base de datos'
         );
       })
       .catch(function (e) {
         setConnectionStatus(
           false,
-          'Servidor apagado',
-          'Inicie la aplicación (start.bat) en el PC ' +
-            (window.location.hostname || 'del servidor') +
-            '. ' +
-            String(e.message || e)
+          'Sin conexión',
+          'Inicie la aplicación (start.bat). ' + String(e.message || e)
         );
       });
   }
@@ -321,20 +291,12 @@
 
   function savePrefs() {
     try {
-      var df = document.getElementById('fechaGlobal');
-      if (df && df.value) localStorage.setItem(LS_FECHA, df.value);
-      if (typeof state !== 'undefined') localStorage.setItem(LS_VISTA, state.dashboardVista || 'sirt');
+      if (typeof state !== 'undefined') localStorage.setItem(LS_VIEW, localStorage.getItem(LS_VIEW) || 'dashboard');
     } catch (e) {}
   }
 
   function loadPrefs() {
-    try {
-      var f = localStorage.getItem(LS_FECHA);
-      var df = document.getElementById('fechaGlobal');
-      if (f && df && /^\d{4}-\d{2}-\d{2}$/.test(f)) df.value = f;
-      var v = localStorage.getItem(LS_VISTA);
-      if (v === 'sesion' && typeof setDashboardVistaSesion === 'function') setDashboardVistaSesion();
-    } catch (e) {}
+    /* La fecha siempre es la del equipo al cargar (gestor.html window.onload). */
   }
 
   function restoreLastView() {
@@ -443,7 +405,6 @@
     updateVistaBadge();
     updateFechaChips();
     pollHealth();
-    pollShareInfo();
     setInterval(pollHealth, HEALTH_MS);
     setupKeyboard();
     initModalsA11y();

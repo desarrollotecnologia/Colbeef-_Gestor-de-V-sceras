@@ -227,7 +227,7 @@ export async function generarInformeHTML(payload) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Informe Diario Colbeef – ${d.fecha}</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="/vendor/html2canvas.min.js"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
     body{font-family:Arial,sans-serif;background:#f0f2f5;padding:20px;color:#222;}

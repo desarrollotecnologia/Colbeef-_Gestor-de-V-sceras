@@ -45,6 +45,42 @@ export function productoDecomisoDesdeMapa(mapa, idEstadoRaw) {
   return mapa[kb];
 }
 
+/**
+ * Mapa animal (id normalizado / base) → tipos decomisados y nombres de subproducto.
+ * Usado en despacho para marcar juegos incompletos por decomiso.
+ */
+export function construirMapaDecomisosPorAnimal(reporteFilas) {
+  const mapa = {};
+  (reporteFilas || []).forEach((fila) => {
+    const id = String(fila[0] ?? '').trim();
+    const prod = String(fila[2] ?? '').trim();
+    if (!id) return;
+    const tipoDec = mapTipoProductoNombre(prod);
+    const claves = [normalizeProductIdForDecomisoCruce(id)];
+    const base = codigoBase(id);
+    const kb = base ? normalizeProductIdForDecomisoCruce(base) : '';
+    if (kb && kb !== claves[0]) claves.push(kb);
+    claves.forEach((k) => {
+      if (!k) return;
+      if (!mapa[k]) mapa[k] = { tipos: new Set(), productos: [] };
+      mapa[k].tipos.add(tipoDec);
+      if (prod && !mapa[k].productos.includes(prod)) mapa[k].productos.push(prod);
+    });
+  });
+  return mapa;
+}
+
+/** Info de decomiso para un ID de salida/cava, o null si no hay. */
+export function decomisoInfoDesdeMapa(mapaPorAnimal, idRaw) {
+  const id = String(idRaw ?? '').trim();
+  if (!id || !mapaPorAnimal) return null;
+  const k = normalizeProductIdForDecomisoCruce(id);
+  if (mapaPorAnimal[k]) return mapaPorAnimal[k];
+  const base = codigoBase(id);
+  if (!base) return null;
+  return mapaPorAnimal[normalizeProductIdForDecomisoCruce(base)] || null;
+}
+
 export function mapTipoProductoNombre(nombre) {
   const n = String(nombre || '').toLowerCase();
   if (n.includes('cabeza')) return 'Cabeza';
@@ -76,6 +112,16 @@ export function extraerPuesto(destinoRaw) {
   let puesto = index !== -1 ? d.substring(0, index).trim() : d.trim();
   if (/^\d+$/.test(puesto)) puesto = String(parseInt(puesto, 10));
   return puesto;
+}
+
+/** Clave estable para agrupar salidas del mismo destino (evita filas duplicadas por texto distinto). */
+export function claveAgrupacionPuesto(destinoRaw) {
+  const cod = extraerPuesto(destinoRaw);
+  if (cod) return cod.toUpperCase();
+  return String(destinoRaw || '')
+    .trim()
+    .replace(/\s+/g, ' ')
+    .toUpperCase();
 }
 
 export function detectarTurnoPorDia() {

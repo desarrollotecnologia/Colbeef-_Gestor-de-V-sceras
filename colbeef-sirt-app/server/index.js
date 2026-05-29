@@ -399,24 +399,40 @@ app.get('/api/export/resumen.pdf', async (req, res) => {
 
 const clientRoot = path.join(__dirname, '..', 'client');
 const clientDir = isProd ? path.join(clientRoot, 'dist') : clientRoot;
+const publicDir = path.join(clientRoot, 'public');
+
+function noCacheGestor(_req, res, next) {
+  res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+  next();
+}
 
 /** Rutas del gestor antes de static: evita servir archivos v2 antiguos. */
 app.get('/', (_req, res) => {
   res.redirect(302, '/gestor.html');
 });
 
-app.get('/gestor.html', (_req, res) => {
-  res.sendFile(path.join(isProd ? clientDir : clientRoot, 'gestor.html'));
+/** Siempre el gestor.html fuente (no la copia vieja de client/dist). */
+app.get('/gestor.html', noCacheGestor, (_req, res) => {
+  res.sendFile(path.join(clientRoot, 'gestor.html'));
 });
 
 app.get(['/gestor-v2.html', '/gestor-v2.js'], (_req, res) => {
   res.redirect(302, '/gestor.html');
 });
 
+/** JS/CSS del gestor (gestor-ux.js, vendor, shim) — siempre desde client/public. */
+app.use(
+  express.static(publicDir, {
+    setHeaders(res, filePath) {
+      if (/gestor-ux\.js$/.test(filePath) || /google-script-shim\.js$/.test(filePath)) {
+        res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+      }
+    },
+  })
+);
+
 if (isProd) {
   app.use(express.static(clientDir));
-} else {
-  app.use(express.static(path.join(clientRoot, 'public')));
 }
 
 if (isProd) {

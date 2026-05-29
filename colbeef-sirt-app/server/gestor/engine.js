@@ -14,6 +14,9 @@ import {
   detectarTurnoPorDia,
   detectarTurnoPorFechaISO,
   productoDecomisoDesdeMapa,
+  construirMapaDecomisosPorAnimal,
+  decomisoInfoDesdeMapa,
+  claveAgrupacionPuesto,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -38,6 +41,143 @@ function cargarMapaOPL(state) {
 
 function tieneJuegoCompleto(tipos) {
   return TIPOS_PRODUCTO.every((tipo) => tipos.has(tipo));
+}
+
+/** Filas de salida del turno con puesto normalizado (sufijo /turno/). */
+function filasDespachoTurno(despachosCavas, turno) {
+  return (despachosCavas || []).map((fila) => {
+    const p = String(fila[9] ?? '').trim();
+    if (p.includes(turno)) return fila;
+    const c = fila.slice();
+    c[9] = (p ? `${p} ` : '') + `/${turno}/`;
+    return c;
+  });
+}
+
+/**
+ * Resumen por puesto: productos en cava con salida del día → totales por destino,
+ * decomiso y cruda.
+ */
+function construirResumenDespachosDesdeFilas(
+  despachosCavas,
+  turnoForzado,
+  reporteDecomisos = [],
+  estadoFromRow12 = []
+) {
+  const salidasPack = filtrarSalidasEnCava(despachosCavas, estadoFromRow12);
+  const salidasBase = salidasPack.filas;
+  const crudaBases = salidasPack.crudaBases;
+  const basesEnCava = salidasPack.basesEnCava;
+
+  if (!salidasBase.length) {
+    const turnoVac =
+      turnoForzado && String(turnoForzado).length > 0
+        ? String(turnoForzado)
+        : detectarTurnoDesdeDatos(despachosCavas || []) || detectarTurnoPorDia();
+    return {
+      turno: turnoVac,
+      fechaStr: '',
+      totalJuegos: 0,
+      resultado: [],
+      historicoGuardadoFlag: '',
+      totalConDecomiso: 0,
+      filasEnCava: basesEnCava.size,
+      filasSalidasTotales: (despachosCavas || []).length,
+      filasSalidasUsadas: 0,
+      salidasOmitidasSinCava: salidasPack.omitidas || 0,
+      filtroEnCavaActivo: salidasPack.filtroActivo,
+    };
+  }
+  const turno =
+    turnoForzado && String(turnoForzado).length > 0
+      ? String(turnoForzado)
+      : detectarTurnoDesdeDatos(salidasBase);
+  const data = filasDespachoTurno(salidasBase, turno);
+  const mapaDec = construirMapaDecomisosPorAnimal(reporteDecomisos);
+
+  const puestoMeta = {};
+  data.forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puestoTexto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (!id || !tipo || !puestoTexto) return;
+    if (!puestoTexto.includes(turno)) return;
+    if (PUESTOS_EXCLUIDOS_DESP.includes(puestoTexto)) return;
+    const clave = claveAgrupacionPuesto(puestoTexto);
+    if (!clave) return;
+    if (!puestoMeta[clave]) {
+      puestoMeta[clave] = {
+        puesto: puestoTexto,
+        Cabeza: 0,
+        'Patas y Manos': 0,
+        'Visceras Blancas': 0,
+        'Visceras Rojas': 0,
+        animales: {},
+        basesConDecomiso: new Set(),
+        basesDecContados: new Set(),
+        decomisoPorTipo: {},
+        tieneCruda: false,
+      };
+    } else if (puestoTexto.length > puestoMeta[clave].puesto.length) {
+      puestoMeta[clave].puesto = puestoTexto;
+    }
+    if (TIPOS_PRODUCTO.includes(tipo)) puestoMeta[clave][tipo]++;
+    const base = codigoBase(id);
+    if (!base) return;
+    if (tipo === 'Visceras Blancas' && crudaBases.has(base)) puestoMeta[clave].tieneCruda = true;
+    if (!puestoMeta[clave].animales[base]) puestoMeta[clave].animales[base] = new Set();
+    puestoMeta[clave].animales[base].add(tipo);
+    const dec = decomisoInfoDesdeMapa(mapaDec, id);
+    if (dec && !puestoMeta[clave].basesDecContados.has(base)) {
+      puestoMeta[clave].basesDecContados.add(base);
+      puestoMeta[clave].basesConDecomiso.add(base);
+      dec.tipos.forEach((tDec) => {
+        puestoMeta[clave].decomisoPorTipo[tDec] = (puestoMeta[clave].decomisoPorTipo[tDec] || 0) + 1;
+      });
+    }
+  });
+
+  const resultado = [];
+  let totalJuegos = 0;
+  Object.keys(puestoMeta)
+    .sort((a, b) => puestoMeta[a].puesto.localeCompare(puestoMeta[b].puesto))
+    .forEach((clave) => {
+      const meta = puestoMeta[clave];
+      const r = { puesto: meta.puesto };
+      TIPOS_PRODUCTO.forEach((t) => {
+        r[t] = meta[t] || 0;
+      });
+      const vals = TIPOS_PRODUCTO.map((t) => r[t]);
+      const minVal = Math.min(...vals);
+      const maxVal = Math.max(...vals);
+      let juegos = 0;
+      Object.keys(meta.animales).forEach((base) => {
+        const tipos = meta.animales[base];
+        if (tieneJuegoCompleto(tipos) && !meta.basesConDecomiso.has(base)) juegos++;
+      });
+      r.Juegos = juegos;
+      totalJuegos += juegos;
+      r.animalesDecomiso = meta.basesConDecomiso.size;
+      r.decomisoPorTipo = meta.decomisoPorTipo || {};
+      r.incompletoPorDecomiso = meta.basesConDecomiso.size > 0;
+      r.incompleto = minVal !== maxVal || r.incompletoPorDecomiso;
+      r.tieneCruda = Boolean(meta.tieneCruda);
+      resultado.push(r);
+    });
+
+  return {
+    turno,
+    fechaStr: '',
+    totalJuegos,
+    resultado,
+    historicoGuardadoFlag: '',
+    totalConDecomiso: resultado.reduce((s, r) => s + (r.animalesDecomiso || 0), 0),
+    filasEnCava: basesEnCava.size,
+    filasSalidasTotales: (despachosCavas || []).length,
+    filasSalidasUsadas: salidasBase.length,
+    salidasOmitidasSinCava: salidasPack.omitidas || 0,
+    filtroEnCavaActivo: salidasPack.filtroActivo,
+  };
 }
 
 function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
@@ -90,75 +230,67 @@ function filtroSirtValido(filtro) {
   return Boolean(filtro?.from && filtro?.to);
 }
 
-function contarCruceDecomisosSync(estadoFromRow12, reporteDecomisos) {
-  if (!estadoFromRow12?.length || !reporteDecomisos?.length) return 0;
-  const mapa = construirMapaReporteDecomisos(reporteDecomisos);
-  let n = 0;
-  estadoFromRow12.forEach((fila) => {
-    const slice9 = fila.slice(0, 9);
-    const id = String(slice9[0] ?? '').trim();
-    if (id && productoDecomisoDesdeMapa(mapa, id) !== undefined) n++;
-  });
-  return n;
+function filaSalidaCavaIdDestino(fila) {
+  return {
+    id: String(fila[3] ?? '').trim(),
+    destino: String(fila[8] ?? fila[9] ?? '').trim(),
+  };
 }
 
-/** Misma lógica que procesarDespachos pero sin persistir estado */
-function construirResumenDespachosDesdeFilas(despachosCavas, turnoForzado) {
-  if (!despachosCavas?.length) {
-    return { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
+/** Índice de animales en cava (código base) y cuáles tienen VB cruda. */
+function construirIndiceEnCava(estadoFromRow12) {
+  const basesEnCava = new Set();
+  const crudaBases = new Set();
+  (estadoFromRow12 || []).forEach((fila) => {
+    const id = String(fila[0] ?? '').trim();
+    const desc = String(fila[1] ?? '').trim();
+    const base = codigoBase(id);
+    if (!base) return;
+    basesEnCava.add(base);
+    if (desc === 'Visceras Blancas' && esCruda(fila[13])) crudaBases.add(base);
+  });
+  return { basesEnCava, crudaBases };
+}
+
+/** Solo salidas cuyo animal estaba en cava (lógica operativa planta). */
+function filtrarSalidasEnCava(salidasFilas, estadoFromRow12) {
+  const idx = construirIndiceEnCava(estadoFromRow12);
+  if (!idx.basesEnCava.size) {
+    return {
+      filas: salidasFilas || [],
+      ...idx,
+      filtroActivo: false,
+      omitidas: 0,
+    };
   }
-  const turno =
-    turnoForzado && String(turnoForzado).length > 0
-      ? String(turnoForzado)
-      : detectarTurnoDesdeDatos(despachosCavas);
-  const data = despachosCavas.map((fila) => {
-    const p = String(fila[9] ?? '').trim();
-    if (p.includes(turno)) return fila;
-    const c = fila.slice();
-    c[9] = (p ? `${p} ` : '') + `/${turno}/`;
-    return c;
-  });
-  const mapaPuestos = {};
-  data.forEach((fila) => {
+  const filas = [];
+  let omitidas = 0;
+  (salidasFilas || []).forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
-    const prop = String(fila[4] ?? '').trim();
-    const tipo = String(fila[7] ?? '').trim();
-    const puesto = String(fila[9] ?? '').trim();
-    if (!id || !tipo || !puesto) return;
-    if (!puesto.includes(turno)) return;
-    if (PUESTOS_EXCLUIDOS_DESP.includes(puesto)) return;
-    if (!mapaPuestos[puesto]) {
-      mapaPuestos[puesto] = { Cabeza: 0, 'Patas y Manos': 0, 'Visceras Blancas': 0, 'Visceras Rojas': 0 };
-    }
-    if (TIPOS_PRODUCTO.includes(tipo)) mapaPuestos[puesto][tipo]++;
+    const base = codigoBase(id);
+    if (base && idx.basesEnCava.has(base)) filas.push(fila);
+    else omitidas++;
   });
+  return { filas, ...idx, filtroActivo: true, omitidas };
+}
+
+/** Cruce salidas de cava del día ↔ reporte decomisos (por ID de animal). */
+function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos, estadoFromRow12 = null) {
+  const pack = estadoFromRow12 ? filtrarSalidasEnCava(salidasFilas, estadoFromRow12) : { filas: salidasFilas || [] };
+  const salidas = pack.filas;
+  if (!salidas.length || !reporteDecomisos?.length) return [];
+  const mapa = construirMapaReporteDecomisos(reporteDecomisos);
   const resultado = [];
-  Object.keys(mapaPuestos)
-    .sort()
-    .forEach((p) => {
-      const r = { puesto: p };
-      TIPOS_PRODUCTO.forEach((t) => {
-        r[t] = mapaPuestos[p][t] || 0;
-      });
-      resultado.push(r);
-    });
-  const juegosPorPuesto = contarJuegosCompletosPorClave(
-    data,
-    { id: 3, tipo: 7, puesto: 9 },
-    (fila) => fila[9],
-    turno
-  );
-  resultado.forEach((r) => {
-    r.Juegos = juegosPorPuesto[r.puesto] || 0;
+  salidas.forEach((fila) => {
+    const { id, destino } = filaSalidaCavaIdDestino(fila);
+    const prod = productoDecomisoDesdeMapa(mapa, id);
+    if (id && prod !== undefined) resultado.push([id, destino, prod]);
   });
-  const totalJuegos = Object.values(juegosPorPuesto).reduce((sum, n) => sum + Number(n || 0), 0);
-  return {
-    turno,
-    fechaStr: '',
-    totalJuegos,
-    resultado,
-    historicoGuardadoFlag: '',
-  };
+  return resultado;
+}
+
+function contarCruceDecomisosSync(estadoFromRow12, reporteDecomisos, salidasFilas) {
+  return cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos, estadoFromRow12).length;
 }
 
 /**
@@ -305,46 +437,43 @@ export async function importarExcel(_base64, sheetName, range) {
 
 export async function resumirDecomisos() {
   const s = await loadState();
-  const nEst = s.estadoFromRow12?.length || 0;
+  const nCava = s.estadoFromRow12?.length || 0;
+  const nSal = s.despachosCavas?.length || 0;
   const nRep = s.reporteDecomisos?.length || 0;
-  if (!nEst || !nRep) {
+  if (!nCava || !nSal || !nRep) {
     return {
       success: false,
       message:
-        'No hay datos para cruzar decomisos: Estado_Cavas ' +
-        nEst +
-        ' filas, Reporte_Decomisos ' +
+        'No hay datos para cruzar: En cava ' +
+        nCava +
+        ', Salidas ' +
+        nSal +
+        ', Decomisos ' +
         nRep +
-        ' filas (se necesitan ambas > 0). Cambie la fecha del encabezado y pulse «Procesar desde SIRT», o confirme en SIRT que exista información para ese día.',
+        ' filas. Sincronice la fecha en SIRT.',
     };
   }
-  const mapa = construirMapaReporteDecomisos(s.reporteDecomisos);
-  const resultado = [];
-  s.estadoFromRow12.forEach((fila) => {
-    const slice9 = fila.slice(0, 9);
-    const id = String(slice9[0] ?? '').trim();
-    const prod = productoDecomisoDesdeMapa(mapa, id);
-    if (id && prod !== undefined) resultado.push([id, slice9[8], prod]);
-  });
+  const salPack = filtrarSalidasEnCava(s.despachosCavas, s.estadoFromRow12);
+  const resultado = cruzarDecomisosConSalidas(s.despachosCavas, s.reporteDecomisos, s.estadoFromRow12);
   const ahora = new Date();
   s.resumenRows = [
     ['ID Producto', 'Destino', 'Producto/Subproducto', 'Fecha Procesamiento'],
     ...resultado.map((r) => [...r, ahora]),
   ];
   s.resumenFechaProc = ahora.toISOString();
-  actualizarCantidadesInicialesOPLSync(s);
+  if (s.estadoFromRow12?.length) actualizarCantidadesInicialesOPLSync(s);
   await saveState(s);
   const destinos = new Set(resultado.map((r) => r[1]).filter(Boolean));
-  const sinCruce = resultado.length === 0 && nEst > 0 && nRep > 0;
-  let muestraIdsEstado = [];
+  const sinCruce = resultado.length === 0 && nSal > 0 && nRep > 0;
+  let muestraIdsSalidas = [];
   let muestraIdsReporte = [];
   if (sinCruce) {
     const seenE = new Set();
-    for (let i = 0; i < s.estadoFromRow12.length && muestraIdsEstado.length < 10; i++) {
-      const id = String(s.estadoFromRow12[i][0] ?? '').trim();
+    for (let i = 0; i < s.despachosCavas.length && muestraIdsSalidas.length < 10; i++) {
+      const id = filaSalidaCavaIdDestino(s.despachosCavas[i]).id;
       if (!id || seenE.has(id)) continue;
       seenE.add(id);
-      muestraIdsEstado.push(id);
+      muestraIdsSalidas.push(id);
     }
     const seenR = new Set();
     for (let i = 0; i < s.reporteDecomisos.length && muestraIdsReporte.length < 10; i++) {
@@ -360,10 +489,14 @@ export async function resumirDecomisos() {
     totalDestinos: destinos.size,
     fechaProcesamiento: fmtNow(),
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
-    filasEstadoCruce: nEst,
+    filasEnCava: salPack.basesEnCava.size,
+    filasSalidasCruce: nSal,
+    filasSalidasEnCava: salPack.filas.length,
     filasReporteCruce: nRep,
+    filasEstadoCruce: nCava,
     sinCoincidenciasCruce: sinCruce,
-    muestraIdsEstado: sinCruce ? muestraIdsEstado : undefined,
+    muestraIdsSalidas: sinCruce ? muestraIdsSalidas : undefined,
+    muestraIdsEstado: sinCruce ? muestraIdsSalidas : undefined,
     muestraIdsReporte: sinCruce ? muestraIdsReporte : undefined,
     decomisoVinculoStats: s.decomisoVinculoStats || undefined,
   };
@@ -495,7 +628,7 @@ export async function getDashboardData(range) {
       };
       actualizarCantidadesInicialesOPLSync(sWork);
       const turnoDesp = detectarTurnoDesdeDatos(desp) || detectarTurnoPorDia();
-      const rd = construirResumenDespachosDesdeFilas(desp, turnoDesp);
+      const rd = construirResumenDespachosDesdeFilas(desp, turnoDesp, reporte, estado);
       const fechaIso = filtro.from;
       rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} 00:00 (consulta SIRT)`;
       sWork.resumenDespachos = rd;
@@ -514,7 +647,7 @@ export async function getDashboardData(range) {
           ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
           : 0;
       const cr = contarCrudasSync(sWork);
-      const totalDecomisos = contarCruceDecomisosSync(estado, reporte);
+      const totalDecomisos = contarCruceDecomisosSync(estado, reporte, desp);
       const totalDecomisosEnRango = reporte.length;
 
       const progresoOPL = preview.success
@@ -604,73 +737,56 @@ function getDashboardDataDespachosSync(s) {
 
 export async function procesarDespachos(turnoForzado) {
   const s = await loadState();
+  if (!s.estadoFromRow12?.length) {
+    return { success: false, message: 'No hay Estado_Cavas (en cava). Sincronice desde SIRT.' };
+  }
   if (!s.despachosCavas.length) {
-    return { success: false, message: 'No hay datos de Despachos_Cavas. Sincronice desde SIRT.' };
+    return { success: false, message: 'No hay salidas de cava para la fecha. Sincronice desde SIRT.' };
   }
   const turno =
     turnoForzado && String(turnoForzado).length > 0
       ? String(turnoForzado)
       : detectarTurnoDesdeDatos(s.despachosCavas);
-  const data = s.despachosCavas.map((fila) => {
-    const p = String(fila[9] ?? '').trim();
-    if (p.includes(turno)) return fila;
-    const c = fila.slice();
-    c[9] = (p ? `${p} ` : '') + `/${turno}/`;
-    return c;
-  });
-  const mapaPuestos = {};
-  data.forEach((fila) => {
-    const id = String(fila[3] ?? '').trim();
-    const prop = String(fila[4] ?? '').trim();
-    const tipo = String(fila[7] ?? '').trim();
-    const puesto = String(fila[9] ?? '').trim();
-    if (!id || !tipo || !puesto) return;
-    if (!puesto.includes(turno)) return;
-    if (PUESTOS_EXCLUIDOS_DESP.includes(puesto)) return;
-    if (!mapaPuestos[puesto]) {
-      mapaPuestos[puesto] = { Cabeza: 0, 'Patas y Manos': 0, 'Visceras Blancas': 0, 'Visceras Rojas': 0 };
-    }
-    if (TIPOS_PRODUCTO.includes(tipo)) mapaPuestos[puesto][tipo]++;
-  });
-  const resultado = [];
-  Object.keys(mapaPuestos)
-    .sort()
-    .forEach((p) => {
-      const r = { puesto: p };
-      TIPOS_PRODUCTO.forEach((t) => {
-        r[t] = mapaPuestos[p][t] || 0;
-      });
-      resultado.push(r);
-    });
-  const juegosPorPuesto = contarJuegosCompletosPorClave(
-    data,
-    { id: 3, tipo: 7, puesto: 9 },
-    (fila) => fila[9],
-    turno
-  );
-  resultado.forEach((r) => {
-    r.Juegos = juegosPorPuesto[r.puesto] || 0;
-  });
-  const totalJuegos = Object.values(juegosPorPuesto).reduce((sum, n) => sum + Number(n || 0), 0);
-  s.resumenDespachos = {
+  const rd = construirResumenDespachosDesdeFilas(
+    s.despachosCavas,
     turno,
+    s.reporteDecomisos || [],
+    s.estadoFromRow12 || []
+  );
+  if (!rd.resultado?.length) {
+    return {
+      success: false,
+      message:
+        'No hay salidas del turno que coincidan con productos en cava (' +
+        (rd.filasSalidasUsadas || 0) +
+        ' de ' +
+        (rd.filasSalidasTotales || 0) +
+        ' salidas; ' +
+        (rd.filasEnCava || 0) +
+        ' en cava).',
+      ...rd,
+    };
+  }
+  s.resumenDespachos = {
+    ...rd,
     fechaStr: fmtNow(),
-    totalJuegos,
-    resultado,
-    historicoGuardadoFlag: '',
   };
   if (!s.fechaInicioOperacion) s.fechaInicioOperacion = new Date().toISOString();
   await saveState(s);
   try {
-    await calcularProgresoOPL(totalJuegos);
+    await calcularProgresoOPL(rd.totalJuegos);
   } catch (_) {}
   return {
     success: true,
-    turno,
-    totalPuestos: resultado.length,
-    totalJuegos,
+    turno: rd.turno,
+    totalPuestos: rd.resultado.length,
+    totalJuegos: rd.totalJuegos,
+    totalConDecomiso: rd.totalConDecomiso || 0,
+    filasEnCava: rd.filasEnCava,
+    filasSalidasUsadas: rd.filasSalidasUsadas,
+    salidasOmitidasSinCava: rd.salidasOmitidasSinCava,
     tipos: TIPOS_PRODUCTO,
-    resultado,
+    resultado: rd.resultado,
   };
 }
 
@@ -695,13 +811,30 @@ export async function getResumenDespachoActual() {
 export async function getDetallesPuesto(puesto) {
   const s = await loadState();
   const turno = String(s.resumenDespachos?.turno || '').trim();
+  const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
+  const { basesEnCava, crudaBases } = construirIndiceEnCava(s.estadoFromRow12 || []);
+  const clavePuesto = claveAgrupacionPuesto(puesto);
   const filas = [];
   s.despachosCavas.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const prop = String(fila[4] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
-    const pFila = String(fila[9] ?? '').trim();
-    if (pFila === puesto && id) filas.push({ id, codigoBase: codigoBase(id), propietario: prop, tipo });
+    const pFila = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (!id || claveAgrupacionPuesto(pFila) !== clavePuesto) return;
+    if (turno && pFila && !pFila.includes(turno)) return;
+    const base = codigoBase(id);
+    if (basesEnCava.size && base && !basesEnCava.has(base)) return;
+    const dec = decomisoInfoDesdeMapa(mapaDec, id);
+    filas.push({
+      id,
+      codigoBase: base,
+      propietario: prop,
+      tipo,
+      enCava: Boolean(base && basesEnCava.has(base)),
+      cruda: tipo === 'Visceras Blancas' && Boolean(base && crudaBases.has(base)),
+      decomiso: Boolean(dec),
+      productoDecomiso: dec?.productos?.join(', ') || '',
+    });
   });
   filas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.id.localeCompare(b.id));
   return { success: true, puesto, turno, filas };
@@ -998,16 +1131,26 @@ export async function cerrarOperacion() {
 
 export async function getPuestosCrudas() {
   const s = await loadState();
+  const rd = s.resumenDespachos;
   const puestos = {};
-  s.estadoFromRow12.forEach((fila) => {
-    const codigo = String(fila[0] ?? '').trim();
-    const desc = String(fila[1] ?? '').trim();
-    const puesto = String(fila[8] ?? '').trim();
-    const colO = fila[13];
-    if (!codigo || desc !== 'Visceras Blancas' || !esCruda(colO)) return;
-    if (puesto) puestos[puesto] = true;
+  (rd?.resultado || []).forEach((r) => {
+    if (r.tieneCruda && r.puesto) puestos[r.puesto] = true;
   });
-  return { success: true, puestos, total: Object.keys(puestos).length, codigos: [] };
+  if (Object.keys(puestos).length) {
+    return { success: true, puestos, total: Object.keys(puestos).length };
+  }
+  const { crudaBases } = construirIndiceEnCava(s.estadoFromRow12 || []);
+  const turno = String(rd?.turno || '').trim();
+  (s.despachosCavas || []).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puesto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (tipo !== 'Visceras Blancas' || !id || !puesto) return;
+    if (turno && !puesto.includes(turno)) return;
+    const base = codigoBase(id);
+    if (base && crudaBases.has(base)) puestos[puesto] = true;
+  });
+  return { success: true, puestos, total: Object.keys(puestos).length };
 }
 
 export async function getCrudasDetalle() {
@@ -1331,12 +1474,15 @@ export async function consultarDespachosPreview(turno, range) {
     (turno && String(turno).trim()) ||
     detectarTurnoDesdeDatos(desp) ||
     (filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia());
-  const rd = construirResumenDespachosDesdeFilas(desp, t);
+  const packDec = await fetchReporteDecomisosRows(useRange);
+  const estado = await fetchEstadoCavasRows(useRange);
+  const rd = construirResumenDespachosDesdeFilas(desp, t, packDec.rows, estado);
   return {
     success: true,
     turno: rd.turno,
     totalPuestos: rd.resultado.length,
     totalJuegos: rd.totalJuegos,
+    totalConDecomiso: rd.totalConDecomiso || 0,
     tipos: TIPOS_PRODUCTO,
     resultado: rd.resultado,
     avisoRango: filtroSirtValido(filtro) && !desp.length ? 'Sin salidas en la fecha exacta.' : '',
@@ -1346,33 +1492,48 @@ export async function consultarDespachosPreview(turno, range) {
 export async function consultarCruceDecomisosPreview(range) {
   const filtro = normalizarRangoFechas(range || {});
   const useRange = filtroSirtValido(filtro) ? filtro : {};
-  const estado = await fetchEstadoCavasRows(useRange);
+  let salidas = await fetchDespachosCavasRows(useRange);
+  if (filtroSirtValido(filtro) && !salidas.length) {
+    salidas = await fetchDespachosCavasRows({});
+  }
   const pack = await fetchReporteDecomisosRows(useRange);
-  const mapa = construirMapaReporteDecomisos(pack.rows);
-  const resultado = [];
-  estado.forEach((fila) => {
-    const slice9 = fila.slice(0, 9);
-    const id = String(slice9[0] ?? '').trim();
-    const prod = productoDecomisoDesdeMapa(mapa, id);
-    if (id && prod !== undefined) resultado.push([id, slice9[8], prod]);
-  });
+  const estado = await fetchEstadoCavasRows(useRange);
+  const salPack = filtrarSalidasEnCava(salidas, estado);
+  const resultado = cruzarDecomisosConSalidas(salidas, pack.rows, estado);
   return {
     success: true,
     totalProductos: resultado.length,
     totalDestinos: new Set(resultado.map((r) => r[1]).filter(Boolean)).size,
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
-    filasEnCava: estado.length,
+    filasSalidas: salidas.length,
+    filasSalidasEnCava: salPack.filas.length,
     filasDecomisosPeriodo: pack.rows.length,
+    filasEnCava: salPack.basesEnCava.size,
   };
 }
 
 export async function prepararModuloDecomisosDesdeSIRT(range) {
-  await importarExcel(null, 'Estado_Cavas', range);
+  await importarExcel(null, 'Despachos_Cavas', range);
+  const s = await loadState();
+  let usoLookback = false;
+  const filtro = normalizarRangoFechas(range || {});
+  if (filtroSirtValido(filtro) && (!s.despachosCavas || s.despachosCavas.length === 0)) {
+    await importarExcel(null, 'Despachos_Cavas', {});
+    usoLookback = true;
+  }
   await importarExcel(null, 'Reporte_Decomisos', range);
-  return resumirDecomisos();
+  await importarExcel(null, 'Estado_Cavas', range);
+  const res = await resumirDecomisos();
+  if (res && res.success && usoLookback) {
+    res.avisoRango =
+      'No hubo salidas de cava para la fecha exacta; se usó ventana lookback de SIRT.';
+  }
+  return res;
 }
 
 export async function prepararModuloDespachosDesdeSIRT(turno, range) {
+  await importarExcel(null, 'Reporte_Decomisos', range);
+  await importarExcel(null, 'Estado_Cavas', range);
   await importarExcel(null, 'Despachos_Cavas', range);
   const s = await loadState();
   let usoLookback = false;
@@ -2019,7 +2180,7 @@ export async function generarReporteOPL(opl, filtro) {
 <head>
   <meta charset="utf-8">
   <title>Reporte OPL</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+  <script src="/vendor/chart.umd.min.js"></script>
   <style>
     body{font-family:Arial,sans-serif;background:#f3f4f6;margin:0;padding:20px;color:#1f2937}
     .wrap{max-width:1100px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden}
