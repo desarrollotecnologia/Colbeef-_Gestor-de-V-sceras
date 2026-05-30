@@ -174,6 +174,8 @@
     tbody tr.total-row{background:#e8f5e9;font-weight:700;border-top:2px solid var(--vp);}
     tbody tr.incompleto-row{background:#fee2e2;border-left:3px solid #ef4444;}
     tbody tr.incompleto-row:hover{background:#fecaca!important;}
+    tbody tr.decomiso-row{background:#fff7ed;border-left:3px solid #f59e0b;}
+    tbody tr.decomiso-row:hover{background:#ffedd5!important;}
     td.cruda-cell{position:relative;}
     td.cruda-cell::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;border:2px solid #f59e0b;background:rgba(251,191,36,0.15);pointer-events:none;}
     td.cruda-cell span{position:relative;z-index:1;}
@@ -181,8 +183,13 @@
     tbody td{padding:0.75rem 1rem;}
     tbody td.num{text-align:center;}
     td.puesto-desp{max-width:min(420px,45vw);font-size:0.82rem;line-height:1.35;word-break:break-word;vertical-align:top;}
+    td.cell-bajo{color:#dc2626!important;font-weight:700;}
+    td.cell-decomiso{color:#9a3412!important;font-weight:700;}
     .badge-incompleto{display:inline-block;font-size:0.68rem;background:#ef4444;color:#fff;border-radius:3px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap;}
     .badge-decomiso{display:inline-block;font-size:0.65rem;background:#7c2d12;color:#fff;border-radius:3px;padding:1px 5px;margin-left:4px;vertical-align:middle;}
+    .badge-cruda{display:inline-block;font-size:0.65rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:3px;padding:1px 5px;margin-left:4px;vertical-align:middle;}
+    .desp-leyenda{font-size:0.75rem;color:var(--gris);margin:0 0 0.65rem;line-height:1.45;}
+    .desp-leyenda strong{color:#374151;}
     .empty-state{text-align:center;padding:3rem;color:var(--gris);}
 
     /* ── INFORME: INPUTS ── */
@@ -507,56 +514,27 @@
       Módulo de Despachos
       <span class="turno-badge" id="despTurnoBadge">—</span>
     </h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1.4rem;line-height:1.45;">
-      Agrupa por <strong>puesto/destino</strong> los animales <strong>en cava</strong> con <strong>salida hoy</strong>,
-      cruza <strong>decomisos</strong> y marca <strong>cruda</strong> (círculo naranja en VB).
-      Doble clic en una fila para el detalle. <strong>Limpiar</strong> borra la sesión.
+    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
+      Agrupa por <strong>puesto/destino</strong> (en cava + salida del día + decomisos).
+      El <strong>turno</strong> se calcula solo según la fecha y las salidas en SIRT.
+      Doble clic en una fila para el detalle.
     </p>
-    <div style="margin-bottom:1.5rem;">
-      <p style="font-size:0.85rem;color:var(--gris);margin-bottom:0.8rem;">
-        <strong style="color:var(--vp);">Selecciona el turno a procesar</strong> — el botón con etiqueta «hoy» es el sugerido.
-      </p>
-      <button type="button" class="btn btn-secondary" style="margin-bottom:0.75rem;padding:0.45rem 1rem;font-size:0.85rem;" onclick="usarTurnoHoy()">✓ Usar turno de hoy</button>
-      <div class="turno-btns">
-        <button class="turno-btn" data-turno="DxL" onclick="seleccionarTurno('DxL')"><span class="t-d">Dom</span><span class="t-a">→</span><span class="t-d">Lun</span><span class="t-c">DxL</span></button>
-        <button class="turno-btn" data-turno="LxM" onclick="seleccionarTurno('LxM')"><span class="t-d">Lun</span><span class="t-a">→</span><span class="t-d">Mar</span><span class="t-c">LxM</span></button>
-        <button class="turno-btn" data-turno="MxM" onclick="seleccionarTurno('MxM')"><span class="t-d">Mar</span><span class="t-a">→</span><span class="t-d">Mié</span><span class="t-c">MxM</span></button>
-        <button class="turno-btn" data-turno="MxJ" onclick="seleccionarTurno('MxJ')"><span class="t-d">Mié</span><span class="t-a">→</span><span class="t-d">Jue</span><span class="t-c">MxJ</span></button>
-        <button class="turno-btn" data-turno="JxV" onclick="seleccionarTurno('JxV')"><span class="t-d">Jue</span><span class="t-a">→</span><span class="t-d">Vie</span><span class="t-c">JxV</span></button>
-        <button class="turno-btn" data-turno="VxS" onclick="seleccionarTurno('VxS')"><span class="t-d">Vie</span><span class="t-a">→</span><span class="t-d">Sáb</span><span class="t-c">VxS</span></button>
-        <button class="turno-btn" data-turno="SxD" onclick="seleccionarTurno('SxD')"><span class="t-d">Sáb</span><span class="t-a">→</span><span class="t-d">Dom</span><span class="t-c">SxD</span></button>
-      </div>
-    </div>
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Juegos a Despachar</div>
         <div class="stat-valor" id="statJuegos">—</div>
-        <div class="stat-sub">Vísceras Rojas del turno</div>
+        <div class="stat-sub">Juegos completos del turno</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Puestos</div>
         <div class="stat-valor" id="statPuestos">—</div>
         <div class="stat-sub">Destinos del turno</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Turno activo</div>
-        <div class="stat-valor" style="font-size:1.5rem;" id="statTurno">—</div>
-      </div>
-    </div>
-    <div class="upload-grid" style="grid-template-columns:1fr;">
-      <div class="upload-box" id="uploadBoxAdic" style="border:2px dashed #f59e0b;background:#fffbeb;">
-        <div class="ub-icon">➕</div>
-        <div class="ub-label" style="color:#d97706;">Salidas Adicionales</div>
-        <div class="ub-hint">Sube cada corte — se acumula en Estado_Cavas</div>
-        <div class="ub-filename" id="fileAdicName">Sin archivo</div>
-        <input type="file" id="fileInputAdic" accept=".xlsx,.xls" onchange="onFileAdicSelected()">
-      </div>
     </div>
     <div class="btn-row" style="align-items:center;flex-wrap:wrap;">
       <button class="btn btn-secondary" onclick="confirmarLimpiar()">🗑 Limpiar</button>
       <button class="btn btn-danger" onclick="confirmarCerrarOperacion()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🔒 Cerrar operación</button>
       <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()">⚙️ Cargar y procesar desde SIRT</button>
-      <button class="btn btn-primary" id="btnProcesarAdic" onclick="procesarAdicionales()" disabled style="background:#f59e0b;border-color:#f59e0b;">⚙️ Procesar Adicionales</button>
       <div class="search-desp">
         <span class="s-icon">🔍</span>
         <input type="text" id="searchDesp" placeholder="Buscar puesto o código..." oninput="buscarEnDespachos(this.value)" autocomplete="off">
@@ -583,6 +561,11 @@
       </div>
     </details>
     <div class="alert" id="despAlert"></div>
+    <p class="desp-leyenda">
+      <strong>Rojo</strong> = subproducto con cantidad menor ·
+      <strong style="color:#9a3412;">Marrón ⚠</strong> = decomiso en ese subproducto ·
+      <strong style="color:#d97706;">Círculo naranja en VB</strong> = lleva cruda
+    </p>
     <div class="table-wrap">
       <table>
         <thead id="despThead"></thead>
@@ -1034,7 +1017,6 @@
 var state = { file1:null, file2:null, hayResultados:false, fileDesp:null, dashboardVista:'sirt' };
 window._uxPreviewCache = { decomisos: [], enCava: [], salidas: [] };
 var turnoSeleccionado = null;
-var TURNO_POR_DIA = {0:'DxL',1:'LxM',2:'MxM',3:'MxJ',4:'JxV',5:'VxS',6:'SxD'};
 
 // Estado módulo informe
 var infState = {
@@ -1072,7 +1054,6 @@ window.onload = function() {
   var df = document.getElementById('fechaGlobal');
   if (df) df.value = fechaHoyISO();
   syncFechaGlobalAModulos();
-  inicializarSelectorTurno();
   ejecutarSincronizacionAutomaticaSirt({ useSpinner: true });
   var bpd = document.getElementById('btnProcesarDesp');
   if (bpd) bpd.disabled = false;
@@ -1172,7 +1153,7 @@ function cargarDespachosDesdeSirt(opts) {
       hideSpinner();
       showAlert('despAlert', 'error', e && e.message ? e.message : String(e));
     })
-    .prepararModuloDespachosDesdeSIRT(turnoSeleccionado || null, filtro);
+    .prepararModuloDespachosDesdeSIRT(null, filtro);
 }
 function showInforme() {
   _hideAll(); document.getElementById('viewInforme').classList.add('active');
@@ -1813,25 +1794,25 @@ function cargarVistaSalidasDecomiso() {
 function actualizarStatsDespacho(res) {
   var elJ = document.getElementById('statJuegos');
   var elP = document.getElementById('statPuestos');
-  var elT = document.getElementById('statTurno');
   if (elJ) elJ.textContent = res && res.totalJuegos != null ? res.totalJuegos : '—';
   if (elP) elP.textContent = res && res.totalPuestos != null ? res.totalPuestos : '—';
-  if (elT) elT.textContent = (res && res.turno) || turnoSeleccionado || '—';
-}
-function inicializarSelectorTurno() {
-  var turnoHoy=TURNO_POR_DIA[new Date().getDay()]||'SxD';
-  document.querySelectorAll('.turno-btn').forEach(function(btn){if(btn.dataset.turno===turnoHoy)btn.classList.add('sugerido');});
-  seleccionarTurno(turnoHoy);
+  if (res && res.turno) seleccionarTurno(res.turno);
+  else if (!res) {
+    turnoSeleccionado = null;
+    var badge = document.getElementById('despTurnoBadge');
+    if (badge) badge.textContent = '—';
+  }
 }
 function seleccionarTurno(turno) {
-  turnoSeleccionado=turno;
-  document.querySelectorAll('.turno-btn').forEach(function(btn){btn.classList.toggle('selected',btn.dataset.turno===turno);});
-  document.getElementById('despTurnoBadge').textContent='Turno: '+turno;
-  var elT = document.getElementById('statTurno');
-  if (elT) elT.textContent = turno;
-  if (document.getElementById('viewDespachos').classList.contains('active') && state.dashboardVista !== 'sesion') {
-    cargarDespachosDesdeSirt({ silent: true });
+  if (!turno) {
+    turnoSeleccionado = null;
+    var b = document.getElementById('despTurnoBadge');
+    if (b) b.textContent = '—';
+    return;
   }
+  turnoSeleccionado = turno;
+  var badge = document.getElementById('despTurnoBadge');
+  if (badge) badge.textContent = 'Turno: ' + turno;
 }
 function cargarDespachosGuardados() {
   google.script.run.withSuccessHandler(function(res){
@@ -1893,10 +1874,11 @@ function agruparResultadoDespachoPorPuesto(datos) {
         'Patas y Manos': 0,
         'Visceras Blancas': 0,
         'Visceras Rojas': 0,
-        incompleto: false,
+        incompletoCantidades: false,
         incompletoPorDecomiso: false,
         decomisoPorTipo: {},
         animalesDecomiso: 0,
+        tieneCruda: false,
       };
     }
     var t = mapa[clave];
@@ -1904,8 +1886,9 @@ function agruparResultadoDespachoPorPuesto(datos) {
     COLS_DESPACHO.forEach(function (c) {
       t[c] += Number(r[c] || 0);
     });
-    if (r.incompleto) t.incompleto = true;
+    if (r.incompletoCantidades || (r.incompleto && !r.incompletoPorDecomiso)) t.incompletoCantidades = true;
     if (r.incompletoPorDecomiso) t.incompletoPorDecomiso = true;
+    if (r.tieneCruda) t.tieneCruda = true;
     if (r.animalesDecomiso) t.animalesDecomiso = Math.max(t.animalesDecomiso, Number(r.animalesDecomiso) || 0);
     if (r.decomisoPorTipo) {
       Object.keys(r.decomisoPorTipo).forEach(function (k) {
@@ -1924,7 +1907,7 @@ function agruparResultadoDespachoPorPuesto(datos) {
       });
       var minV = Math.min.apply(null, vals);
       var maxV = Math.max.apply(null, vals);
-      if (minV !== maxV) t.incompleto = true;
+      if (minV !== maxV) t.incompletoCantidades = true;
       return t;
     });
 }
@@ -1954,16 +1937,33 @@ function renderTablaDespachos(res) {
       });
       var minVal = Math.min.apply(null, vals);
       var maxVal = Math.max.apply(null, vals);
-      var incompleto = r.incompleto != null ? r.incompleto : minVal !== maxVal;
+      var desbalance =
+        r.incompletoCantidades != null ? Boolean(r.incompletoCantidades) : minVal !== maxVal;
       var porDec = Boolean(r.incompletoPorDecomiso);
+      var animDec = Number(r.animalesDecomiso || 0);
       var decPorTipo = r.decomisoPorTipo || {};
       var pe_raw = r.puesto || '';
       var pe = pe_raw.replace(/'/g, '&#39;');
-      var badge = incompleto ? '<span class="badge-incompleto">incompleto</span>' : '';
-      if (porDec) badge += '<span class="badge-decomiso">decomiso</span>';
+      var badge = '';
+      if (desbalance) badge += '<span class="badge-incompleto">incompleto</span>';
+      if (porDec) {
+        badge +=
+          '<span class="badge-decomiso" title="' +
+          animDec +
+          ' animal(es) con decomiso">' +
+          'decomiso' +
+          (animDec > 0 ? ' (' + animDec + ')' : '') +
+          '</span>';
+      }
+      if (r.tieneCruda || _codigosCrudas[pe_raw]) {
+        badge += '<span class="badge-cruda">cruda</span>';
+      }
+      var rowCls = 'clickable';
+      if (desbalance) rowCls += ' incompleto-row';
+      else if (porDec) rowCls += ' decomiso-row';
       return (
-        '<tr class="clickable' +
-        (incompleto ? ' incompleto-row' : '') +
+        '<tr class="' +
+        rowCls +
         '" ondblclick="abrirDetalle(this)" data-puesto="' +
         pe +
         '">' +
@@ -1974,13 +1974,25 @@ function renderTablaDespachos(res) {
         cols
           .map(function (c) {
             var v = r[c] || 0;
-            var bajo = incompleto && v < maxVal;
-            var afectadoDec = porDec && decPorTipo[c] > 0;
-            var cellStyle = bajo || afectadoDec ? 'color:#dc2626;font-weight:700;' : '';
-            var esCruda = c === 'Visceras Blancas' && (r.tieneCruda || _codigosCrudas[pe_raw]);
-            var cellClass = esCruda ? 'num cruda-cell' : 'num';
+            var bajo = desbalance && v < maxVal;
+            var decEnTipo = Number(decPorTipo[c] || 0);
+            var afectadoDec = porDec && decEnTipo > 0;
+            var cellClass = 'num';
+            if (c === 'Visceras Blancas' && (r.tieneCruda || _codigosCrudas[pe_raw])) {
+              cellClass += ' cruda-cell';
+            }
+            if (bajo) cellClass += ' cell-bajo';
+            else if (afectadoDec) cellClass += ' cell-decomiso';
             var valHtml = v > 0 ? '<span>' + v + '</span>' : '–';
-            return '<td class="' + cellClass + '" style="' + cellStyle + '">' + valHtml + '</td>';
+            if (afectadoDec) {
+              valHtml +=
+                '<sup style="font-size:0.62rem;margin-left:1px;" title="' +
+                decEnTipo +
+                ' decomiso(s) en ' +
+                c +
+                '">⚠</sup>';
+            }
+            return '<td class="' + cellClass + '">' + valHtml + '</td>';
           })
           .join('') +
         '</tr>'
@@ -2027,7 +2039,8 @@ function confirmarLimpiar() {
     actualizarStatsDespacho(null);
     document.getElementById('despThead').innerHTML='';
     document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr>';
-    inicializarSelectorTurno();hideAlert('despAlert');
+    seleccionarTurno(null);
+    hideAlert('despAlert');
     showAlert('despAlert','success','✓ Operación limpiada. Lista para el próximo turno.');loadDashboardData();
   }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).limpiarDespachos();
 }
@@ -2576,88 +2589,6 @@ function guardarOPLModal() {
 }
 
 // ══════════════════════════════════════════════════════
-// ADICIONALES
-// ══════════════════════════════════════════════════════
-var _fileAdicState = { file: null, nombre: '' };
-
-function onFileAdicSelected() {
-  var file = document.getElementById('fileInputAdic').files[0];
-  if (!file) return;
-  _fileAdicState.file   = file;
-  _fileAdicState.nombre = file.name;
-  document.getElementById('fileAdicName').textContent = file.name;
-  document.getElementById('uploadBoxAdic').classList.add('has-file');
-  document.getElementById('btnProcesarAdic').disabled = false;
-  showAlert('despAlert','info','📂 <strong>' + file.name + '</strong> listo. Presiona <strong>⚙️ Procesar Adicionales</strong>.');
-}
-
-function procesarAdicionales() {
-  if (!_fileAdicState.file) {
-    showAlert('despAlert','warn','Sube el archivo de adicionales primero.');
-    return;
-  }
-  var btn = document.getElementById('btnProcesarAdic');
-  btn.disabled = true;
-  btn.textContent = '⏳ Procesando...';
-  showSpinner('Importando adicionales...');
-
-  var reader = new FileReader();
-  reader.onload = function(e) {
-    var bytes = Array.from(new Uint8Array(e.target.result));
-    // Paso 1: importar a hoja temporal
-    google.script.run
-      .withSuccessHandler(function(resImport) {
-        if (!resImport || !resImport.success) {
-          hideSpinner();
-          btn.disabled = false; btn.textContent = '⚙️ Procesar Adicionales';
-          showAlert('despAlert','error','Error importando: ' + (resImport ? resImport.message : ''));
-          return;
-        }
-        // Paso 2: procesar — solo adicionales se escriben en Estado_Cavas
-        google.script.run
-          .withSuccessHandler(function(res) {
-            hideSpinner();
-            btn.disabled = false; btn.textContent = '⚙️ Procesar Adicionales';
-            if (!res || !res.success) {
-              showAlert('despAlert','error','Error: ' + (res ? res.message : ''));
-              return;
-            }
-            var msg = '✅ <strong>' + (res.totalAdicional||0) + '</strong> juegos adicionales agregados a salidas.';
-            if (res.totalCancel > 0) msg += ' <span style="color:#6b7280;">' + res.totalCancel + ' cancelaciones ignoradas.</span>';
-            if (res.totalCambio > 0) msg += ' <span style="color:#6b7280;">' + res.totalCambio + ' cambios ignorados.</span>';
-            showAlert('despAlert','success', msg);
-            // Limpiar box — listo para siguiente corte
-            _fileAdicState = { file:null, nombre:'' };
-            document.getElementById('fileInputAdic').value = '';
-            document.getElementById('fileAdicName').textContent = 'Sin archivo';
-            document.getElementById('uploadBoxAdic').classList.remove('has-file');
-            document.getElementById('btnProcesarAdic').disabled = true;
-            // Actualizar dashboard con nuevas salidas
-            loadDashboardData();
-          })
-          .withFailureHandler(function(e){
-            hideSpinner();
-            btn.disabled = false; btn.textContent = '⚙️ Procesar Adicionales';
-            showAlert('despAlert','error', e.message);
-          })
-          .importarAdicionales(null, _fileAdicState.nombre, null);
-      })
-      .withFailureHandler(function(e){
-        hideSpinner();
-        btn.disabled = false; btn.textContent = '⚙️ Procesar Adicionales';
-        showAlert('despAlert','error', e.message);
-      })
-      .importarExcelAdicionales(bytes, _fileAdicState.nombre);
-  };
-  reader.onerror = function(){
-    hideSpinner();
-    btn.disabled = false; btn.textContent = '⚙️ Procesar Adicionales';
-    showAlert('despAlert','error','Error leyendo el archivo.');
-  };
-  reader.readAsArrayBuffer(_fileAdicState.file);
-}
-
-// ══════════════════════════════════════════════════════
 // MÓDULO CRUDAS
 // ══════════════════════════════════════════════════════
 function showCrudas() {
@@ -3012,10 +2943,9 @@ function confirmarCerrarOperacion() {
       document.getElementById('btnProcesarDesp').disabled = true;
       document.getElementById('statJuegos').textContent = '—';
       document.getElementById('statPuestos').textContent = '—';
-      document.getElementById('statTurno').textContent = '—';
       document.getElementById('despThead').innerHTML = '';
       document.getElementById('despTbody').innerHTML = '<tr><td colspan="5" class="empty-state">Operación cerrada. Lista para el próximo turno.</td></tr>';
-      inicializarSelectorTurno();
+      seleccionarTurno(null);
       loadDashboardData();
     })
     .withFailureHandler(function(e) { hideSpinner(); showAlert('despAlert','error',e.message); })

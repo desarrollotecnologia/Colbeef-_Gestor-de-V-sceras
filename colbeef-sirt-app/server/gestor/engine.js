@@ -160,7 +160,8 @@ function construirResumenDespachosDesdeFilas(
       r.animalesDecomiso = meta.basesConDecomiso.size;
       r.decomisoPorTipo = meta.decomisoPorTipo || {};
       r.incompletoPorDecomiso = meta.basesConDecomiso.size > 0;
-      r.incompleto = minVal !== maxVal || r.incompletoPorDecomiso;
+      r.incompletoCantidades = minVal !== maxVal;
+      r.incompleto = r.incompletoCantidades || r.incompletoPorDecomiso;
       r.tieneCruda = Boolean(meta.tieneCruda);
       resultado.push(r);
     });
