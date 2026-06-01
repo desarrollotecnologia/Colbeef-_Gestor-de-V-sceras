@@ -1362,7 +1362,14 @@ function updateDashboard(data) {
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
     if (data.progresoMensaje) {
-      setText('progresoMeta', data.progresoMensaje);
+      var metaTxt = data.progresoMensaje;
+      if (data.gestorBuild) metaTxt += ' · build ' + data.gestorBuild;
+      setText('progresoMeta', metaTxt);
+    } else if (data.consultaSIRT) {
+      setText(
+        'progresoMeta',
+        'Servidor con código antiguo (sin programación por fecha). Haga git pull y restart en .137, luego Ctrl+F5.'
+      );
     } else {
       var juegosTotalesOperacion =
         data.juegosTotalesOperacion != null && data.juegosTotalesOperacion !== undefined

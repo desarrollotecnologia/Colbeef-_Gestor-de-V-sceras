@@ -11,6 +11,7 @@ import { getDespachosPorPropietario, getCategoriasVw } from './services/metrics.
 import { buildExcelBuffer, buildPdfBuffer } from './services/exportReport.js';
 import { dispatchRpc } from './gestor/rpc.js';
 import * as gestor from './gestor/engine.js';
+import { GESTOR_BUILD } from './gestor/engine.js';
 import { procesarDespachos, getDetallePuesto } from './logic/despachos.logic.js';
 import { setPuestosCrudas } from './logic/crudas.logic.js';
 
@@ -48,7 +49,12 @@ app.post('/api/rpc', async (req, res) => {
 app.get('/api/health', async (_req, res) => {
   try {
     await query('SELECT 1 AS ok');
-    res.json({ ok: true, db: true });
+    res.json({
+      ok: true,
+      db: true,
+      gestorBuild: GESTOR_BUILD,
+      despachosFuente: process.env.SIRT_DESPACHOS_FUENTE || 'programado',
+    });
   } catch (e) {
     res.status(500).json({ ok: false, message: e.message });
   }

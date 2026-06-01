@@ -599,6 +599,9 @@ export function contarCrudasSync(s) {
   return { success: true, total };
 }
 
+/** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
+export const GESTOR_BUILD = 'programado-cava-v3';
+
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return String(iso || '');
@@ -673,6 +676,17 @@ export async function getDashboardData(range) {
           ' piezas) · ' +
           juegosEnCava +
           ' juegos en cava';
+      } else if (filasSalidasDia > 0 && totalJuegosDespachar === 0) {
+        progresoMensaje =
+          filasSalidasDia +
+          ' piezas programadas el ' +
+          isoToDdMmYyyy(fechaIso) +
+          ' · turno ' +
+          turnoOp +
+          ' · 0 juegos completos (revise filtro turno/puesto)' +
+          ' · ' +
+          juegosEnCava +
+          ' en cava';
       } else {
         progresoMensaje =
           'Sin programación a despachar el ' +
@@ -724,6 +738,8 @@ export async function getDashboardData(range) {
         filasReporteDecomisos: totalDecomisosEnRango,
         filasReporteDecomisosRaw: reporte.length,
         filasDespachosCavas: desp.length,
+        gestorBuild: GESTOR_BUILD,
+        despachosFuente: String(process.env.SIRT_DESPACHOS_FUENTE || 'programado'),
         decomisoVinculoStats,
         progresoOPL,
         operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
