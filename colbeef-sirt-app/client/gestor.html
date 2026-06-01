@@ -374,7 +374,7 @@
           <div class="split-left">
             <div class="split-label">📦 En cava</div>
             <div class="split-valor" id="dashSalidas">—</div>
-            <div class="split-sub">Juegos viscerales en stock</div>
+            <div class="split-sub" id="dashSalidasSub">Juegos programados del turno</div>
           </div>
           <div class="split-right">
             <div class="split-label">🏷️ Decomisos</div>
@@ -1331,14 +1331,28 @@ function updateDashboard(data) {
     var filasCava = Number(data.filasEnCava != null ? data.filasEnCava : data.filasEstadoCavas || 0);
     var decoVinc = Number(data.totalDecomisosVinculadosCava != null ? data.totalDecomisosVinculadosCava : data.totalDecomisos || 0);
     var decoRango = Number(data.totalDecomisosEnRango != null ? data.totalDecomisosEnRango : 0);
-    setText('dashSalidas', juegosEnCava > 0 ? juegosEnCava : filasCava > 0 ? '0 juegos' : '—');
+    var salidasMostrar =
+      data.consultaSIRT && pendientes > 0
+        ? pendientes
+        : juegosEnCava > 0
+          ? juegosEnCava
+          : filasCava > 0
+            ? '0 juegos'
+            : '—';
+    setText('dashSalidas', salidasMostrar);
+    var salSub = document.getElementById('dashSalidasSub');
+    if (salSub) {
+      salSub.textContent = data.consultaSIRT
+        ? 'Juegos programados del turno'
+        : 'Juegos viscerales en stock';
+    }
     if (data.consultaSIRT) {
       setText('dashDecomisos', decoVinc > 0 ? decoVinc : '0');
       var decoSub = document.getElementById('dashDecomisosSub');
       if (decoSub) {
         decoSub.textContent =
           decoVinc > 0
-            ? 'Con decomiso en salida programada hoy'
+            ? 'Animales con decomiso en salida programada'
             : 'Ninguno en la salida programada de hoy';
       }
     } else {
@@ -1403,6 +1417,8 @@ function updateDashboard(data) {
         renderDashOplFinalizada(data.oplPreviewFecha || '');
       } else if (data.progresoOPL && data.progresoOPL.length > 0) {
         renderDashOplMini(data.progresoOPL);
+      } else if (data.todosOPL && data.todosOPL.length > 0) {
+        renderDashOplMini(data.todosOPL);
       } else if (data.oplPreviewMessage) {
         var esc = escapeHtml(String(data.oplPreviewMessage));
         document.getElementById('dashOplMini').innerHTML =

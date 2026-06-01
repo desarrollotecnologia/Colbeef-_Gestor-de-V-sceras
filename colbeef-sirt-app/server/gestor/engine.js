@@ -97,6 +97,7 @@ function construirResumenDespachosDesdeFilas(
   const mapaDec = construirMapaDecomisosPorAnimal(reporteDecomisos);
 
   const puestoMeta = {};
+  const basesDecomisoProgramados = new Set();
   data.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
@@ -132,6 +133,7 @@ function construirResumenDespachosDesdeFilas(
     if (dec && !puestoMeta[clave].basesDecContados.has(base)) {
       puestoMeta[clave].basesDecContados.add(base);
       puestoMeta[clave].basesConDecomiso.add(base);
+      basesDecomisoProgramados.add(base);
       dec.tipos.forEach((tDec) => {
         puestoMeta[clave].decomisoPorTipo[tDec] = (puestoMeta[clave].decomisoPorTipo[tDec] || 0) + 1;
       });
@@ -154,7 +156,7 @@ function construirResumenDespachosDesdeFilas(
       let juegos = 0;
       Object.keys(meta.animales).forEach((base) => {
         const tipos = meta.animales[base];
-        if (tieneJuegoCompleto(tipos) && !meta.basesConDecomiso.has(base)) juegos++;
+        if (tieneJuegoCompleto(tipos)) juegos++;
       });
       r.Juegos = juegos;
       totalJuegos += juegos;
@@ -173,7 +175,7 @@ function construirResumenDespachosDesdeFilas(
     totalJuegos,
     resultado,
     historicoGuardadoFlag: '',
-    totalConDecomiso: resultado.reduce((s, r) => s + (r.animalesDecomiso || 0), 0),
+    totalConDecomiso: basesDecomisoProgramados.size,
     filasEnCava: basesEnCava.size,
     filasSalidasTotales: (despachosCavas || []).length,
     filasSalidasUsadas: salidasBase.length,
@@ -299,6 +301,51 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
   return cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos).length;
 }
 
+/** Totales OPL desde salidas programadas del turno (como planilla / módulo Despachos). */
+function construirProgresoOplDesdeDespachos(s, turno, fecha) {
+  const mapaOPL = cargarMapaOPL(s);
+  const porProp = contarJuegosCompletosPorClave(
+    s.despachosCavas || [],
+    { id: 3, tipo: 7, prop: 4, puesto: 9 },
+    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
+    turno
+  );
+  const porOPL = {};
+  Object.keys(porProp).forEach((prop) => {
+    const opl = mapaOPL[prop] || OPL_DEFAULT;
+    const n = porProp[prop];
+    if (!n) return;
+    if (!porOPL[opl]) porOPL[opl] = { total: 0, despachados: 0, pendientes: 0 };
+    porOPL[opl].total += n;
+    porOPL[opl].pendientes += n;
+  });
+  const todosOPL = [];
+  const progreso = [];
+  Object.keys(porOPL)
+    .sort()
+    .forEach((opl) => {
+      const d = porOPL[opl];
+      if (d.total <= 0) return;
+      const item = {
+        opl,
+        total: d.total,
+        despachados: d.despachados,
+        pendientes: d.pendientes,
+        progreso: d.total > 0 ? Math.round((d.despachados / d.total) * 100) : 0,
+        fecha,
+      };
+      todosOPL.push(item);
+      if (item.progreso < 100) progreso.push(item);
+    });
+  progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
+  return {
+    todosOPL,
+    progreso,
+    operacionFinalizada: todosOPL.length > 0 && progreso.length === 0,
+    totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
+  };
+}
+
 /**
  * Igual que calcularProgresoOPL pero sin guardar ni historizar (vista previa / consulta por fecha).
  */
@@ -349,66 +396,36 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
   }
 
   if (!turno) return { success: false, message: 'Sin turno en despachos para esta fecha.', progreso: [] };
+
+  const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
+  if (desdeDesp.todosOPL.length > 0) {
+    let operacionFinalizada = desdeDesp.operacionFinalizada;
+    const totalJuegosRD = Number(rd.totalJuegos || 0);
+    if (!consultaSirt && totalJuegosRD === 0 && desdeDesp.todosOPL.length > 0) {
+      desdeDesp.todosOPL.forEach((p) => {
+        p.despachados = p.total;
+        p.pendientes = 0;
+        p.progreso = 100;
+      });
+      operacionFinalizada = true;
+    }
+    return {
+      success: true,
+      turno,
+      progreso: operacionFinalizada ? [] : desdeDesp.progreso,
+      operacionFinalizada,
+      fecha,
+      totalJuegos: desdeDesp.totalJuegos,
+      todosOPL: desdeDesp.todosOPL,
+    };
+  }
+
   const hayTotales = s.oplConfig.some((r) => Number(r.total || 0) > 0);
   if (!hayTotales) {
-    return { success: false, message: 'Sin juegos VR en estado para OPL en esta fecha.', progreso: [] };
+    return { success: false, message: 'Sin juegos programados para OPL en esta fecha.', progreso: [] };
   }
 
-  const pendProp = contarJuegosCompletosPorClave(
-    s.despachosCavas,
-    { id: 3, tipo: 7, prop: 4, puesto: 9 },
-    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
-    turno
-  );
-
-  const porOPL = {};
-  s.oplConfig.forEach((r) => {
-    const prop = String(r.propietario || '').trim().toUpperCase();
-    const opl = String(r.opl || '').trim() || OPL_DEFAULT;
-    const total = Number(r.total || 0);
-    if (total <= 0) return;
-    const pendientes = Math.min(pendProp[prop] || 0, total);
-    const despachados = Math.max(0, total - pendientes);
-    if (!porOPL[opl]) porOPL[opl] = { total: 0, despachados: 0, pendientes: 0 };
-    porOPL[opl].total += total;
-    porOPL[opl].despachados += despachados;
-    porOPL[opl].pendientes += pendientes;
-  });
-
-  const todosOPL = [];
-  const progreso = [];
-  Object.keys(porOPL)
-    .sort()
-    .forEach((opl) => {
-      const d = porOPL[opl];
-      if (d.total <= 0) return;
-      const pct = Math.round((d.despachados / d.total) * 100);
-      const item = { opl, total: d.total, despachados: d.despachados, pendientes: d.pendientes, progreso: pct };
-      todosOPL.push(item);
-      if (pct < 100) progreso.push(item);
-    });
-  progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
-
-  let operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
-  const totalJuegosRD = Number(rd.totalJuegos || 0);
-  if (!consultaSirt && totalJuegosRD === 0 && todosOPL.length > 0) {
-    todosOPL.forEach((p) => {
-      p.despachados = p.total;
-      p.pendientes = 0;
-      p.progreso = 100;
-    });
-    operacionFinalizada = true;
-  }
-
-  return {
-    success: true,
-    turno,
-    progreso: operacionFinalizada ? [] : progreso,
-    operacionFinalizada,
-    fecha,
-    totalJuegos: progreso.reduce((sum, p) => sum + p.total, 0),
-    todosOPL,
-  };
+  return { success: false, message: 'Sin despachos del turno para calcular OPL.', progreso: [] };
 }
 
 /** Sustituye importar Excel: rellena estado desde SIRT */
@@ -599,8 +616,26 @@ export function contarCrudasSync(s) {
   return { success: true, total };
 }
 
+/** VB crudas en animales programados a despachar hoy (turno LxM, etc.). */
+export function contarCrudasProgramadasSync(s, turno = '') {
+  const estadoNeto = s.estadoFromRow12 || [];
+  const { crudaBases } = construirIndiceEnCava(estadoNeto);
+  const codigosUnicos = {};
+  (s.despachosCavas || []).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puesto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (tipo !== 'Visceras Blancas' || !id || !puesto) return;
+    if (turno && !puesto.includes(turno)) return;
+    const base = codigoBase(id);
+    if (!base || !crudaBases.has(base) || codigosUnicos[base]) return;
+    codigosUnicos[base] = true;
+  });
+  return { success: true, total: Object.keys(codigosUnicos).length };
+}
+
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'programado-cava-v3';
+export const GESTOR_BUILD = 'capturas-432-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -651,9 +686,10 @@ export async function getDashboardData(range) {
       const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
-      const juegosEnCava = resSalidas.total || 0;
+      const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
       const totalJuegosDespachar = Number(rd.totalJuegos || 0);
+      const juegosEnCava = totalJuegosDespachar > 0 ? totalJuegosDespachar : juegosStockCava;
       const filasSalidasDia = desp.length;
       const turnoDespacho = String(rd.turno || '');
       const ultimaActDespachos = rd.fechaStr || '';
@@ -674,8 +710,8 @@ export async function getDashboardData(range) {
           ' (' +
           filasSalidasDia +
           ' piezas) · ' +
-          juegosEnCava +
-          ' juegos en cava';
+          juegosStockCava +
+          ' juegos en stock cava';
       } else if (filasSalidasDia > 0 && totalJuegosDespachar === 0) {
         progresoMensaje =
           filasSalidasDia +
@@ -685,8 +721,8 @@ export async function getDashboardData(range) {
           turnoOp +
           ' · 0 juegos completos (revise filtro turno/puesto)' +
           ' · ' +
-          juegosEnCava +
-          ' en cava';
+          juegosStockCava +
+          ' en stock cava';
       } else {
         progresoMensaje =
           'Sin programación a despachar el ' +
@@ -695,11 +731,11 @@ export async function getDashboardData(range) {
           turnoOp +
           (despPack.avisoRango ? ' · ' + despPack.avisoRango : '') +
           ' · ' +
-          juegosEnCava +
-          ' juegos en cava';
+          juegosStockCava +
+          ' juegos en stock cava';
       }
-      const cr = contarCrudasSync(sWork);
-      const totalDecomisos = contarCruceDecomisosSync(estado, reporte, desp);
+      const cr = contarCrudasProgramadasSync(sWork, turnoOp);
+      const totalDecomisos = Number(rd.totalConDecomiso || 0);
       const totalDecomisosEnRango =
         Number(decomisoVinculoStats?.decomisosUnicos) ||
         Number(decomisoVinculoStats?.filasEnRango) ||
@@ -714,12 +750,14 @@ export async function getDashboardData(range) {
       return {
         success: true,
         juegosEnCava,
+        juegosStockCava,
         totalSalidas: juegosEnCava,
         totalDecomisos,
         totalDecomisosEnRango,
         filasEnCava,
         totalSubproductosEnCava: filasEnCava,
         totalDecomisosVinculadosCava: totalDecomisos,
+        totalDecomisosPiezas: contarCruceDecomisosSync(estado, reporte, desp),
         totalDecomisosSinVinculo: Math.max(0, totalDecomisosEnRango - totalDecomisos),
         totalCrudas: cr.total,
         totalJuegosDespachar,
@@ -742,6 +780,7 @@ export async function getDashboardData(range) {
         despachosFuente: String(process.env.SIRT_DESPACHOS_FUENTE || 'programado'),
         decomisoVinculoStats,
         progresoOPL,
+        todosOPL: preview.todosOPL || [],
         operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
         oplPreviewMessage: String(preview.message || ''),
         oplPreviewFecha: preview.fecha || '',
@@ -755,24 +794,34 @@ export async function getDashboardData(range) {
   }
 
   const s = await loadState();
-  const totalDecomisos = Math.max(0, (s.resumenRows?.length || 0) - 1);
   const resSalidas = contarJuegosVisceralesSync(s);
   const totalSalidas = resSalidas.total || 0;
   const desp = getDashboardDataDespachosSync(s);
-  const totalJuegosDespachar = desp.totalJuegosDespachar || 0;
-  const turnoDespacho = desp.turnoDespacho || '';
-  const ultimaActDespachos = desp.ultimaActDespachos || '';
+  const rd = s.resumenDespachos || {};
+  const turnoDespacho = String(rd.turno || desp.turnoDespacho || '').trim();
+  const totalJuegosDespachar = Number(rd.totalJuegos || desp.totalJuegosDespachar || 0);
+  const totalDecomisos =
+    rd.totalConDecomiso != null && rd.totalConDecomiso !== ''
+      ? Number(rd.totalConDecomiso)
+      : Math.max(0, (s.resumenRows?.length || 0) - 1);
+  const ultimaActDespachos = desp.ultimaActDespachos || rd.fechaStr || '';
   const juegosTotalesOperacion = Math.max(totalSalidas, totalJuegosDespachar);
   const despachados = Math.max(0, juegosTotalesOperacion - totalJuegosDespachar);
   const progreso =
     juegosTotalesOperacion > 0
       ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
       : 0;
-  const cr = contarCrudasSync(s);
+  const cr =
+    turnoDespacho && s.despachosCavas?.length
+      ? contarCrudasProgramadasSync(s, turnoDespacho)
+      : contarCrudasSync(s);
+  const juegosEnCava = totalJuegosDespachar > 0 ? totalJuegosDespachar : totalSalidas;
   return {
     success: true,
-    totalSalidas,
+    juegosEnCava,
+    totalSalidas: juegosEnCava,
     totalDecomisos,
+    totalDecomisosVinculadosCava: totalDecomisos,
     totalCrudas: cr.total,
     totalJuegosDespachar,
     despachados,
@@ -969,45 +1018,53 @@ export async function calcularProgresoOPL(totalJuegosParam) {
   }
 
   if (!turno) return { success: false, message: 'Sin turno activo.' };
-  const hayTotales = s.oplConfig.some((r) => Number(r.total || 0) > 0);
-  if (!hayTotales) return { success: false, message: 'Sin totales. Procesa primero el módulo de Decomisos.' };
 
-  const pendProp = contarJuegosCompletosPorClave(
-    s.despachosCavas,
-    { id: 3, tipo: 7, prop: 4, puesto: 9 },
-    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
-    turno
-  );
+  const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
+  let todosOPL = desdeDesp.todosOPL;
+  let progreso = desdeDesp.progreso;
+  let operacionFinalizada = desdeDesp.operacionFinalizada;
 
-  const porOPL = {};
-  s.oplConfig.forEach((r) => {
-    const prop = String(r.propietario || '').trim().toUpperCase();
-    const opl = String(r.opl || '').trim() || OPL_DEFAULT;
-    const total = Number(r.total || 0);
-    if (total <= 0) return;
-    const pendientes = Math.min(pendProp[prop] || 0, total);
-    const despachados = Math.max(0, total - pendientes);
-    if (!porOPL[opl]) porOPL[opl] = { total: 0, despachados: 0, pendientes: 0 };
-    porOPL[opl].total += total;
-    porOPL[opl].despachados += despachados;
-    porOPL[opl].pendientes += pendientes;
-  });
+  if (!todosOPL.length) {
+    const hayTotales = s.oplConfig.some((r) => Number(r.total || 0) > 0);
+    if (!hayTotales) return { success: false, message: 'Sin totales. Sincronice despachos desde SIRT.' };
 
-  const todosOPL = [];
-  const progreso = [];
-  Object.keys(porOPL)
-    .sort()
-    .forEach((opl) => {
-      const d = porOPL[opl];
-      if (d.total <= 0) return;
-      const pct = Math.round((d.despachados / d.total) * 100);
-      const item = { opl, total: d.total, despachados: d.despachados, pendientes: d.pendientes, progreso: pct };
-      todosOPL.push(item);
-      if (pct < 100) progreso.push(item);
+    const pendProp = contarJuegosCompletosPorClave(
+      s.despachosCavas,
+      { id: 3, tipo: 7, prop: 4, puesto: 9 },
+      (fila) => String(fila[4] ?? '').trim().toUpperCase(),
+      turno
+    );
+
+    const porOPL = {};
+    s.oplConfig.forEach((r) => {
+      const prop = String(r.propietario || '').trim().toUpperCase();
+      const opl = String(r.opl || '').trim() || OPL_DEFAULT;
+      const total = Number(r.total || 0);
+      if (total <= 0) return;
+      const pendientes = Math.min(pendProp[prop] || 0, total);
+      const despachados = Math.max(0, total - pendientes);
+      if (!porOPL[opl]) porOPL[opl] = { total: 0, despachados: 0, pendientes: 0 };
+      porOPL[opl].total += total;
+      porOPL[opl].despachados += despachados;
+      porOPL[opl].pendientes += pendientes;
     });
-  progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
 
-  let operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
+    todosOPL = [];
+    progreso = [];
+    Object.keys(porOPL)
+      .sort()
+      .forEach((opl) => {
+        const d = porOPL[opl];
+        if (d.total <= 0) return;
+        const pct = Math.round((d.despachados / d.total) * 100);
+        const item = { opl, total: d.total, despachados: d.despachados, pendientes: d.pendientes, progreso: pct };
+        todosOPL.push(item);
+        if (pct < 100) progreso.push(item);
+      });
+    progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
+    operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
+  }
+
   if (operacionFinalizada && rd.historicoGuardadoFlag !== '1') {
     await guardarHistoricoOPLInternal(s, ESTADO_COMPLETO);
     rd.historicoGuardadoFlag = '1';
@@ -1031,7 +1088,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     progreso: operacionFinalizada ? [] : progreso,
     operacionFinalizada,
     fecha,
-    totalJuegos: progreso.reduce((sum, p) => sum + p.total, 0),
+    totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
   };
 }
 
