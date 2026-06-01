@@ -144,14 +144,34 @@ export function despachoCavaRowToDto(fila) {
 }
 
 /**
- * Consulta 2 — Subproductos en cava (sin fecha_salida).
- * Equivalente a Estado_Cavas del gestor.
+ * Consulta 2 — Subproductos en cava.
+ * stockActual=true (defecto): solo filas con fecha_salida IS NULL (stock físico ahora).
+ * stockActual=false: snapshot histórico en fecha asOf (para análisis puntual).
  */
 export async function fetchEstadoCavasRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
   const asOf = to || from;
-  const sql = `
+  const stockActual = range.stockActual !== false;
+  const sql = stockActual
+    ? `
+    SELECT
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), ppcr.id_producto::text, pp.id_producto::text) AS codigo,
+      tpp.nombre::text AS descripcion,
+      COALESCE(p.peso_animal_pie::text, '') AS peso_pie,
+      COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
+      ppcr.fecha_ingreso AS fecha_ingreso,
+      COALESCE(s.nombre, '')::text AS sucursal_origen,
+      COALESCE(de.nombre, '')::text AS destino,
+      COALESCE(ppcr.id_riel::text, '') AS riel,
+      COALESCE(pp.observaciones, '')::text AS observaciones
+    ${SQL_CAVA_FROM}
+    WHERE ppcr.fecha_salida IS NULL
+      AND ppcr.fecha_ingreso >= (CURRENT_DATE - $1::int)
+    ORDER BY ppcr.fecha_ingreso DESC
+    LIMIT 40000
+  `
+    : `
     SELECT
       COALESCE(NULLIF(TRIM(pp.identificacion), ''), ppcr.id_producto::text, pp.id_producto::text) AS codigo,
       tpp.nombre::text AS descripcion,
@@ -181,7 +201,8 @@ export async function fetchEstadoCavasRows(range = {}) {
     ORDER BY ppcr.fecha_ingreso DESC
     LIMIT 40000
   `;
-  const { rows } = await query(sql, [CAVA_LOOKBACK_DAYS, from, to, asOf]);
+  const params = stockActual ? [CAVA_LOOKBACK_DAYS] : [CAVA_LOOKBACK_DAYS, from, to, asOf];
+  const { rows } = await query(sql, params);
   return rows.map((r) => {
     const out = new Array(14).fill('');
     out[0] = r.codigo;
@@ -355,10 +376,10 @@ export async function fetchDespachosCavasRows(range = {}) {
 export async function consultarEnCavaDesdeSirt(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
-  const filas = await fetchEstadoCavasRows(range);
+  const filas = await fetchEstadoCavasRows({ stockActual: true });
   return {
     success: true,
-    modo: from && to ? 'rango' : 'lookback',
+    modo: 'stock-actual',
     desde: from,
     hasta: to,
     lookbackDias: from && to ? null : CAVA_LOOKBACK_DAYS,

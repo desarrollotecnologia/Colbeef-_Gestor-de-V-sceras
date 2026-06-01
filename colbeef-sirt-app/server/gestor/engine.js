@@ -17,6 +17,7 @@ import {
   construirMapaDecomisosPorAnimal,
   decomisoInfoDesdeMapa,
   claveAgrupacionPuesto,
+  estadoEnCavaSinSalidasDelDia,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -64,10 +65,9 @@ function construirResumenDespachosDesdeFilas(
   reporteDecomisos = [],
   estadoFromRow12 = []
 ) {
-  const salidasPack = filtrarSalidasEnCava(despachosCavas, estadoFromRow12);
-  const salidasBase = salidasPack.filas;
-  const crudaBases = salidasPack.crudaBases;
-  const basesEnCava = salidasPack.basesEnCava;
+  const salidasBase = despachosCavas || [];
+  const estadoNeto = estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas);
+  const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
 
   if (!salidasBase.length) {
     const turnoVac =
@@ -84,8 +84,8 @@ function construirResumenDespachosDesdeFilas(
       filasEnCava: basesEnCava.size,
       filasSalidasTotales: (despachosCavas || []).length,
       filasSalidasUsadas: 0,
-      salidasOmitidasSinCava: salidasPack.omitidas || 0,
-      filtroEnCavaActivo: salidasPack.filtroActivo,
+      salidasOmitidasSinCava: 0,
+      filtroEnCavaActivo: false,
     };
   }
   const turno =
@@ -176,8 +176,8 @@ function construirResumenDespachosDesdeFilas(
     filasEnCava: basesEnCava.size,
     filasSalidasTotales: (despachosCavas || []).length,
     filasSalidasUsadas: salidasBase.length,
-    salidasOmitidasSinCava: salidasPack.omitidas || 0,
-    filtroEnCavaActivo: salidasPack.filtroActivo,
+    salidasOmitidasSinCava: 0,
+    filtroEnCavaActivo: false,
   };
 }
 
@@ -253,32 +253,9 @@ function construirIndiceEnCava(estadoFromRow12) {
   return { basesEnCava, crudaBases };
 }
 
-/** Solo salidas cuyo animal estaba en cava (lógica operativa planta). */
-function filtrarSalidasEnCava(salidasFilas, estadoFromRow12) {
-  const idx = construirIndiceEnCava(estadoFromRow12);
-  if (!idx.basesEnCava.size) {
-    return {
-      filas: salidasFilas || [],
-      ...idx,
-      filtroActivo: false,
-      omitidas: 0,
-    };
-  }
-  const filas = [];
-  let omitidas = 0;
-  (salidasFilas || []).forEach((fila) => {
-    const id = String(fila[3] ?? '').trim();
-    const base = codigoBase(id);
-    if (base && idx.basesEnCava.has(base)) filas.push(fila);
-    else omitidas++;
-  });
-  return { filas, ...idx, filtroActivo: true, omitidas };
-}
-
 /** Cruce salidas de cava del día ↔ reporte decomisos (por ID de animal). */
-function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos, estadoFromRow12 = null) {
-  const pack = estadoFromRow12 ? filtrarSalidasEnCava(salidasFilas, estadoFromRow12) : { filas: salidasFilas || [] };
-  const salidas = pack.filas;
+function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos) {
+  const salidas = salidasFilas || [];
   if (!salidas.length || !reporteDecomisos?.length) return [];
   const mapa = construirMapaReporteDecomisos(reporteDecomisos);
   const resultado = [];
@@ -290,8 +267,8 @@ function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos, estadoFromRow
   return resultado;
 }
 
-function contarCruceDecomisosSync(estadoFromRow12, reporteDecomisos, salidasFilas) {
-  return cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos, estadoFromRow12).length;
+function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFilas) {
+  return cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos).length;
 }
 
 /**
@@ -412,13 +389,16 @@ export async function importarExcel(_base64, sheetName, range) {
   const filtro = normalizarRangoFechas(range);
   try {
     if (sheetName === 'Estado_Cavas') {
-      s.estadoFromRow12 = await fetchEstadoCavasRows(filtro);
+      s.estadoFromRow12 = await fetchEstadoCavasRows({ stockActual: true });
     } else if (sheetName === 'Reporte_Decomisos') {
       const pack = await fetchReporteDecomisosRows(filtro);
       s.reporteDecomisos = pack.rows;
       s.decomisoVinculoStats = pack.vinculo;
     } else if (sheetName === 'Despachos_Cavas') {
       s.despachosCavas = await fetchDespachosCavasRows(filtro);
+      if (s.estadoFromRow12?.length) {
+        s.estadoFromRow12 = estadoEnCavaSinSalidasDelDia(s.estadoFromRow12, s.despachosCavas);
+      }
     } else {
       return { success: false, message: 'Hoja no soportada: ' + sheetName };
     }
@@ -454,8 +434,7 @@ export async function resumirDecomisos() {
         ' filas. Sincronice la fecha en SIRT.',
     };
   }
-  const salPack = filtrarSalidasEnCava(s.despachosCavas, s.estadoFromRow12);
-  const resultado = cruzarDecomisosConSalidas(s.despachosCavas, s.reporteDecomisos, s.estadoFromRow12);
+  const resultado = cruzarDecomisosConSalidas(s.despachosCavas, s.reporteDecomisos);
   const ahora = new Date();
   s.resumenRows = [
     ['ID Producto', 'Destino', 'Producto/Subproducto', 'Fecha Procesamiento'],
@@ -484,15 +463,16 @@ export async function resumirDecomisos() {
       muestraIdsReporte.push(id);
     }
   }
+  const idxCava = construirIndiceEnCava(s.estadoFromRow12 || []);
   return {
     success: true,
     totalProductos: resultado.length,
     totalDestinos: destinos.size,
     fechaProcesamiento: fmtNow(),
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
-    filasEnCava: salPack.basesEnCava.size,
+    filasEnCava: idxCava.basesEnCava.size,
     filasSalidasCruce: nSal,
-    filasSalidasEnCava: salPack.filas.length,
+    filasSalidasEnCava: nSal,
     filasReporteCruce: nRep,
     filasEstadoCruce: nCava,
     sinCoincidenciasCruce: sinCruce,
@@ -600,11 +580,12 @@ export async function getDashboardData(range) {
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
-      const [estado, reportePack, desp] = await Promise.all([
-        fetchEstadoCavasRows(filtro),
+      const [estadoBruto, reportePack, desp] = await Promise.all([
+        fetchEstadoCavasRows({ stockActual: true }),
         fetchReporteDecomisosRows(filtro),
         fetchDespachosCavasRows(filtro),
       ]);
+      const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, desp);
       const reporte = reportePack.rows;
       const decomisoVinculoStats = reportePack.vinculo;
       const baseOpl =
@@ -813,7 +794,8 @@ export async function getDetallesPuesto(puesto) {
   const s = await loadState();
   const turno = String(s.resumenDespachos?.turno || '').trim();
   const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
-  const { basesEnCava, crudaBases } = construirIndiceEnCava(s.estadoFromRow12 || []);
+  const estadoNeto = estadoEnCavaSinSalidasDelDia(s.estadoFromRow12 || [], s.despachosCavas || []);
+  const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
   const clavePuesto = claveAgrupacionPuesto(puesto);
   const filas = [];
   s.despachosCavas.forEach((fila) => {
@@ -824,7 +806,6 @@ export async function getDetallesPuesto(puesto) {
     if (!id || claveAgrupacionPuesto(pFila) !== clavePuesto) return;
     if (turno && pFila && !pFila.includes(turno)) return;
     const base = codigoBase(id);
-    if (basesEnCava.size && base && !basesEnCava.has(base)) return;
     const dec = decomisoInfoDesdeMapa(mapaDec, id);
     filas.push({
       id,
@@ -1425,7 +1406,7 @@ export async function consultarEnCavaDesdeSIRT(range) {
   const filtro = normalizarRangoFechas(range || {});
   const useRange = filtroSirtValido(filtro) ? filtro : {};
   const porRango = Boolean(useRange.from && useRange.to);
-  const filas = await fetchEstadoCavasRows(useRange);
+  const filas = await fetchEstadoCavasRows({ stockActual: true });
   const resSalidas = contarJuegosVisceralesSync({ estadoFromRow12: filas });
   return {
     success: true,
@@ -1476,7 +1457,8 @@ export async function consultarDespachosPreview(turno, range) {
     detectarTurnoDesdeDatos(desp) ||
     (filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia());
   const packDec = await fetchReporteDecomisosRows(useRange);
-  const estado = await fetchEstadoCavasRows(useRange);
+  const estadoBruto = await fetchEstadoCavasRows({ stockActual: true });
+  const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, desp);
   const rd = construirResumenDespachosDesdeFilas(desp, t, packDec.rows, estado);
   return {
     success: true,
@@ -1498,18 +1480,19 @@ export async function consultarCruceDecomisosPreview(range) {
     salidas = await fetchDespachosCavasRows({});
   }
   const pack = await fetchReporteDecomisosRows(useRange);
-  const estado = await fetchEstadoCavasRows(useRange);
-  const salPack = filtrarSalidasEnCava(salidas, estado);
-  const resultado = cruzarDecomisosConSalidas(salidas, pack.rows, estado);
+  const estadoBruto = await fetchEstadoCavasRows({ stockActual: true });
+  const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, salidas);
+  const resultado = cruzarDecomisosConSalidas(salidas, pack.rows);
+  const idx = construirIndiceEnCava(estado);
   return {
     success: true,
     totalProductos: resultado.length,
     totalDestinos: new Set(resultado.map((r) => r[1]).filter(Boolean)).size,
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
     filasSalidas: salidas.length,
-    filasSalidasEnCava: salPack.filas.length,
+    filasSalidasEnCava: salidas.length,
     filasDecomisosPeriodo: pack.rows.length,
-    filasEnCava: salPack.basesEnCava.size,
+    filasEnCava: idx.basesEnCava.size,
   };
 }
 

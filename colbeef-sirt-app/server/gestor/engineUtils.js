@@ -8,6 +8,47 @@ export function codigoBase(id) {
   return g > 0 ? s.substring(0, g) : s;
 }
 
+/** Clave animal+tipo para fila Estado_Cavas (cols 0=id, 1=tipo). */
+export function claveSubproductoEstado(fila) {
+  const id = String(fila[0] ?? '').trim();
+  const tipo = String(fila[1] ?? '').trim();
+  const base = codigoBase(id);
+  if (!base || !tipo) return '';
+  return `${base}|${tipo}`;
+}
+
+/** Clave animal+tipo para fila Despachos_Cavas (cols 3=id, 7=tipo). */
+export function claveSubproductoSalida(fila) {
+  const id = String(fila[3] ?? '').trim();
+  const tipo = String(fila[7] ?? '').trim();
+  const base = codigoBase(id);
+  if (!base || !tipo) return '';
+  return `${base}|${tipo}`;
+}
+
+/** Subproductos que ya registraron salida de cava (mismo día consultado). */
+export function construirSetSalidasDelDia(despachosCavas) {
+  const salidas = new Set();
+  (despachosCavas || []).forEach((fila) => {
+    const k = claveSubproductoSalida(fila);
+    if (k) salidas.add(k);
+  });
+  return salidas;
+}
+
+/**
+ * Quita del stock en cava los subproductos que ya aparecen en salidas del día
+ * (evita doble conteo cuando SIRT aún no actualizó fecha_salida).
+ */
+export function estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas) {
+  const salidas = construirSetSalidasDelDia(despachosCavas);
+  if (!salidas.size) return estadoFromRow12 || [];
+  return (estadoFromRow12 || []).filter((fila) => {
+    const k = claveSubproductoEstado(fila);
+    return !k || !salidas.has(k);
+  });
+}
+
 /**
  * Cruce Estado_Cavas ↔ Reporte_Decomisos (Apps Script comparaba strings del Excel;
  * en SIRT suele variar mayúsculas o sufijo de lote).
