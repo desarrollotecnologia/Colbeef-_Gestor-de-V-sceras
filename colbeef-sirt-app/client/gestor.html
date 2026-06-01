@@ -379,7 +379,7 @@
           <div class="split-right">
             <div class="split-label">🏷️ Decomisos</div>
             <div class="split-valor rojo" id="dashDecomisos">—</div>
-            <div class="split-sub">Productos con decomisos</div>
+            <div class="split-sub" id="dashDecomisosSub">Vinculados al despacho del día</div>
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#d97706;">🟡 Crudas</div>
               <div class="split-valor" id="dashCrudas" style="font-size:1.4rem;color:#d97706;">—</div>
@@ -1332,15 +1332,19 @@ function updateDashboard(data) {
     var decoVinc = Number(data.totalDecomisosVinculadosCava != null ? data.totalDecomisosVinculadosCava : data.totalDecomisos || 0);
     var decoRango = Number(data.totalDecomisosEnRango != null ? data.totalDecomisosEnRango : 0);
     setText('dashSalidas', juegosEnCava > 0 ? juegosEnCava : filasCava > 0 ? '0 juegos' : '—');
-    if (data.consultaSIRT && decoRango > 0) {
-      setText(
-        'dashDecomisos',
-        decoVinc > 0
-          ? decoVinc + ' vinc. · ' + decoRango + ' período'
-          : decoRango + ' en período (0 vinc. hoy)'
-      );
+    if (data.consultaSIRT) {
+      setText('dashDecomisos', decoVinc > 0 ? decoVinc : '0');
+      var decoSub = document.getElementById('dashDecomisosSub');
+      if (decoSub) {
+        decoSub.textContent =
+          decoVinc > 0
+            ? 'Con decomiso en salida programada hoy'
+            : 'Ninguno en la salida programada de hoy';
+      }
     } else {
       setText('dashDecomisos', decoVinc || '—');
+      var decoSubSes = document.getElementById('dashDecomisosSub');
+      if (decoSubSes) decoSubSes.textContent = 'Productos con decomisos';
     }
     setText(
       'dashCrudas',
