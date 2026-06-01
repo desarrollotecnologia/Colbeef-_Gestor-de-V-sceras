@@ -31,6 +31,7 @@ const handlers = {
   getResumenAdicionales: engine.getResumenAdicionales,
   getCrudasDetalle: engine.getCrudasDetalle,
   consolidarDatos: engine.consolidarDatos,
+  prepararPlanillaDesdeSIRT: engine.prepararPlanillaDesdeSIRT,
   getListaOPLsParaPlanilla: engine.getListaOPLsParaPlanilla,
   generarPlanillaPuntos: engine.generarPlanillaPuntos,
   generarHTMLPlanillaPDF: engine.generarHTMLPlanillaPDF,

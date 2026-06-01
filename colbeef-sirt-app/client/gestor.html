@@ -24,6 +24,8 @@
 
     /* ── TARJETAS DASHBOARD ── */
     .resumen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.5rem;margin-bottom:2.5rem;}
+    .planilla-zonas-grid{display:flex;flex-wrap:wrap;gap:0.65rem;justify-content:center;align-items:flex-start;width:100%;}
+    .planilla-zona-card{flex:0 1 auto;}
     .tarjeta-resumen{background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);transition:transform 0.2s;position:relative;overflow:hidden;}
     .tarjeta-resumen:hover{transform:translateY(-4px);}
     .tarjeta-resumen::before{content:'';position:absolute;top:0;left:0;width:100%;height:5px;background:linear-gradient(90deg,var(--vp),var(--vs));}
@@ -467,10 +469,30 @@
   <div id="viewDecomisos" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:1rem;">Módulo de Decomisos</h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Productos <strong>en cava</strong> con <strong>salida programada</strong> (fecha y ruta/turno en SIRT),
-      cruce con <strong>decomisos</strong> por ID del animal.
+    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:0.75rem;line-height:1.45;">
+      Cruce <strong>pieza programada a despacho</strong> (fecha en SIRT) con <strong>decomiso SAI</strong> (ventana 7 días).
+      El tablero muestra <strong>animales</strong> con decomiso en el turno; esta tabla lista cada <strong>pieza</strong> vinculada.
     </p>
+    <div class="stats-grid" style="margin-bottom:1rem;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
+      <div class="stat-card">
+        <div class="stat-label">Animales (turno)</div>
+        <div class="stat-valor rojo" id="statDecAnimales">—</div>
+        <div class="split-sub">Mismo criterio que tablero</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Piezas vinculadas</div>
+        <div class="stat-valor" id="statDecPiezas">—</div>
+        <div class="split-sub">Filas del listado</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Destinos</div>
+        <div class="stat-valor" id="statDecDestinos">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Turno</div>
+        <div class="stat-valor" id="statDecTurno" style="font-size:1.1rem;">—</div>
+      </div>
+    </div>
     <div class="btn-row" style="margin-bottom:1rem;">
       <button class="btn btn-secondary" onclick="limpiarDecomisos()">✕ Limpiar</button>
       <button class="btn btn-primary" id="btnPDF" onclick="generarPDF()" disabled>📄 Generar PDF</button>
@@ -478,7 +500,7 @@
     <div class="alert" id="decAlert"></div>
     <div class="table-wrap">
       <table id="tablaDecomisosPrincipal">
-        <thead><tr><th>#</th><th>ID Producto</th><th>Destino</th><th>Producto / Subproducto</th></tr></thead>
+        <thead><tr><th>#</th><th>ID pieza</th><th>Destino / ruta</th><th>Subproducto decomisado</th></tr></thead>
         <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">Cargando salidas de cava y decomisos desde SIRT…</td></tr></tbody>
       </table>
     </div>
@@ -884,7 +906,7 @@
     </div>
 
     <!-- Grid de zonas -->
-    <div id="planillaGrid" style="display:flex;flex-wrap:wrap;gap:0.5rem;justify-content:flex-start;align-items:flex-start;margin-bottom:1.5rem;">
+    <div id="planillaGrid" class="planilla-zonas-grid" style="margin-bottom:1.5rem;">
       <div style="width:100%;text-align:center;padding:3rem;color:var(--gris);font-size:0.9rem;">
         Presiona <strong>⚙️ Procesar Planilla</strong> para generar la distribución.
       </div>
@@ -1017,6 +1039,10 @@
 var state = { file1:null, file2:null, hayResultados:false, fileDesp:null, dashboardVista:'sirt' };
 window._uxPreviewCache = { decomisos: [], enCava: [], salidas: [] };
 var turnoSeleccionado = null;
+function uxSetText(id, value) {
+  var el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
 
 // Estado módulo informe
 var infState = {
@@ -1358,7 +1384,15 @@ function updateDashboard(data) {
     } else {
       setText('dashDecomisos', decoVinc || '—');
       var decoSubSes = document.getElementById('dashDecomisosSub');
-      if (decoSubSes) decoSubSes.textContent = 'Productos con decomisos';
+      var piezasSes = Number(data.totalDecomisosPiezas || 0);
+      if (decoSubSes) {
+        decoSubSes.textContent =
+          decoVinc > 0 && piezasSes > 0
+            ? 'Animales con decomiso · ' + piezasSes + ' piezas en listado'
+            : decoVinc > 0
+              ? 'Animales con decomiso en salida programada'
+              : 'Sin decomisos vinculados en sesión';
+      }
     }
     setText(
       'dashCrudas',
@@ -1695,10 +1729,25 @@ function uxExportSalidasCava() {
 function aplicarResultadoCruceDecomisos(res, opts) {
   opts = opts || {};
   var fechaTxt = fechaISOaTexto(leerFechaGlobal().date);
+  var animales = res && res.totalAnimalesConDecomiso != null ? Number(res.totalAnimalesConDecomiso) : 0;
+  var piezas =
+    res && res.totalPiezasVinculadas != null
+      ? Number(res.totalPiezasVinculadas)
+      : res && res.totalProductos != null
+        ? Number(res.totalProductos)
+        : 0;
+  uxSetText('statDecAnimales', animales > 0 ? animales : '0');
+  uxSetText('statDecPiezas', piezas > 0 ? piezas : '0');
+  uxSetText('statDecDestinos', res && res.totalDestinos != null ? res.totalDestinos : '—');
+  uxSetText('statDecTurno', (res && res.turnoOperacion) || '—');
   if (!res || !res.success) {
     renderTablaDecomisos([]);
     state.hayResultados = false;
     document.getElementById('btnPDF').disabled = true;
+    uxSetText('statDecAnimales', '—');
+    uxSetText('statDecPiezas', '—');
+    uxSetText('statDecDestinos', '—');
+    uxSetText('statDecTurno', '—');
     if (!opts.silent) showAlert('decAlert', 'error', 'Error: ' + (res ? res.message : 'Sin respuesta'));
     return;
   }
@@ -1732,18 +1781,28 @@ function aplicarResultadoCruceDecomisos(res, opts) {
         { persistent: true, rawHtml: true }
       );
     }
-  } else if (!opts.silent && res.totalProductos > 0) {
+  } else if (!opts.silent && (animales > 0 || piezas > 0)) {
     showAlert(
       'decAlert',
       'success',
-      '✓ ' + res.totalProductos + ' productos en ' + res.totalDestinos + ' destinos · ' + fechaTxt + filasInf
+      '✓ <strong>' +
+        animales +
+        '</strong> animales con decomiso · <strong>' +
+        piezas +
+        '</strong> piezas en el listado · ' +
+        (res.totalDestinos || 0) +
+        ' destinos · ' +
+        fechaTxt +
+        (res.turnoOperacion ? ' · turno ' + escapeHtml(res.turnoOperacion) : '') +
+        filasInf,
+      { rawHtml: true }
     );
   }
   if (res.avisoRango && !opts.silent) {
     showAlert('decAlert', 'warn', res.avisoRango, { persistent: true });
   }
   renderTablaDecomisos(res.resultados || []);
-  state.hayResultados = (res.totalProductos || 0) > 0;
+  state.hayResultados = piezas > 0;
   document.getElementById('btnPDF').disabled = !state.hayResultados;
   loadDashboardData();
 }
@@ -2708,26 +2767,36 @@ function showPlanilla() {
 
 function procesarPlanilla() {
   var btn = document.getElementById('btnProcesarPlanilla');
-  btn.disabled = true; btn.textContent = '⏳ Procesando...';
-  showSpinner('Consolidando datos de planilla...');
+  var filtro = leerFechaGlobal();
+  btn.disabled = true;
+  btn.textContent = '⏳ Procesando...';
+  showSpinner('Sincronizando SIRT y generando planilla...');
 
   google.script.run
     .withSuccessHandler(function(res) {
       hideSpinner();
-      btn.disabled = false; btn.textContent = '⚙️ Procesar Planilla';
+      btn.disabled = false;
+      btn.textContent = '⚙️ Procesar Planilla';
       if (!res || !res.success) {
-        showAlert('planillaAlert','error', res ? res.message : 'Error consolidando');
+        showAlert('planillaAlert', 'error', res ? res.message : 'Error consolidando');
         return;
       }
-      showAlert('planillaAlert','success','✅ ' + res.procesados + ' juegos procesados — Turno: ' + (res.turno||'—'));
+      var msg =
+        '✅ ' +
+        (res.totalJuegos != null ? res.totalJuegos : res.procesados) +
+        ' juegos · turno ' +
+        (res.turnoOperacion || res.turno || '—') +
+        (res.fechaConsulta ? ' · ' + res.fechaConsulta : '');
+      showAlert('planillaAlert', 'success', msg);
       cargarOPLsPlanilla();
     })
-    .withFailureHandler(function(e){
+    .withFailureHandler(function(e) {
       hideSpinner();
-      btn.disabled = false; btn.textContent = '⚙️ Procesar Planilla';
-      showAlert('planillaAlert','error', e.message);
+      btn.disabled = false;
+      btn.textContent = '⚙️ Procesar Planilla';
+      showAlert('planillaAlert', 'error', e.message);
     })
-    .consolidarDatos();
+    .prepararPlanillaDesdeSIRT(filtro);
 }
 
 function cargarOPLsPlanilla() {
@@ -2783,14 +2852,32 @@ function cargarDatosPlanilla(opl) {
 }
 
 function renderPlanilla(res) {
-  var hoy = new Date();
-  var fecha = String(hoy.getDate()).padStart(2,'0') + '/' +
-              String(hoy.getMonth()+1).padStart(2,'0') + '/' + hoy.getFullYear();
+  var filtro = leerFechaGlobal();
+  var fecha =
+    res.fecha ||
+    (filtro.date ? fechaISOaTexto(filtro.date) : '') ||
+    (function () {
+      var hoy = new Date();
+      return (
+        String(hoy.getDate()).padStart(2, '0') +
+        '/' +
+        String(hoy.getMonth() + 1).padStart(2, '0') +
+        '/' +
+        hoy.getFullYear()
+      );
+    })();
 
   document.getElementById('planillaTitulo').textContent =
     'LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA — ' + fecha;
   document.getElementById('planillaSubtitulo').textContent =
-    'OPL: ' + res.opl + ' | Total: ' + res.totalOPL + ' juegos | ' + res.porcentaje + '% del total';
+    'OPL: ' +
+    res.opl +
+    ' | Total: ' +
+    res.totalOPL +
+    ' juegos | ' +
+    res.porcentaje +
+    '% del total' +
+    (res.turno ? ' · turno ' + res.turno : '');
 
   if (!res.zonas || res.zonas.length === 0) {
     document.getElementById('planillaGrid').innerHTML =
@@ -2806,8 +2893,8 @@ function renderPlanilla(res) {
         + '</tr>';
     }).join('');
 
-    return '<div style="background:white;border-radius:10px;box-shadow:0 2px 8px rgba(37,156,57,0.08);'
-      + 'border:1px solid #b7e4c7;overflow:hidden;min-width:170px;max-width:210px;">'
+    return '<div class="planilla-zona-card" style="background:white;border-radius:10px;box-shadow:0 2px 8px rgba(37,156,57,0.08);'
+      + 'border:1px solid #b7e4c7;overflow:hidden;min-width:170px;max-width:220px;">'
       + '<div style="background:#259c39;color:white;font-weight:700;padding:6px 10px;'
       + 'text-align:center;font-size:0.88rem;white-space:nowrap;">'
       + z.nombre + ' <span style="background:rgba(255,255,255,0.2);padding:1px 8px;border-radius:20px;">'

@@ -305,7 +305,9 @@ app.get('/api/crudas', async (_req, res) => {
 
 app.get('/api/planilla', async (req, res) => {
   try {
-    await gestor.consolidarDatos();
+    const range = req.query.date ? { date: String(req.query.date) } : {};
+    if (range.date) await gestor.prepararPlanillaDesdeSIRT(range);
+    else await gestor.consolidarDatos();
     res.json(await gestor.generarPlanillaPuntos(req.query.opl || 'TODOS'));
   } catch (e) {
     apiError(res, e);
