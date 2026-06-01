@@ -1,4 +1,7 @@
 ﻿import { query } from '../db.js';
+import { TIPOS_PRODUCTO } from './constants.js';
+import { mapTipoProductoNombre, resolverTurnoOperacion } from './engineUtils.js';
+import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from './sql/despachosColbeefGrouped.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
 const CAVA_LOOKBACK_DAYS = Math.max(
@@ -106,6 +109,33 @@ const SQL_DECOMISO_FROM = `
 
 function buildPuestoDespacho(r) {
   return [r.sucursal_origen || '', r.destino || '', r.riel ? `Riel ${r.riel}` : ''].filter(Boolean).join(' / ');
+}
+
+/** Puesto/destino como en ERP (orden · placa · producto); el turno suele ir en orden_despacho (/LxM/). */
+function buildPuestoDespachoColbeef(r) {
+  return [r.orden_despacho, r.placa_vehiculo, r.descripcion_productos]
+    .map((x) => String(x ?? '').trim())
+    .filter(Boolean)
+    .join(' / ');
+}
+
+function filaDespachoDesdeColbeef(r) {
+  const tipo = mapTipoProductoNombre(r.descripcion_productos);
+  if (!TIPOS_PRODUCTO.includes(tipo)) return null;
+  const puesto = buildPuestoDespachoColbeef(r);
+  if (!puesto) return null;
+  const row = new Array(13).fill('');
+  row[0] = fmtDateCell(r.fecha_despacho_planta);
+  row[1] = '';
+  row[3] = String(r.lote_interno ?? '').trim();
+  row[4] = String(r.propietario ?? '').trim();
+  row[5] = r.peso != null ? String(r.peso) : '';
+  row[7] = tipo;
+  row[8] = String(r.cliente ?? '').trim();
+  row[9] = puesto;
+  row[10] = String(r.orden_despacho ?? '').trim().split('/')[0] || '';
+  row[12] = '';
+  return row;
 }
 
 /** Matriz 14 columnas (Estado_Cavas / productos en cava). */
@@ -285,6 +315,7 @@ export async function fetchReporteDecomisosRows(range = {}) {
   const sqlStats = `
     SELECT
       COUNT(*)::int AS filas_en_rango,
+      COUNT(DISTINCT "dec".id)::int AS decomisos_unicos,
       COUNT(DISTINCT COALESCE(NULLIF(TRIM(pp.identificacion), ''), pp.id_producto::text))::int AS con_codigo
     ${SQL_DECOMISO_FROM}
     WHERE "dec".fecha_registro::date BETWEEN $1::date AND $2::date
@@ -302,6 +333,7 @@ export async function fetchReporteDecomisosRows(range = {}) {
       hasta: to,
       lookbackDias,
       filasEnRango: Number(st.filas_en_rango || 0),
+      decomisosUnicos: Number(st.decomisos_unicos || 0),
       conIdProducto: Number(st.con_codigo || 0),
       conTipoProducto: detalle.length,
       conCodigoMaquina: Number(st.con_codigo || 0),
@@ -325,10 +357,10 @@ export async function consultarDecomisosDesdeSirt(range = {}) {
 }
 
 /**
- * Consulta 1 — Salidas de cava (con fecha_salida).
- * Equivalente a Despachos_Cavas del gestor.
+ * Salida física cava–riel (fecha_salida ya registrada en SIRT).
+ * Fuente alternativa: SIRT_DESPACHOS_FUENTE=riel
  */
-export async function fetchDespachosCavasRows(range = {}) {
+async function fetchDespachosCavaRielRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
   const sql = `
@@ -372,6 +404,150 @@ export async function fetchDespachosCavasRows(range = {}) {
   });
 }
 
+/**
+ * En cava + fecha_programacion_despacho (misma lógica que consulta ERP del usuario).
+ * Subproductos asignados a ruta/turno (p. ej. …/BOGOTA/…/LxM/) aún sin fecha_salida.
+ */
+async function fetchDespachosProgramadosCavaRows(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
+  const sql = `
+    SELECT
+      ppel.fecha_programacion_despacho AS fecha_programada,
+      ppcr.fecha_ingreso AS fecha_ingreso,
+      COALESCE(NULLIF(TRIM(pp.identificacion), ''), pp.id_producto::text, ppcr.id_producto::text) AS codigo,
+      tpp.nombre::text AS subproducto,
+      COALESCE(p.peso_animal_pie::text, '') AS peso_pie,
+      COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
+      COALESCE(de.nombre, '')::text AS destino,
+      COALESCE(s.nombre, '')::text AS sucursal_origen,
+      COALESCE(ppcr.id_riel::text, '') AS riel,
+      COALESCE(pp.observaciones, '')::text AS observaciones,
+      LPAD(COALESCE(s.id::text, '0'), 5, '0') || '/' ||
+        UPPER(COALESCE(de.nombre, 'SIN CIUDAD')) || '/' ||
+        UPPER(COALESCE(NULLIF(TRIM(s.direccion), ''), 'SIN DIRECCION')) || '/' ||
+        CASE EXTRACT(DOW FROM ppel.fecha_programacion_despacho)::int
+          WHEN 0 THEN 'DxL'
+          WHEN 1 THEN 'LxM'
+          WHEN 2 THEN 'MxM'
+          WHEN 3 THEN 'MxJ'
+          WHEN 4 THEN 'JxV'
+          WHEN 5 THEN 'VxS'
+          WHEN 6 THEN 'SxD'
+          ELSE 'LxM'
+        END || '/' AS puesto_turno
+    FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
+    JOIN trazabilidad_proceso.parte_producto pp
+      ON pp.id = ppcr.id_parte_producto
+     AND pp.id_producto::text = ppcr.id_producto::text
+    JOIN trazabilidad_proceso.tipo_parte_producto tpp
+      ON tpp.id = pp.id_tipo_parte_producto
+     AND tpp.nombre IN ${TIPOS_SUBPRODUCTO}
+    JOIN trazabilidad_proceso.producto p
+      ON p.id::text = pp.id_producto::text
+    JOIN trazabilidad_proceso.producto_empresa pe
+      ON pe.id_producto::text = p.id::text
+     AND pe.activo = true
+    JOIN organizaciones.empresa e3
+      ON e3.id = pe.id_empresa
+    JOIN trazabilidad_proceso.parte_producto_empresa ppe
+      ON ppe.id_producto::text = pp.id_producto::text
+     AND ppe.id_parte_producto = pp.id
+    JOIN trazabilidad_proceso.parte_producto_empresa_local ppel
+      ON ppel.id_parte_producto_empresa = ppe.id
+    JOIN organizaciones.sucursal s
+      ON s.id = ppel.id_local
+    LEFT JOIN trazabilidad_proceso.destino de
+      ON de.id = s.id_destino
+    WHERE ppcr.fecha_salida IS NULL
+      AND ppel.fecha_programacion_despacho IS NOT NULL
+      AND (
+        (
+          $2::date IS NOT NULL
+          AND $3::date IS NOT NULL
+          AND $2::date = $3::date
+          AND ppel.fecha_programacion_despacho::date = $2::date
+        )
+        OR (
+          $2::date IS NOT NULL
+          AND ($3::date IS NULL OR $2::date <> $3::date)
+          AND ppel.fecha_programacion_despacho::date >= $2::date
+          AND ($3::date IS NULL OR ppel.fecha_programacion_despacho::date <= $3::date)
+        )
+        OR (
+          $2::date IS NULL
+          AND $3::date IS NULL
+          AND ppel.fecha_programacion_despacho::date >= (CURRENT_DATE - $1::int)
+        )
+      )
+    ORDER BY ppel.fecha_programacion_despacho ASC, ppcr.fecha_ingreso DESC
+    LIMIT 80000
+  `;
+  const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
+  return rows.map((r) => {
+    const row = new Array(13).fill('');
+    row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
+    row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
+    row[3] = r.codigo || '';
+    row[4] = r.propietario || '';
+    row[5] = r.peso_pie || '';
+    row[7] = r.subproducto || '';
+    row[8] = r.destino || '';
+    row[9] = r.puesto_turno || '';
+    row[10] = String(r.puesto_turno || '').split('/')[0] || '';
+    row[12] = r.observaciones || '';
+    return row;
+  });
+}
+
+/**
+ * Despachos programados ERP (orden de despacho / vehículo / fecha_despacho_planta).
+ * Equiv. vw_producto_vendido_colbeef — fuente alternativa SIRT_DESPACHOS_FUENTE=erp
+ */
+async function fetchDespachosProgramadosColbeefRows(range = {}) {
+  const from = normDate(range.from);
+  const to = normDate(range.to);
+  const sql = `
+    SELECT
+      v.fecha_despacho_planta,
+      v.propietario,
+      v.cliente,
+      v.orden_despacho,
+      v.placa_vehiculo,
+      v.descripcion_productos,
+      v.categoria,
+      v.lote_interno,
+      v.sum AS peso
+    FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
+    WHERE v.categoria = 'SUBPRODUCTOS'
+    ORDER BY v.fecha_despacho_planta DESC, v.orden_despacho, v.lote_interno
+    LIMIT 80000
+  `;
+  const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
+  const out = [];
+  rows.forEach((r) => {
+    const row = filaDespachoDesdeColbeef(r);
+    if (row) out.push(row);
+  });
+  return out;
+}
+
+/**
+ * Consulta 1 — Despachos_Cavas del gestor.
+ * programado (defecto): en cava + fecha_programacion_despacho + ruta/turno
+ * erp: despacho_desposte · riel: solo fecha_salida física
+ */
+export async function fetchDespachosCavasRows(range = {}) {
+  const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
+  if (fuente === 'riel' || fuente === 'cava_riel') {
+    return fetchDespachosCavaRielRows(range);
+  }
+  if (fuente === 'erp' || fuente === 'colbeef') {
+    return fetchDespachosProgramadosColbeefRows(range);
+  }
+  return fetchDespachosProgramadosCavaRows(range);
+}
+
 /** Payload listo para API/RPC — productos en cava. */
 export async function consultarEnCavaDesdeSirt(range = {}) {
   const from = normDate(range.from);
@@ -390,14 +566,20 @@ export async function consultarEnCavaDesdeSirt(range = {}) {
 
 /** Payload listo para API/RPC — salidas de cava. */
 export async function consultarSalidasCavaDesdeSirt(range = {}) {
-  const from = normDate(range.from);
-  const to = normDate(range.to);
-  const filas = await fetchDespachosCavasRows(range);
+  const from = normDate(range.from) || normDate(range.date);
+  const to = normDate(range.to) || normDate(range.date);
+  const filas = await fetchDespachosCavasRows({ from, to, date: range.date });
+  const turno =
+    from && /^\d{4}-\d{2}-\d{2}$/.test(from)
+      ? resolverTurnoOperacion({ from, to, date: from }, filas)
+      : '';
   return {
     success: true,
-    modo: from && to ? 'rango' : 'lookback',
+    modo: from && to ? 'fecha' : 'lookback',
     desde: from,
     hasta: to,
+    fechaConsulta: from,
+    turnoOperacion: turno,
     lookbackDias: from && to ? null : SALIDAS_CAVA_LOOKBACK_DAYS,
     totalFilas: filas.length,
     filas: filas.map(despachoCavaRowToDto),

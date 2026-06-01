@@ -49,6 +49,19 @@ export function estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas) {
   });
 }
 
+/** Solo restar del stock en cava cuando despachos = salida física (fecha_salida), no programación. */
+export function despachosRestanDeStockEnCava() {
+  const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
+  return fuente === 'riel' || fuente === 'cava_riel';
+}
+
+export function aplicarEstadoEnCavaNeto(estadoBruto, despachosCavas) {
+  if (despachosRestanDeStockEnCava()) {
+    return estadoEnCavaSinSalidasDelDia(estadoBruto, despachosCavas);
+  }
+  return estadoBruto || [];
+}
+
 /**
  * Cruce Estado_Cavas ↔ Reporte_Decomisos (Apps Script comparaba strings del Excel;
  * en SIRT suele variar mayúsculas o sufijo de lote).
@@ -178,20 +191,22 @@ export function detectarTurnoPorFechaISO(iso) {
   return TURNO_POR_DIA[d.getDay()] || 'SxD';
 }
 
-export function detectarTurnoDesdeDatos(rows) {
+export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
   const turnos = ['SxD', 'VxS', 'JxV', 'MxJ', 'MxM', 'LxM', 'DxL'];
   const conteo = {};
   turnos.forEach((t) => {
     conteo[t] = 0;
   });
-  const muestra = rows.slice(0, 500);
+  const muestra = (rows || []).slice(0, 500);
   muestra.forEach((fila) => {
     const puesto = String(fila[9] ?? '').trim();
     turnos.forEach((t) => {
       if (puesto.includes(t)) conteo[t]++;
     });
   });
-  let ganador = detectarTurnoPorDia();
+  let ganador = fechaIsoFallback
+    ? detectarTurnoPorFechaISO(fechaIsoFallback)
+    : detectarTurnoPorDia();
   let max = 0;
   turnos.forEach((t) => {
     if (conteo[t] > max) {
@@ -200,4 +215,16 @@ export function detectarTurnoDesdeDatos(rows) {
     }
   });
   return ganador;
+}
+
+/**
+ * Turno operativo: prioriza fecha del encabezado (calendario planta), luego datos SIRT.
+ */
+export function resolverTurnoOperacion(range = {}, despachosFilas = [], turnoForzado = '') {
+  const t = String(turnoForzado || '').trim();
+  if (t) return t;
+  const iso = String(range?.from || range?.date || range?.to || '').trim();
+  const porFecha = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? detectarTurnoPorFechaISO(iso) : '';
+  if (porFecha) return porFecha;
+  return detectarTurnoDesdeDatos(despachosFilas, iso);
 }

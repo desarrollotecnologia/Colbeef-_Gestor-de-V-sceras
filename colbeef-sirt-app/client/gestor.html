@@ -360,7 +360,7 @@
       </div>
     </div>
     <div class="fecha-badge">
-      <label for="fechaGlobal" style="font-size:0.8rem;color:var(--gris);font-weight:600;white-space:nowrap;">Fecha</label>
+      <label for="fechaGlobal" style="font-size:0.8rem;color:var(--gris);font-weight:600;white-space:nowrap;" title="Fecha de programación y turno automático (LxM, MxM, …)">Fecha operación</label>
       <input type="date" id="fechaGlobal" class="inf-input" style="padding:0.35rem 0.5rem;max-width:158px;border:none;background:transparent;" onchange="onDashboardFechaChange()">
     </div>
   </div>
@@ -468,8 +468,8 @@
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:1rem;">Módulo de Decomisos</h2>
     <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Toma los productos <strong>en cava</strong>, filtra los que tienen <strong>salida hoy</strong>, cruza
-      <strong>decomisos</strong> por ID del animal y arma la lista de control.
+      Productos <strong>en cava</strong> con <strong>salida programada</strong> (fecha y ruta/turno en SIRT),
+      cruce con <strong>decomisos</strong> por ID del animal.
     </p>
     <div class="btn-row" style="margin-bottom:1rem;">
       <button class="btn btn-secondary" onclick="limpiarDecomisos()">✕ Limpiar</button>
@@ -515,7 +515,7 @@
       <span class="turno-badge" id="despTurnoBadge">—</span>
     </h2>
     <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Agrupa por <strong>puesto/destino</strong> (en cava + salida del día + decomisos).
+      Agrupa por <strong>puesto/destino</strong> (en cava programados para el día/turno + decomisos).
       El <strong>turno</strong> se calcula solo según la fecha y las salidas en SIRT.
       Doble clic en una fila para el detalle.
     </p>
@@ -1317,28 +1317,27 @@ function updateDashboard(data) {
       if (el && el.style) el.style.width = value;
     }
 
-    var salidas = Number(data.totalSalidas || 0);
+    var juegosEnCava = Number(
+      data.juegosEnCava != null ? data.juegosEnCava : data.totalSalidas || 0
+    );
     var pendientes = Number(data.totalJuegosDespachar || 0);
+    var filasSalidasDia = Number(data.filasDespachosCavas != null ? data.filasDespachosCavas : 0);
     var finalizada =
       !data.consultaSIRT &&
-      salidas > 0 &&
+      juegosEnCava > 0 &&
       pendientes === 0 &&
       (data.ultimaActDespachos || '').trim() !== '';
 
     var filasCava = Number(data.filasEnCava != null ? data.filasEnCava : data.filasEstadoCavas || 0);
     var decoVinc = Number(data.totalDecomisosVinculadosCava != null ? data.totalDecomisosVinculadosCava : data.totalDecomisos || 0);
     var decoRango = Number(data.totalDecomisosEnRango != null ? data.totalDecomisosEnRango : 0);
-    if (salidas > 0) {
-      setText('dashSalidas', salidas);
-    } else if (filasCava > 0) {
-      setText('dashSalidas', '0 juegos');
-    } else {
-      setText('dashSalidas', '—');
-    }
+    setText('dashSalidas', juegosEnCava > 0 ? juegosEnCava : filasCava > 0 ? '0 juegos' : '—');
     if (data.consultaSIRT && decoRango > 0) {
       setText(
         'dashDecomisos',
-        decoVinc > 0 ? decoVinc + ' vinc.' : decoRango + ' en período'
+        decoVinc > 0
+          ? decoVinc + ' vinc. · ' + decoRango + ' período'
+          : decoRango + ' en período (0 vinc. hoy)'
       );
     } else {
       setText('dashDecomisos', decoVinc || '—');
@@ -1348,30 +1347,42 @@ function updateDashboard(data) {
       data.totalCrudas != null && data.totalCrudas !== undefined ? data.totalCrudas : '—'
     );
     setText('dashDespachos', pendientes);
-    if (data.turnoDespacho) setText('dashDespTurno', 'Turno ' + data.turnoDespacho);
+    if (data.turnoDespacho || data.turnoOperacion) {
+      var turnoLbl = data.turnoDespacho || data.turnoOperacion;
+      var fechaLbl = data.fechaConsulta ? String(data.fechaConsulta) : '';
+      setText(
+        'dashDespTurno',
+        'Turno ' + turnoLbl + (fechaLbl ? ' · ' + fechaLbl : '')
+      );
+    }
 
-    // ── Barra progreso general (usa juegosTotalesOperacion del backend = max salidas, pendientes) ──
+    // ── Barra progreso: solo salidas del día (no mezclar con stock en cava) ──
     var progreso = data.progreso || 0;
+    if (data.consultaSIRT && filasSalidasDia === 0) progreso = 0;
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
-    var juegosTotalesOperacion =
-      data.juegosTotalesOperacion != null && data.juegosTotalesOperacion !== undefined
-        ? Number(data.juegosTotalesOperacion)
-        : Math.max(salidas, pendientes);
-    var despachados =
-      data.despachados != null && data.despachados !== undefined
-        ? Number(data.despachados)
-        : Math.max(0, juegosTotalesOperacion - pendientes);
-    setText(
-      'progresoMeta',
-      despachados +
-        ' despachados de ' +
-        juegosTotalesOperacion +
-        ' juegos totales — ' +
-        pendientes +
-        ' pendientes' +
-        (data.consultaSIRT ? ' · Consulta SIRT.' : '')
-    );
+    if (data.progresoMensaje) {
+      setText('progresoMeta', data.progresoMensaje);
+    } else {
+      var juegosTotalesOperacion =
+        data.juegosTotalesOperacion != null && data.juegosTotalesOperacion !== undefined
+          ? Number(data.juegosTotalesOperacion)
+          : Math.max(juegosEnCava, pendientes);
+      var despachados =
+        data.despachados != null && data.despachados !== undefined
+          ? Number(data.despachados)
+          : Math.max(0, juegosTotalesOperacion - pendientes);
+      setText(
+        'progresoMeta',
+        despachados +
+          ' despachados de ' +
+          juegosTotalesOperacion +
+          ' juegos totales — ' +
+          pendientes +
+          ' pendientes' +
+          (data.consultaSIRT ? ' · Consulta SIRT.' : '')
+      );
+    }
 
     // ── Tarjeta OPL ──
     if (finalizada) {

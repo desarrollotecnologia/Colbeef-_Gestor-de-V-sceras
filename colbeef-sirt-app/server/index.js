@@ -143,7 +143,7 @@ app.get('/api/stock', async (req, res) => {
   }
 });
 
-/** Salidas de cava (Despachos_Cavas) — productos que YA salieron (fecha_salida IS NOT NULL). */
+/** Salidas / despachos programados (Despachos_Cavas) — fuente ERP por defecto (despacho_desposte). */
 app.get('/api/salidas', async (req, res) => {
   try {
     const range = parseGestorRange(req);

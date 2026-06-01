@@ -17,7 +17,8 @@ import {
   construirMapaDecomisosPorAnimal,
   decomisoInfoDesdeMapa,
   claveAgrupacionPuesto,
-  estadoEnCavaSinSalidasDelDia,
+  aplicarEstadoEnCavaNeto,
+  resolverTurnoOperacion,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -66,14 +67,14 @@ function construirResumenDespachosDesdeFilas(
   estadoFromRow12 = []
 ) {
   const salidasBase = despachosCavas || [];
-  const estadoNeto = estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas);
+  const estadoNeto = aplicarEstadoEnCavaNeto(estadoFromRow12, despachosCavas);
   const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
 
   if (!salidasBase.length) {
     const turnoVac =
       turnoForzado && String(turnoForzado).length > 0
         ? String(turnoForzado)
-        : detectarTurnoDesdeDatos(despachosCavas || []) || detectarTurnoPorDia();
+        : resolverTurnoOperacion({}, despachosCavas || []);
     return {
       turno: turnoVac,
       fechaStr: '',
@@ -91,7 +92,7 @@ function construirResumenDespachosDesdeFilas(
   const turno =
     turnoForzado && String(turnoForzado).length > 0
       ? String(turnoForzado)
-      : detectarTurnoDesdeDatos(salidasBase);
+      : resolverTurnoOperacion({}, salidasBase);
   const data = filasDespachoTurno(salidasBase, turno);
   const mapaDec = construirMapaDecomisosPorAnimal(reporteDecomisos);
 
@@ -229,6 +230,33 @@ function normalizarRangoFechas(range) {
 
 function filtroSirtValido(filtro) {
   return Boolean(filtro?.from && filtro?.to);
+}
+
+function despachosUsaSoloFechaConsulta() {
+  const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
+  return fuente === 'programado' || fuente === 'erp';
+}
+
+/** Despachos para la fecha consultada; sin lookback si la fuente es programación por día. */
+async function fetchDespachosParaConsulta(filtro) {
+  const useRange = filtroSirtValido(filtro) ? filtro : {};
+  const desp = await fetchDespachosCavasRows(useRange);
+  if (filtroSirtValido(filtro) && !desp.length && despachosUsaSoloFechaConsulta()) {
+    return {
+      desp,
+      usoLookback: false,
+      avisoRango: `Sin despachos programados para ${useRange.from}.`,
+    };
+  }
+  if (filtroSirtValido(filtro) && !desp.length) {
+    const despLb = await fetchDespachosCavasRows({});
+    return {
+      desp: despLb,
+      usoLookback: true,
+      avisoRango: 'Sin registros en la fecha exacta; se usó ventana lookback de SIRT.',
+    };
+  }
+  return { desp, usoLookback: false, avisoRango: '' };
 }
 
 function filaSalidaCavaIdDestino(fila) {
@@ -395,9 +423,11 @@ export async function importarExcel(_base64, sheetName, range) {
       s.reporteDecomisos = pack.rows;
       s.decomisoVinculoStats = pack.vinculo;
     } else if (sheetName === 'Despachos_Cavas') {
-      s.despachosCavas = await fetchDespachosCavasRows(filtro);
+      const despPack = await fetchDespachosParaConsulta(filtro);
+      s.despachosCavas = despPack.desp;
+      s.despachosAvisoFecha = despPack.avisoRango || '';
       if (s.estadoFromRow12?.length) {
-        s.estadoFromRow12 = estadoEnCavaSinSalidasDelDia(s.estadoFromRow12, s.despachosCavas);
+        s.estadoFromRow12 = aplicarEstadoEnCavaNeto(s.estadoFromRow12, s.despachosCavas);
       }
     } else {
       return { success: false, message: 'Hoja no soportada: ' + sheetName };
@@ -580,12 +610,13 @@ export async function getDashboardData(range) {
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
-      const [estadoBruto, reportePack, desp] = await Promise.all([
+      const [estadoBruto, reportePack, despPack] = await Promise.all([
         fetchEstadoCavasRows({ stockActual: true }),
         fetchReporteDecomisosRows(filtro),
-        fetchDespachosCavasRows(filtro),
+        fetchDespachosParaConsulta(filtro),
       ]);
-      const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, desp);
+      const desp = despPack.desp;
+      const estado = aplicarEstadoEnCavaNeto(estadoBruto, desp);
       const reporte = reportePack.rows;
       const decomisoVinculoStats = reportePack.vinculo;
       const baseOpl =
@@ -609,28 +640,56 @@ export async function getDashboardData(range) {
         oplProgreso: [],
       };
       actualizarCantidadesInicialesOPLSync(sWork);
-      const turnoDesp = detectarTurnoDesdeDatos(desp) || detectarTurnoPorDia();
-      const rd = construirResumenDespachosDesdeFilas(desp, turnoDesp, reporte, estado);
       const fechaIso = filtro.from;
-      rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} 00:00 (consulta SIRT)`;
+      const turnoOp = resolverTurnoOperacion(filtro, desp);
+      const rd = construirResumenDespachosDesdeFilas(desp, turnoOp, reporte, estado);
+      rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} · turno ${turnoOp} (consulta SIRT)`;
       sWork.resumenDespachos = rd;
       const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
-      const totalSalidas = resSalidas.total || 0;
+      const juegosEnCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
       const totalJuegosDespachar = Number(rd.totalJuegos || 0);
+      const filasSalidasDia = desp.length;
       const turnoDespacho = String(rd.turno || '');
       const ultimaActDespachos = rd.fechaStr || '';
-      const juegosTotalesOperacion = Math.max(totalSalidas, totalJuegosDespachar);
-      const despachados = Math.max(0, juegosTotalesOperacion - totalJuegosDespachar);
-      const progreso =
-        juegosTotalesOperacion > 0
-          ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
-          : 0;
+      let juegosTotalesOperacion = 0;
+      let despachados = 0;
+      let progreso = 0;
+      let progresoMensaje = '';
+      if (filasSalidasDia > 0 && totalJuegosDespachar > 0) {
+        juegosTotalesOperacion = totalJuegosDespachar;
+        despachados = 0;
+        progreso = 0;
+        progresoMensaje =
+          totalJuegosDespachar +
+          ' juegos a despachar el ' +
+          isoToDdMmYyyy(fechaIso) +
+          ' · turno ' +
+          turnoOp +
+          ' (' +
+          filasSalidasDia +
+          ' piezas) · ' +
+          juegosEnCava +
+          ' juegos en cava';
+      } else {
+        progresoMensaje =
+          'Sin programación a despachar el ' +
+          isoToDdMmYyyy(fechaIso) +
+          ' · turno ' +
+          turnoOp +
+          (despPack.avisoRango ? ' · ' + despPack.avisoRango : '') +
+          ' · ' +
+          juegosEnCava +
+          ' juegos en cava';
+      }
       const cr = contarCrudasSync(sWork);
       const totalDecomisos = contarCruceDecomisosSync(estado, reporte, desp);
-      const totalDecomisosEnRango = reporte.length;
+      const totalDecomisosEnRango =
+        Number(decomisoVinculoStats?.decomisosUnicos) ||
+        Number(decomisoVinculoStats?.filasEnRango) ||
+        reporte.length;
 
       const progresoOPL = preview.success
         ? preview.operacionFinalizada
@@ -640,7 +699,8 @@ export async function getDashboardData(range) {
 
       return {
         success: true,
-        totalSalidas,
+        juegosEnCava,
+        totalSalidas: juegosEnCava,
         totalDecomisos,
         totalDecomisosEnRango,
         filasEnCava,
@@ -651,14 +711,18 @@ export async function getDashboardData(range) {
         totalJuegosDespachar,
         despachados,
         juegosTotalesOperacion,
+        progresoMensaje,
         turnoDespacho,
         ultimaActDespachos,
         progreso,
-        meta: totalSalidas,
+        meta: juegosEnCava,
         consultaSIRT: true,
         fechaConsulta: fechaIso,
+        turnoOperacion: turnoOp,
+        avisoDespachosFecha: despPack.avisoRango || '',
         filasEstadoCavas: estado.length,
-        filasReporteDecomisos: reporte.length,
+        filasReporteDecomisos: totalDecomisosEnRango,
+        filasReporteDecomisosRaw: reporte.length,
         filasDespachosCavas: desp.length,
         decomisoVinculoStats,
         progresoOPL,
@@ -728,7 +792,7 @@ export async function procesarDespachos(turnoForzado) {
   const turno =
     turnoForzado && String(turnoForzado).length > 0
       ? String(turnoForzado)
-      : detectarTurnoDesdeDatos(s.despachosCavas);
+      : resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas);
   const rd = construirResumenDespachosDesdeFilas(
     s.despachosCavas,
     turno,
@@ -794,7 +858,7 @@ export async function getDetallesPuesto(puesto) {
   const s = await loadState();
   const turno = String(s.resumenDespachos?.turno || '').trim();
   const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
-  const estadoNeto = estadoEnCavaSinSalidasDelDia(s.estadoFromRow12 || [], s.despachosCavas || []);
+  const estadoNeto = aplicarEstadoEnCavaNeto(s.estadoFromRow12 || [], s.despachosCavas || []);
   const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
   const clavePuesto = claveAgrupacionPuesto(puesto);
   const filas = [];
@@ -1447,41 +1511,35 @@ export async function consultarDecomisosDesdeSIRT(range) {
 /** Despachos del turno en vivo, sin guardar sesión. */
 export async function consultarDespachosPreview(turno, range) {
   const filtro = normalizarRangoFechas(range || {});
-  let useRange = filtroSirtValido(filtro) ? filtro : {};
-  let desp = await fetchDespachosCavasRows(useRange);
-  if (filtroSirtValido(filtro) && !desp.length) {
-    desp = await fetchDespachosCavasRows({});
-  }
-  const t =
-    (turno && String(turno).trim()) ||
-    detectarTurnoDesdeDatos(desp) ||
-    (filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia());
+  const useRange = filtroSirtValido(filtro) ? filtro : {};
+  const despPack = await fetchDespachosParaConsulta(filtro);
+  const desp = despPack.desp;
+  const t = resolverTurnoOperacion(filtro, desp, turno);
   const packDec = await fetchReporteDecomisosRows(useRange);
   const estadoBruto = await fetchEstadoCavasRows({ stockActual: true });
-  const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, desp);
+  const estado = aplicarEstadoEnCavaNeto(estadoBruto, desp);
   const rd = construirResumenDespachosDesdeFilas(desp, t, packDec.rows, estado);
   return {
     success: true,
     turno: rd.turno,
+    fechaConsulta: filtro.from || null,
     totalPuestos: rd.resultado.length,
     totalJuegos: rd.totalJuegos,
     totalConDecomiso: rd.totalConDecomiso || 0,
+    filasDespachosCavas: desp.length,
     tipos: TIPOS_PRODUCTO,
     resultado: rd.resultado,
-    avisoRango: filtroSirtValido(filtro) && !desp.length ? 'Sin salidas en la fecha exacta.' : '',
+    avisoRango: despPack.avisoRango || '',
   };
 }
 
 export async function consultarCruceDecomisosPreview(range) {
   const filtro = normalizarRangoFechas(range || {});
   const useRange = filtroSirtValido(filtro) ? filtro : {};
-  let salidas = await fetchDespachosCavasRows(useRange);
-  if (filtroSirtValido(filtro) && !salidas.length) {
-    salidas = await fetchDespachosCavasRows({});
-  }
+  const salidas = (await fetchDespachosParaConsulta(filtro)).desp;
   const pack = await fetchReporteDecomisosRows(useRange);
   const estadoBruto = await fetchEstadoCavasRows({ stockActual: true });
-  const estado = estadoEnCavaSinSalidasDelDia(estadoBruto, salidas);
+  const estado = aplicarEstadoEnCavaNeto(estadoBruto, salidas);
   const resultado = cruzarDecomisosConSalidas(salidas, pack.rows);
   const idx = construirIndiceEnCava(estado);
   return {
@@ -1491,52 +1549,43 @@ export async function consultarCruceDecomisosPreview(range) {
     resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
     filasSalidas: salidas.length,
     filasSalidasEnCava: salidas.length,
-    filasDecomisosPeriodo: pack.rows.length,
+    filasDecomisosPeriodo:
+      Number(pack.vinculo?.decomisosUnicos) || Number(pack.vinculo?.filasEnRango) || pack.rows.length,
     filasEnCava: idx.basesEnCava.size,
   };
 }
 
 export async function prepararModuloDecomisosDesdeSIRT(range) {
-  await importarExcel(null, 'Despachos_Cavas', range);
-  const s = await loadState();
-  let usoLookback = false;
   const filtro = normalizarRangoFechas(range || {});
-  if (filtroSirtValido(filtro) && (!s.despachosCavas || s.despachosCavas.length === 0)) {
-    await importarExcel(null, 'Despachos_Cavas', {});
-    usoLookback = true;
-  }
+  await importarExcel(null, 'Despachos_Cavas', range);
   await importarExcel(null, 'Reporte_Decomisos', range);
   await importarExcel(null, 'Estado_Cavas', range);
   const res = await resumirDecomisos();
-  if (res && res.success && usoLookback) {
-    res.avisoRango =
-      'No hubo salidas de cava para la fecha exacta; se usó ventana lookback de SIRT.';
+  const s = await loadState();
+  if (res && s.despachosAvisoFecha) {
+    res.avisoRango = s.despachosAvisoFecha;
+  }
+  if (res && filtro.from) {
+    res.fechaConsulta = filtro.from;
+    res.turnoOperacion = resolverTurnoOperacion(filtro, s.despachosCavas || []);
   }
   return res;
 }
 
 export async function prepararModuloDespachosDesdeSIRT(turno, range) {
+  const filtro = normalizarRangoFechas(range || {});
   await importarExcel(null, 'Reporte_Decomisos', range);
   await importarExcel(null, 'Estado_Cavas', range);
   await importarExcel(null, 'Despachos_Cavas', range);
   const s = await loadState();
-  let usoLookback = false;
-  const filtro = normalizarRangoFechas(range || {});
-  if (filtroSirtValido(filtro) && (!s.despachosCavas || s.despachosCavas.length === 0)) {
-    await importarExcel(null, 'Despachos_Cavas', {});
-    usoLookback = true;
-  }
-  const s2 = usoLookback ? await loadState() : s;
-  const porDiaFecha =
-    filtroSirtValido(filtro) && filtro.from ? detectarTurnoPorFechaISO(filtro.from) : detectarTurnoPorDia();
-  const t =
-    (turno && String(turno).trim()) ||
-    detectarTurnoDesdeDatos(s2.despachosCavas || []) ||
-    porDiaFecha;
+  const t = resolverTurnoOperacion(filtro, s.despachosCavas || [], turno);
   const out = await procesarDespachos(t);
-  if (out && out.success && usoLookback) {
-    out.avisoRango =
-      'No hubo salidas para la fecha exacta; se usó ventana lookback de SIRT para mantener la operación.';
+  if (out) {
+    if (s.despachosAvisoFecha) out.avisoRango = s.despachosAvisoFecha;
+    if (filtro.from) {
+      out.fechaConsulta = filtro.from;
+      out.turnoOperacion = t;
+    }
   }
   return out;
 }
@@ -1564,9 +1613,12 @@ export async function sincronizarSesionDesdeSirtPorFecha(range) {
       };
     }
     const desp = await prepararModuloDespachosDesdeSIRT(null, filtro);
+    const turnoSesion = resolverTurnoOperacion(filtro, [], null);
     return {
       success: true,
-      turno: desp && desp.success ? desp.turno : detectarTurnoPorFechaISO(filtro.from),
+      turno: desp && desp.success ? desp.turno : turnoSesion,
+      fechaConsulta: filtro.from,
+      turnoOperacion: turnoSesion,
       decomisos: dec,
       despachos: desp,
       avisoDespachos: desp && desp.success ? '' : String(desp?.message || 'Despachos no procesados.'),

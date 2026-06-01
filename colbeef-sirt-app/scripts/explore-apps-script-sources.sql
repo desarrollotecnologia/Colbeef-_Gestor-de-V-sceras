@@ -10,8 +10,8 @@
 --    (ver fetchReporteDecomisosRows)
 --
 -- 3) SALIDAS DE CAVA / DESPACHOS        →  en GAS suele ser Excel "Despachos_Cavas"
---    En Node hoy: trazabilidad_proceso.vw_producto_vendido_colbeef
---    (ver fetchDespachosCavasRows)
+--    En Node hoy (defecto): despachosColbeefGrouped = programados ERP (despacho_desposte)
+--    Alternativa: SIRT_DESPACHOS_FUENTE=riel → parte_producto_cava_riel.fecha_salida
 --
 --    NOTA: En el API de métricas (metrics.js) "salida de cava" también se cuenta
 --    con parte_producto_cava_riel + fecha_salida — puede ser otra vista del mismo
