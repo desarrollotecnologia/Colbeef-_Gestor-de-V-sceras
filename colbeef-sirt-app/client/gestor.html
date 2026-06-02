@@ -178,18 +178,19 @@
     tbody tr.incompleto-row:hover{background:#fecaca!important;}
     tbody tr.decomiso-row{background:#fff7ed;border-left:3px solid #f59e0b;}
     tbody tr.decomiso-row:hover{background:#ffedd5!important;}
-    td.cruda-cell{position:relative;}
-    td.cruda-cell::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:28px;height:28px;border-radius:50%;border:2px solid #f59e0b;background:rgba(251,191,36,0.15);pointer-events:none;}
-    td.cruda-cell span{position:relative;z-index:1;}
     tbody tr.clickable:hover{background:#d4edda;cursor:pointer;}
     tbody td{padding:0.75rem 1rem;}
     tbody td.num{text-align:center;}
-    td.puesto-desp{max-width:min(420px,45vw);font-size:0.82rem;line-height:1.35;word-break:break-word;vertical-align:top;}
+    td.puesto-desp{max-width:min(420px,45vw);font-size:0.82rem;line-height:1.3;word-break:break-word;vertical-align:middle;}
+    td.puesto-desp .puesto-nombre{font-weight:600;color:#1f2937;}
+    td.puesto-desp .puesto-ruta-mini{display:block;font-size:0.72rem;color:#6b7280;margin-top:0.12rem;line-height:1.2;}
+    td.puesto-desp .puesto-badges{display:inline;white-space:nowrap;margin-left:0.35rem;}
     td.cell-bajo{color:#dc2626!important;font-weight:700;}
     td.cell-decomiso{color:#9a3412!important;font-weight:700;}
-    .badge-incompleto{display:inline-block;font-size:0.68rem;background:#ef4444;color:#fff;border-radius:3px;padding:1px 6px;margin-left:6px;vertical-align:middle;white-space:nowrap;}
-    .badge-decomiso{display:inline-block;font-size:0.65rem;background:#7c2d12;color:#fff;border-radius:3px;padding:1px 5px;margin-left:4px;vertical-align:middle;}
-    .badge-cruda{display:inline-block;font-size:0.65rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:3px;padding:1px 5px;margin-left:4px;vertical-align:middle;}
+    td.cruda-cell{color:#b45309!important;font-weight:700;}
+    .badge-incompleto{display:inline-block;font-size:0.62rem;background:#ef4444;color:#fff;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
+    .badge-decomiso{display:inline-block;font-size:0.62rem;background:#9a3412;color:#fff;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
+    .badge-cruda{display:inline-block;font-size:0.62rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
     .desp-leyenda{font-size:0.75rem;color:var(--gris);margin:0 0 0.65rem;line-height:1.45;}
     .desp-leyenda strong{color:#374151;}
     .empty-state{text-align:center;padding:3rem;color:var(--gris);}
@@ -418,22 +419,6 @@
       <p style="margin-top:0.9rem;color:#4b6358;font-size:0.9rem;" id="progresoMeta">Cargando...</p>
     </div>
 
-    <div class="progreso-card" id="operacionVivoCard" style="margin-top:1rem;">
-      <div class="progreso-header">
-        <span>Operación en vivo — puestos programados</span>
-        <span id="operacionVivoMeta" style="font-size:0.72rem;font-weight:600;color:var(--gris);">Actualizando…</span>
-      </div>
-      <p style="font-size:0.78rem;color:var(--gris);margin:0.5rem 0 0.35rem;">
-        Cada fila es un <strong>puesto</strong> (código local · ciudad), no la zona comercial. Se refresca cada 45 s desde SIRT.
-      </p>
-      <div class="table-wrap" style="max-height:300px;margin-top:0.35rem;">
-        <table style="font-size:0.82rem;width:100%;">
-          <thead><tr><th>Puesto</th><th class="num">Juegos</th><th>OPL</th><th>Estado</th></tr></thead>
-          <tbody id="operacionVivoBody"><tr><td colspan="4" class="empty-state">Cargando puestos del turno…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
     <div class="modulos-titulo">⚙️ Módulos de gestión</div>
     <div class="modulos-grid">
       <div class="modulo-card" onclick="showDecomisos()">
@@ -601,8 +586,9 @@
     <div class="alert" id="despAlert"></div>
     <p class="desp-leyenda">
       <strong>Rojo</strong> = subproducto con cantidad menor ·
-      <strong style="color:#9a3412;">Marrón ⚠</strong> = decomiso (SAI + vw_decomisos) ·
-      <strong style="color:#d97706;">Círculo naranja en VB</strong> = lleva cruda
+      <strong style="color:#9a3412;">Marrón</strong> = decomiso (número en marrón en esa columna) ·
+      <strong style="color:#d97706;">Naranja en VB</strong> = cruda ·
+      <strong>Doble clic</strong> en la fila = detalle y causa del decomiso
     </p>
     <div class="table-wrap">
       <table>
@@ -1500,7 +1486,6 @@ function updateDashboard(data) {
       loadDashOPL();
     }
 
-    renderOperacionVivo(data);
   } catch (e) {
     console.error('updateDashboard error:', e);
     var meta = document.getElementById('progresoMeta');
@@ -2016,64 +2001,21 @@ function clavePuestoAgrupacion(puesto) {
   return (cod || String(puesto || '')).toUpperCase();
 }
 
-function formatPuestoCellHtml(r) {
+function formatPuestoCellHtml(r, badgesHtml) {
+  badgesHtml = badgesHtml || '';
   var etiqueta = r.etiquetaPuesto || '';
   var ruta = r.rutaPuesto || r.puesto || '';
   if (etiqueta) {
     return (
-      '<strong>' +
+      '<span class="puesto-nombre">' +
       escapeHtml(etiqueta) +
-      '</strong>' +
-      (ruta ? '<span>' + escapeHtml(ruta) + '</span>' : '')
+      '</span><span class="puesto-badges">' +
+      badgesHtml +
+      '</span>' +
+      (ruta ? '<span class="puesto-ruta-mini">' + escapeHtml(ruta) + '</span>' : '')
     );
   }
-  return escapeHtml(r.puesto || '');
-}
-
-function renderOperacionVivo(data) {
-  var tbody = document.getElementById('operacionVivoBody');
-  var meta = document.getElementById('operacionVivoMeta');
-  if (!tbody) return;
-  var puestos = (data && data.operacionPuestos) || [];
-  if (meta) {
-    var act = data && data.operacionActualizada ? data.operacionActualizada : '—';
-    var turno = data && (data.turnoOperacion || data.turnoDespacho) ? data.turnoOperacion || data.turnoDespacho : '';
-    meta.textContent =
-      (puestos.length ? puestos.length + ' puestos' : 'Sin puestos') +
-      (turno ? ' · turno ' + turno : '') +
-      ' · ' +
-      act;
-  }
-  if (!puestos.length) {
-    tbody.innerHTML =
-      '<tr><td colspan="4" class="empty-state">Sin puestos con juegos para esta fecha/turno. Revise la fecha de operación.</td></tr>';
-    return;
-  }
-  tbody.innerHTML = puestos
-    .map(function (p) {
-      var estado = '';
-      if (p.incompleto) estado += '<span class="badge-incompleto">incompleto</span> ';
-      if (p.animalesDecomiso > 0) {
-        estado +=
-          '<span class="badge-decomiso">dec ' + p.animalesDecomiso + '</span>';
-      }
-      if (!estado) estado = '<span style="color:var(--gris);font-size:0.75rem;">OK</span>';
-      return (
-        '<tr><td class="puesto-cell">' +
-        '<strong>' +
-        escapeHtml(p.etiqueta || p.puesto) +
-        '</strong>' +
-        (p.ruta ? '<span>' + escapeHtml(p.ruta) + '</span>' : '') +
-        '</td><td class="num">' +
-        p.juegos +
-        '</td><td style="font-size:0.8rem;">' +
-        escapeHtml(p.opl || '—') +
-        '</td><td>' +
-        estado +
-        '</td></tr>'
-      );
-    })
-    .join('');
+  return escapeHtml(r.puesto || '') + badgesHtml;
 }
 
 /** Une filas duplicadas del mismo puesto (p. ej. una fila por corte) en una sola fila con totales. */
@@ -2162,14 +2104,13 @@ function renderTablaDespachos(res) {
       var decPorTipo = r.decomisoPorTipo || {};
       var pe_raw = r.puesto || '';
       var pe = pe_raw.replace(/'/g, '&#39;');
-      var puestoHtml = formatPuestoCellHtml(r);
       var badge = '';
       if (desbalance) badge += '<span class="badge-incompleto">incompleto</span>';
       if (porDec) {
         badge +=
           '<span class="badge-decomiso" title="' +
           animDec +
-          ' animal(es) con decomiso (vw_decomisos + SAI)">' +
+          ' animal(es) con decomiso">' +
           'decomiso' +
           (animDec > 0 ? ' (' + animDec + ')' : '') +
           '</span>';
@@ -2177,6 +2118,7 @@ function renderTablaDespachos(res) {
       if (r.tieneCruda || _codigosCrudas[pe_raw]) {
         badge += '<span class="badge-cruda">cruda</span>';
       }
+      var puestoHtml = formatPuestoCellHtml(r, badge);
       var rowCls = 'clickable';
       if (desbalance) rowCls += ' incompleto-row';
       else if (porDec) rowCls += ' decomiso-row';
@@ -2186,9 +2128,8 @@ function renderTablaDespachos(res) {
         '" ondblclick="abrirDetalle(this)" data-puesto="' +
         pe +
         '">' +
-        '<td class="puesto-desp puesto-cell">' +
+        '<td class="puesto-desp">' +
         puestoHtml +
-        badge +
         '</td>' +
         cols
           .map(function (c) {
@@ -2202,16 +2143,7 @@ function renderTablaDespachos(res) {
             }
             if (bajo) cellClass += ' cell-bajo';
             else if (afectadoDec) cellClass += ' cell-decomiso';
-            var valHtml = v > 0 ? '<span>' + v + '</span>' : '–';
-            if (afectadoDec) {
-              valHtml +=
-                '<sup style="font-size:0.62rem;margin-left:1px;" title="' +
-                decEnTipo +
-                ' decomiso(s) en ' +
-                c +
-                '">⚠</sup>';
-            }
-            return '<td class="' + cellClass + '">' + valHtml + '</td>';
+            return '<td class="' + cellClass + '">' + (v > 0 ? v : '–') + '</td>';
           })
           .join('') +
         '</tr>'
