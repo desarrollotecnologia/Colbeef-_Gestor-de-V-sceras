@@ -33,6 +33,7 @@ export function defaultState() {
       historicoGuardadoFlag: '',
     },
     oplConfig: defaultOplConfig(),
+    oplBaselineFecha: '',
     oplProgreso: [],
     historicoOpl: [],
     consolidado: [],

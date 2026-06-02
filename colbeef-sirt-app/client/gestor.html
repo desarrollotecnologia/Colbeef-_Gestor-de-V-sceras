@@ -2556,10 +2556,11 @@ function loadDashOPL() {
     .withSuccessHandler(function(res) {
       if (!res || !res.success) return;
       if (res.operacionFinalizada) {
-        // Todos los OPLs completados
         renderDashOplFinalizada(res.fecha);
       } else if (res.progreso && res.progreso.length > 0) {
         renderDashOplMini(res.progreso);
+      } else if (res.todosOPL && res.todosOPL.length > 0) {
+        renderDashOplMini(res.todosOPL);
       }
       // Si progreso vacío y no finalizada = sin datos aún
     })
@@ -2611,8 +2612,9 @@ function cargarProgresoModalOPL() {
         return;
       }
       if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
-      renderModalOplProgreso(res.progreso || []);
-      renderDashOplMini(res.progreso || []); // actualiza mini tarjeta también
+      var listaOpl = (res.progreso && res.progreso.length) ? res.progreso : (res.todosOPL || []);
+      renderModalOplProgreso(listaOpl);
+      renderDashOplMini(listaOpl);
     })
     .withFailureHandler(function(e) {
       document.getElementById('oplModalProgresoContainer').innerHTML =
@@ -2632,8 +2634,9 @@ function recalcularOPLModal() {
       }
       if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
       showAlert('oplModalAlert', 'success', '✓ Recalculado — Turno: ' + res.turno);
-      renderModalOplProgreso(res.progreso || []);
-      renderDashOplMini(res.progreso || []);
+      var listaOplR = (res.progreso && res.progreso.length) ? res.progreso : (res.todosOPL || []);
+      renderModalOplProgreso(listaOplR);
+      renderDashOplMini(listaOplR);
     })
     .withFailureHandler(function(e) { showAlert('oplModalAlert', 'error', e.message); })
     .calcularProgresoOPL();
