@@ -16,7 +16,10 @@ import {
   productoDecomisoDesdeMapa,
   construirMapaDecomisosPorAnimal,
   decomisoInfoDesdeMapa,
+  decomisoInfoUnificado,
+  construirIndiceDecomisosVw,
   claveAgrupacionPuesto,
+  parsePuestoOperacion,
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
 } from './engineUtils.js';
@@ -25,6 +28,7 @@ import PDFDocument from 'pdfkit';
 import {
   fetchEstadoCavasRows,
   fetchReporteDecomisosRows,
+  fetchDecomisosAnimalesVw,
   fetchDespachosCavasRows,
   estadoCavaRowToDto,
   despachoCavaRowToDto,
@@ -65,8 +69,10 @@ function construirResumenDespachosDesdeFilas(
   turnoForzado,
   reporteDecomisos = [],
   estadoFromRow12 = [],
-  mapaOPL = {}
+  mapaOPL = {},
+  opts = {}
 ) {
+  const indiceVw = opts.indiceVw || null;
   const salidasBase = despachosCavas || [];
   const estadoNeto = aplicarEstadoEnCavaNeto(estadoFromRow12, despachosCavas);
   const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
@@ -96,6 +102,8 @@ function construirResumenDespachosDesdeFilas(
       : resolverTurnoOperacion({}, salidasBase);
   const data = filasDespachoTurno(salidasBase, turno);
   const mapaDec = construirMapaDecomisosPorAnimal(reporteDecomisos);
+  const basesDecomisoVw = new Set();
+  const basesDecomisoSai = new Set();
 
   const puestoMeta = {};
   const basesDecomisoProgramados = new Set();
@@ -133,11 +141,15 @@ function construirResumenDespachosDesdeFilas(
     if (tipo === 'Visceras Blancas' && crudaBases.has(base)) puestoMeta[clave].tieneCruda = true;
     if (!puestoMeta[clave].animales[base]) puestoMeta[clave].animales[base] = new Set();
     puestoMeta[clave].animales[base].add(tipo);
-    const dec = decomisoInfoDesdeMapa(mapaDec, id);
+    const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
     if (dec && !puestoMeta[clave].basesDecContados.has(base)) {
       puestoMeta[clave].basesDecContados.add(base);
       puestoMeta[clave].basesConDecomiso.add(base);
       basesDecomisoProgramados.add(base);
+      const fuentes = dec.fuentes || [];
+      if (fuentes.includes('vw_decomisos')) basesDecomisoVw.add(base);
+      if (fuentes.includes('sai')) basesDecomisoSai.add(base);
+      if (!fuentes.length) basesDecomisoSai.add(base);
       dec.tipos.forEach((tDec) => {
         puestoMeta[clave].decomisoPorTipo[tDec] = (puestoMeta[clave].decomisoPorTipo[tDec] || 0) + 1;
       });
@@ -173,7 +185,12 @@ function construirResumenDespachosDesdeFilas(
       const props = meta.props || {};
       const propTop = Object.keys(props).sort((a, b) => props[b] - props[a])[0] || '';
       r.opl = propTop ? mapaOPL[propTop] || OPL_DEFAULT : OPL_DEFAULT;
-      r.codigoPuesto = extraerPuesto(meta.puesto) || codigoPuestoPlanilla(meta.puesto);
+      const po = parsePuestoOperacion(meta.puesto);
+      r.etiquetaPuesto = po.etiqueta;
+      r.zonaPuesto = po.zona;
+      r.rutaPuesto = po.ruta;
+      r.codigoPuesto =
+        po.codigo || extraerPuesto(meta.puesto) || codigoPuestoPlanilla(meta.puesto);
       resultado.push(r);
     });
 
@@ -184,6 +201,8 @@ function construirResumenDespachosDesdeFilas(
     resultado,
     historicoGuardadoFlag: '',
     totalConDecomiso: basesDecomisoProgramados.size,
+    totalConDecomisoVw: basesDecomisoVw.size,
+    totalConDecomisoSai: basesDecomisoSai.size,
     filasEnCava: basesEnCava.size,
     filasSalidasTotales: (despachosCavas || []).length,
     filasSalidasUsadas: salidasBase.length,
@@ -242,15 +261,39 @@ function filtroSirtValido(filtro) {
   return Boolean(filtro?.from && filtro?.to);
 }
 
+function despachosFuenteProgramadoTurno() {
+  const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
+  return fuente === 'programado';
+}
+
 function despachosUsaSoloFechaConsulta() {
   const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
   return fuente === 'programado' || fuente === 'erp';
 }
 
-/** Despachos para la fecha consultada; sin lookback si la fuente es programación por día. */
+/** Despachos: programado = turno ISODOW + en cava; otras fuentes = fecha / lookback. */
 async function fetchDespachosParaConsulta(filtro) {
   const useRange = filtroSirtValido(filtro) ? filtro : {};
   const desp = await fetchDespachosCavasRows(useRange);
+  const turno = resolverTurnoOperacion(useRange, desp);
+  if (despachosFuenteProgramadoTurno()) {
+    if (filtroSirtValido(filtro) && !desp.length) {
+      return {
+        desp,
+        usoLookback: false,
+        turnoOperacion: turno,
+        modoDespachos: 'turno-isodow',
+        avisoRango: `Sin piezas en cava programadas para el turno ${turno} (día ${useRange.from}).`,
+      };
+    }
+    return {
+      desp,
+      usoLookback: false,
+      turnoOperacion: turno,
+      modoDespachos: 'turno-isodow',
+      avisoRango: '',
+    };
+  }
   if (filtroSirtValido(filtro) && !desp.length && despachosUsaSoloFechaConsulta()) {
     return {
       desp,
@@ -292,9 +335,14 @@ function construirIndiceEnCava(estadoFromRow12) {
 }
 
 /** Animales únicos (código base) con decomiso en salida programada del turno (mismo criterio que tablero). */
-function contarAnimalesDecomisoEnSalidasProgramadas(salidasFilas, reporteDecomisos, turno) {
+function contarAnimalesDecomisoEnSalidasProgramadas(
+  salidasFilas,
+  reporteDecomisos,
+  turno,
+  indiceVw = null
+) {
   const salidas = salidasFilas || [];
-  if (!salidas.length || !reporteDecomisos?.length || !turno) return 0;
+  if (!salidas.length || !turno) return 0;
   const mapaDec = construirMapaDecomisosPorAnimal(reporteDecomisos);
   const bases = new Set();
   filasDespachoTurno(salidas, turno).forEach((fila) => {
@@ -304,7 +352,7 @@ function contarAnimalesDecomisoEnSalidasProgramadas(salidasFilas, reporteDecomis
     if (PUESTOS_EXCLUIDOS_DESP.includes(puestoTexto)) return;
     const base = codigoBase(id);
     if (!base) return;
-    if (decomisoInfoDesdeMapa(mapaDec, id)) bases.add(base);
+    if (decomisoInfoUnificado(mapaDec, indiceVw, id)) bases.add(base);
   });
   return bases.size;
 }
@@ -460,6 +508,20 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
   return { success: false, message: 'Sin despachos del turno para calcular OPL.', progreso: [] };
 }
 
+/** Carga vw_decomisos (animales) para cruce LIKE en piezas en cava programadas. */
+async function sincronizarDecomisosVwEnSesion(s, filtro) {
+  const pack = await fetchDecomisosAnimalesVw(filtro);
+  s.decomisosVwFilas = pack.rows;
+  s.decomisoVwStats = {
+    fuente: 'vw_decomisos',
+    animalesUnicos: pack.animalesUnicos,
+    desde: pack.desde,
+    hasta: pack.hasta,
+    lookbackDias: pack.lookbackDias,
+  };
+  return construirIndiceDecomisosVw(pack.rows);
+}
+
 /** Sustituye importar Excel: rellena estado desde SIRT */
 export async function importarExcel(_base64, sheetName, range) {
   const s = await loadState();
@@ -471,6 +533,7 @@ export async function importarExcel(_base64, sheetName, range) {
       const pack = await fetchReporteDecomisosRows(filtro);
       s.reporteDecomisos = pack.rows;
       s.decomisoVinculoStats = pack.vinculo;
+      await sincronizarDecomisosVwEnSesion(s, filtro);
     } else if (sheetName === 'Despachos_Cavas') {
       const despPack = await fetchDespachosParaConsulta(filtro);
       s.despachosCavas = despPack.desp;
@@ -693,7 +756,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'decomisos-listado-v1';
+export const GESTOR_BUILD = 'despacho-decomiso-vw-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -701,16 +764,38 @@ function isoToDdMmYyyy(iso) {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
+/** Filas de puesto para tablero / operación en vivo (sin agrupar por zona comercial). */
+function mapearOperacionPuestos(resultado) {
+  return (resultado || [])
+    .filter((r) => Number(r.Juegos || 0) > 0)
+    .map((r) => {
+      const po = parsePuestoOperacion(r.puesto);
+      return {
+        puesto: String(r.puesto || ''),
+        etiqueta: String(r.etiquetaPuesto || po.etiqueta),
+        zona: String(r.zonaPuesto || po.zona),
+        ruta: String(r.rutaPuesto || po.ruta),
+        juegos: Number(r.Juegos || 0),
+        opl: String(r.opl || ''),
+        incompleto: Boolean(r.incompleto),
+        animalesDecomiso: Number(r.animalesDecomiso || 0),
+      };
+    })
+    .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
+}
+
 export async function getDashboardData(range) {
   const filtro = normalizarRangoFechas(range || {});
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
-      const [estadoBruto, reportePack, despPack] = await Promise.all([
+      const [estadoBruto, reportePack, despPack, vwPack] = await Promise.all([
         fetchEstadoCavasRows({ stockActual: true }),
         fetchReporteDecomisosRows(filtro),
         fetchDespachosParaConsulta(filtro),
+        fetchDecomisosAnimalesVw(filtro),
       ]);
+      const indiceVw = construirIndiceDecomisosVw(vwPack.rows);
       const desp = despPack.desp;
       const estado = aplicarEstadoEnCavaNeto(estadoBruto, desp);
       const reporte = reportePack.rows;
@@ -723,6 +808,13 @@ export async function getDashboardData(range) {
         estadoFromRow12: estado,
         reporteDecomisos: reporte,
         decomisoVinculoStats,
+        decomisosVwFilas: vwPack.rows,
+        decomisoVwStats: {
+          fuente: 'vw_decomisos',
+          animalesUnicos: vwPack.animalesUnicos,
+          desde: vwPack.desde,
+          hasta: vwPack.hasta,
+        },
         despachosCavas: desp,
         oplConfig: baseOpl,
         resumenDespachos: {
@@ -738,7 +830,9 @@ export async function getDashboardData(range) {
       actualizarCantidadesInicialesOPLSync(sWork);
       const fechaIso = filtro.from;
       const turnoOp = resolverTurnoOperacion(filtro, desp);
-      const rd = construirResumenDespachosDesdeFilas(desp, turnoOp, reporte, estado, cargarMapaOPL(sWork));
+      const rd = construirResumenDespachosDesdeFilas(desp, turnoOp, reporte, estado, cargarMapaOPL(sWork), {
+        indiceVw,
+      });
       rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} · turno ${turnoOp} (consulta SIRT)`;
       sWork.resumenDespachos = rd;
       const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
@@ -755,21 +849,28 @@ export async function getDashboardData(range) {
       let despachados = 0;
       let progreso = 0;
       let progresoMensaje = '';
+      const rezagoDias = Number(process.env.SIRT_PROGRAMACION_REZAGO_DAYS || 21);
+      const modoProg = despachosFuenteProgramadoTurno();
       if (filasSalidasDia > 0 && totalJuegosDespachar > 0) {
         juegosTotalesOperacion = totalJuegosDespachar;
         despachados = 0;
         progreso = 0;
         progresoMensaje =
           totalJuegosDespachar +
-          ' juegos a despachar el ' +
-          isoToDdMmYyyy(fechaIso) +
-          ' · turno ' +
+          ' juegos en cava · turno ' +
           turnoOp +
-          ' (' +
+          (modoProg
+            ? ' (ISODOW del ' +
+              isoToDdMmYyyy(fechaIso) +
+              ', rezago ' +
+              rezagoDias +
+              ' d)'
+            : ' el ' + isoToDdMmYyyy(fechaIso)) +
+          ' · ' +
           filasSalidasDia +
-          ' piezas) · ' +
+          ' piezas · ' +
           juegosStockCava +
-          ' juegos en stock cava';
+          ' juegos stock cava';
       } else if (filasSalidasDia > 0 && totalJuegosDespachar === 0) {
         progresoMensaje =
           filasSalidasDia +
@@ -842,6 +943,9 @@ export async function getDashboardData(range) {
         operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
         oplPreviewMessage: String(preview.message || ''),
         oplPreviewFecha: preview.fecha || '',
+        operacionPuestos: mapearOperacionPuestos(rd.resultado),
+        totalPuestosOperacion: (rd.resultado || []).length,
+        operacionActualizada: fmtNow(),
       };
     } catch (e) {
       return {
@@ -897,6 +1001,9 @@ export async function getDashboardData(range) {
     progreso,
     meta: totalSalidas,
     consultaSIRT: false,
+    operacionPuestos: mapearOperacionPuestos(rd.resultado || []),
+    totalPuestosOperacion: (rd.resultado || []).length,
+    operacionActualizada: rd.fechaStr || fmtNow(),
   };
 }
 
@@ -924,12 +1031,17 @@ export async function procesarDespachos(turnoForzado) {
     turnoForzado && String(turnoForzado).length > 0
       ? String(turnoForzado)
       : resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas);
+  const indiceVw =
+    s.decomisosVwFilas?.length > 0
+      ? construirIndiceDecomisosVw(s.decomisosVwFilas)
+      : await sincronizarDecomisosVwEnSesion(s, s.lastSyncRange || {});
   const rd = construirResumenDespachosDesdeFilas(
     s.despachosCavas,
     turno,
     s.reporteDecomisos || [],
     s.estadoFromRow12 || [],
-    cargarMapaOPL(s)
+    cargarMapaOPL(s),
+    { indiceVw }
   );
   if (!rd.resultado?.length) {
     return {
@@ -960,6 +1072,8 @@ export async function procesarDespachos(turnoForzado) {
     totalPuestos: rd.resultado.length,
     totalJuegos: rd.totalJuegos,
     totalConDecomiso: rd.totalConDecomiso || 0,
+    totalConDecomisoVw: rd.totalConDecomisoVw || 0,
+    totalConDecomisoSai: rd.totalConDecomisoSai || 0,
     filasEnCava: rd.filasEnCava,
     filasSalidasUsadas: rd.filasSalidasUsadas,
     salidasOmitidasSinCava: rd.salidasOmitidasSinCava,
@@ -990,6 +1104,7 @@ export async function getDetallesPuesto(puesto) {
   const s = await loadState();
   const turno = String(s.resumenDespachos?.turno || '').trim();
   const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
+  const indiceVw = construirIndiceDecomisosVw(s.decomisosVwFilas || []);
   const estadoNeto = aplicarEstadoEnCavaNeto(s.estadoFromRow12 || [], s.despachosCavas || []);
   const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
   const clavePuesto = claveAgrupacionPuesto(puesto);
@@ -1002,7 +1117,7 @@ export async function getDetallesPuesto(puesto) {
     if (!id || claveAgrupacionPuesto(pFila) !== clavePuesto) return;
     if (turno && pFila && !pFila.includes(turno)) return;
     const base = codigoBase(id);
-    const dec = decomisoInfoDesdeMapa(mapaDec, id);
+    const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
     filas.push({
       id,
       codigoBase: base,
@@ -1012,6 +1127,7 @@ export async function getDetallesPuesto(puesto) {
       cruda: tipo === 'Visceras Blancas' && Boolean(base && crudaBases.has(base)),
       decomiso: Boolean(dec),
       productoDecomiso: dec?.productos?.join(', ') || '',
+      fuenteDecomiso: (dec?.fuentes || []).join(' + ') || '',
     });
   });
   filas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.id.localeCompare(b.id));
@@ -1565,7 +1681,7 @@ function consolidarDesdeResumenDespachos(s) {
       'Visceras Rojas',
       '',
       puestoFull,
-      codigo || clave,
+      codigo,
       plaza,
       opl,
       juegos,
@@ -1714,16 +1830,51 @@ export async function generarPlanillaPuntos(opl) {
     })
     .sort((a, b) => b.total - a.total);
   const pct = totalGlobal > 0 ? ((totalOPL / totalGlobal) * 100).toFixed(1) : '0.0';
+  const puestosFlat = [];
+  s.consolidado.forEach((fila) => {
+    const oplReg = String(fila[6] ?? '').trim();
+    if (opl !== 'TODOS' && oplReg !== opl) return;
+    const puestoFull = String(fila[3] ?? fila[4] ?? '').trim();
+    const cantidad = Number(fila[7] ?? 0);
+    if (!puestoFull || cantidad <= 0) return;
+    const po = parsePuestoOperacion(puestoFull);
+    const zona = String(fila[5] ?? '').trim();
+    puestosFlat.push({
+      puesto: puestoFull,
+      etiqueta: po.etiqueta,
+      zona: po.zona || zona,
+      cantidad: Math.round(cantidad * 100) / 100,
+      opl: oplReg,
+    });
+  });
+  puestosFlat.sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
   return {
     success: true,
     opl,
     zonas: zonasArray,
+    puestos: puestosFlat,
     totalOPL: Math.round(totalOPL * 100) / 100,
     totalGlobal: Math.round(totalGlobal * 100) / 100,
     porcentaje: pct,
     turno,
     fecha: fechaPlanilla,
     fechaConsulta: s.lastSyncRange?.from || null,
+  };
+}
+
+/** Vista en vivo de puestos programados (sin persistir sesión). */
+export async function getOperacionEnVivo(range) {
+  const out = await consultarDespachosPreview(null, range);
+  if (!out.success) return out;
+  return {
+    success: true,
+    turno: out.turno,
+    fechaConsulta: out.fechaConsulta,
+    actualizado: fmtNow(),
+    totalJuegos: out.totalJuegos,
+    totalPuestos: out.totalPuestos,
+    puestos: mapearOperacionPuestos(out.resultado),
+    avisoRango: out.avisoRango || '',
   };
 }
 
@@ -1842,11 +1993,17 @@ export async function consultarDespachosPreview(turno, range) {
   const despPack = await fetchDespachosParaConsulta(filtro);
   const desp = despPack.desp;
   const t = resolverTurnoOperacion(filtro, desp, turno);
-  const packDec = await fetchReporteDecomisosRows(useRange);
+  const [packDec, vwPack] = await Promise.all([
+    fetchReporteDecomisosRows(useRange),
+    fetchDecomisosAnimalesVw(useRange),
+  ]);
+  const indiceVw = construirIndiceDecomisosVw(vwPack.rows);
   const estadoBruto = await fetchEstadoCavasRows({ stockActual: true });
   const estado = aplicarEstadoEnCavaNeto(estadoBruto, desp);
   const sPrev = await loadState();
-  const rd = construirResumenDespachosDesdeFilas(desp, t, packDec.rows, estado, cargarMapaOPL(sPrev));
+  const rd = construirResumenDespachosDesdeFilas(desp, t, packDec.rows, estado, cargarMapaOPL(sPrev), {
+    indiceVw,
+  });
   return {
     success: true,
     turno: rd.turno,
@@ -1854,6 +2011,9 @@ export async function consultarDespachosPreview(turno, range) {
     totalPuestos: rd.resultado.length,
     totalJuegos: rd.totalJuegos,
     totalConDecomiso: rd.totalConDecomiso || 0,
+    totalConDecomisoVw: rd.totalConDecomisoVw || 0,
+    totalConDecomisoSai: rd.totalConDecomisoSai || 0,
+    decomisosVwAnimales: vwPack.animalesUnicos,
     filasDespachosCavas: desp.length,
     tipos: TIPOS_PRODUCTO,
     resultado: rd.resultado,

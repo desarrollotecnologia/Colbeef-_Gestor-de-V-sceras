@@ -54,6 +54,7 @@ const handlers = {
   consultarDecomisosDesdeSIRT: engine.consultarDecomisosDesdeSIRT,
   consultarCruceDecomisosPreview: engine.consultarCruceDecomisosPreview,
   consultarDespachosPreview: engine.consultarDespachosPreview,
+  getOperacionEnVivo: engine.getOperacionEnVivo,
 };
 
 export async function dispatchRpc(method, args) {

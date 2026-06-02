@@ -135,6 +135,68 @@ export function decomisoInfoDesdeMapa(mapaPorAnimal, idRaw) {
   return mapaPorAnimal[normalizeProductIdForDecomisoCruce(base)] || null;
 }
 
+/** Índice codigo_animal (vw_decomisos) → partes decomisadas del inspector. */
+export function construirIndiceDecomisosVw(vwFilas) {
+  const porAnimal = new Map();
+  (vwFilas || []).forEach((r) => {
+    const animal = String(r.codigo_animal ?? '')
+      .trim()
+      .toLowerCase();
+    if (!animal) return;
+    if (!porAnimal.has(animal)) {
+      porAnimal.set(animal, {
+        codigoAnimal: animal,
+        tipos: new Set(),
+        productos: [],
+        fuente: 'vw_decomisos',
+      });
+    }
+    const e = porAnimal.get(animal);
+    const parte = String(r.tipo_parte ?? r.parte_decomisada ?? '').trim();
+    if (parte) {
+      e.tipos.add(mapTipoProductoNombre(parte));
+      if (!e.productos.includes(parte)) e.productos.push(parte);
+    }
+  });
+  return porAnimal;
+}
+
+/** Cruce pieza en cava: identificacion LIKE codigo_animal% (misma lógica que SQL del usuario). */
+export function decomisoInfoDesdeVw(indiceVw, idRaw) {
+  if (!indiceVw || indiceVw.size === 0) return null;
+  const id = String(idRaw ?? '')
+    .trim()
+    .toLowerCase();
+  if (!id) return null;
+  const base = codigoBase(idRaw);
+  const baseL = base ? base.toLowerCase() : '';
+  if (baseL && indiceVw.has(baseL)) return indiceVw.get(baseL);
+  for (const [animal, info] of indiceVw) {
+    if (id === animal || id.startsWith(`${animal}-`)) return info;
+  }
+  return null;
+}
+
+/** SAI (reporte) + vw_decomisos: cualquiera que coincida marca decomiso en despacho. */
+export function decomisoInfoUnificado(mapaSai, indiceVw, idRaw) {
+  const sai = decomisoInfoDesdeMapa(mapaSai, idRaw);
+  const vw = decomisoInfoDesdeVw(indiceVw, idRaw);
+  if (!sai && !vw) return null;
+  if (!sai) return { ...vw, fuentes: ['vw_decomisos'] };
+  if (!vw) return { ...sai, fuentes: ['sai'] };
+  const tipos = new Set([...sai.tipos, ...vw.tipos]);
+  const productos = [...sai.productos];
+  vw.productos.forEach((p) => {
+    if (p && !productos.includes(p)) productos.push(p);
+  });
+  return {
+    tipos,
+    productos,
+    codigoAnimal: vw.codigoAnimal || codigoBase(idRaw),
+    fuentes: ['sai', 'vw_decomisos'],
+  };
+}
+
 export function mapTipoProductoNombre(nombre) {
   const n = String(nombre || '').toLowerCase();
   if (n.includes('cabeza')) return 'Cabeza';
@@ -155,23 +217,44 @@ export function esCruda(valor) {
   return false;
 }
 
-export function extraerPuesto(destinoRaw) {
-  if (!destinoRaw) return '';
-  let d = String(destinoRaw).trim();
-  PREFIJOS_TURNO.forEach((p) => {
-    const regex = new RegExp(p.replace(/\//g, '\\/'), 'gi');
-    d = d.replace(regex, '');
-  });
-  const index = d.indexOf('/');
-  let puesto = index !== -1 ? d.substring(0, index).trim() : d.trim();
-  if (/^\d+$/.test(puesto)) puesto = String(parseInt(puesto, 10));
-  return puesto;
+const TURNOS_EN_RUTA = ['DxL', 'LxM', 'MxM', 'MxJ', 'JxV', 'VxS', 'SxD'];
+
+/** Descompone ruta SIRT: 01028/CIUDAD/DIRECCION/LxM → código, zona, ruta legible. */
+export function parsePuestoOperacion(puestoFull) {
+  const raw = String(puestoFull || '').trim();
+  const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
+  const sinTurno = parts.filter((p) => !TURNOS_EN_RUTA.includes(p));
+  let codigo = sinTurno[0] || '';
+  if (/^\d+$/.test(codigo)) {
+    const n = parseInt(codigo, 10);
+    if (Number.isFinite(n)) codigo = String(n);
+  }
+  const zona = sinTurno[1] ? String(sinTurno[1]).toUpperCase() : '';
+  const direccion = sinTurno[2] || '';
+  const turno = parts.find((p) => TURNOS_EN_RUTA.includes(p)) || '';
+  const etiqueta =
+    codigo && zona ? `${codigo} · ${zona}` : codigo || zona || raw.slice(0, 96);
+  const ruta = sinTurno.join(' / ');
+  const clave =
+    codigo && zona
+      ? `${codigo.toUpperCase()}|${zona}`
+      : codigo
+        ? codigo.toUpperCase()
+        : String(raw)
+            .replace(/\s+/g, ' ')
+            .toUpperCase();
+  return { codigo, zona, direccion, turno, etiqueta, ruta, rutaCompleta: raw, clave };
 }
 
-/** Clave estable para agrupar salidas del mismo destino (evita filas duplicadas por texto distinto). */
+export function extraerPuesto(destinoRaw) {
+  const p = parsePuestoOperacion(destinoRaw);
+  return p.codigo || '';
+}
+
+/** Clave estable: mismo local + ciudad (no mezclar rutas distintas bajo un solo código). */
 export function claveAgrupacionPuesto(destinoRaw) {
-  const cod = extraerPuesto(destinoRaw);
-  if (cod) return cod.toUpperCase();
+  const p = parsePuestoOperacion(destinoRaw);
+  if (p.clave) return p.clave;
   return String(destinoRaw || '')
     .trim()
     .replace(/\s+/g, ' ')
@@ -180,6 +263,17 @@ export function claveAgrupacionPuesto(destinoRaw) {
 
 export function detectarTurnoPorDia() {
   return TURNO_POR_DIA[new Date().getDay()] || 'SxD';
+}
+
+/** PostgreSQL ISODOW: 1 = lunes … 7 = domingo (desde fecha operación AAAA-MM-DD). */
+export function isodowDesdeFechaISO(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0, 0)
+    : new Date();
+  if (Number.isNaN(d.getTime())) return 1;
+  const js = d.getDay();
+  return js === 0 ? 7 : js;
 }
 
 /** Turno sugerido según el día de la semana de una fecha ISO (AAAA-MM-DD), p. ej. histórico SIRT. */

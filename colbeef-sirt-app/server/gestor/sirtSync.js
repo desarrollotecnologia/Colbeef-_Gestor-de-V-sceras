@@ -1,6 +1,10 @@
 ﻿import { query } from '../db.js';
 import { TIPOS_PRODUCTO } from './constants.js';
-import { mapTipoProductoNombre, resolverTurnoOperacion } from './engineUtils.js';
+import {
+  detectarTurnoPorFechaISO,
+  mapTipoProductoNombre,
+  resolverTurnoOperacion,
+} from './engineUtils.js';
 import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from './sql/despachosColbeefGrouped.js';
 
 const SYNC_DAYS = Number(process.env.SIRT_SYNC_DAYS || 120);
@@ -11,6 +15,11 @@ const CAVA_LOOKBACK_DAYS = Math.max(
 const SALIDAS_CAVA_LOOKBACK_DAYS = Math.max(
   1,
   Math.min(30, Number(process.env.SIRT_SALIDAS_CAVA_LOOKBACK_DAYS ?? 30))
+);
+/** Días hacia atrás de fecha_programacion_despacho (rezago mismo turno / ISODOW). */
+const PROGRAMACION_REZAGO_DAYS = Math.max(
+  1,
+  Math.min(60, Number(process.env.SIRT_PROGRAMACION_REZAGO_DAYS ?? 21))
 );
 /** Días hacia atrás desde la fecha de consulta (automático; el usuario no configura esto). */
 const DECOMISO_LOOKBACK_DAYS = Math.max(
@@ -169,6 +178,8 @@ export function despachoCavaRowToDto(fila) {
     destino: String(fila[8] ?? '').trim(),
     codigoNuevaSucursal: String(fila[10] ?? '').trim(),
     puesto: String(fila[9] ?? '').trim(),
+    cava: String(fila[6] ?? '').trim(),
+    riel: String(fila[2] ?? '').trim(),
     observaciones: String(fila[12] ?? '').trim(),
   };
 }
@@ -342,6 +353,33 @@ export async function fetchReporteDecomisosRows(range = {}) {
   };
 }
 
+/**
+ * Animales decomisados (vw_decomisos) en ventana de fechas — cruce en app con piezas en cava
+ * (evita JOIN LIKE lento en PostgreSQL).
+ */
+export async function fetchDecomisosAnimalesVw(range = {}) {
+  const { from, to, lookbackDias } = rangoDecomisosAutomatico(range);
+  const sql = `
+    SELECT DISTINCT ON (TRIM(vd.codigo_animal::text))
+      TRIM(vd.codigo_animal::text) AS codigo_animal,
+      TRIM(vd.tipo_parte::text) AS tipo_parte,
+      vd.fecha_registro
+    FROM trazabilidad_proceso.vw_decomisos vd
+    WHERE vd.fecha_registro::date BETWEEN $1::date AND $2::date
+      AND NULLIF(TRIM(vd.codigo_animal::text), '') IS NOT NULL
+    ORDER BY TRIM(vd.codigo_animal::text), vd.fecha_registro DESC
+    LIMIT 50000
+  `;
+  const { rows } = await query(sql, [from, to]);
+  return {
+    rows,
+    desde: from,
+    hasta: to,
+    lookbackDias,
+    animalesUnicos: rows.length,
+  };
+}
+
 /** Vista previa de decomisos SIRT para el frontend. */
 export async function consultarDecomisosDesdeSirt(range = {}) {
   const pack = await fetchReporteDecomisosRows(range);
@@ -405,12 +443,14 @@ async function fetchDespachosCavaRielRows(range = {}) {
 }
 
 /**
- * En cava + fecha_programacion_despacho (misma lógica que consulta ERP del usuario).
- * Subproductos asignados a ruta/turno (p. ej. …/BOGOTA/…/LxM/) aún sin fecha_salida.
+ * Opción B — En cava ahora + programación del mismo turno (ISODOW) que la fecha operación.
+ * Incluye rezago: piezas programadas en martes anteriores (MxM) que siguen sin salida de cava.
+ * Turno y sufijo /LxM/… se toman de la fecha del encabezado, no de una fecha fija en SQL.
  */
 async function fetchDespachosProgramadosCavaRows(range = {}) {
-  const from = normDate(range.from);
-  const to = normDate(range.to);
+  const fechaOp =
+    normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
+  const turnoOp = detectarTurnoPorFechaISO(fechaOp);
   const sql = `
     SELECT
       ppel.fecha_programacion_despacho AS fecha_programada,
@@ -423,26 +463,18 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       COALESCE(s.nombre, '')::text AS sucursal_origen,
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
+      COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
       LPAD(COALESCE(s.id::text, '0'), 5, '0') || '/' ||
-        UPPER(COALESCE(de.nombre, 'SIN CIUDAD')) || '/' ||
+        UPPER(COALESCE(de.nombre, s.nombre, 'SIN CIUDAD')) || '/' ||
         UPPER(COALESCE(NULLIF(TRIM(s.direccion), ''), 'SIN DIRECCION')) || '/' ||
-        CASE EXTRACT(DOW FROM ppel.fecha_programacion_despacho)::int
-          WHEN 0 THEN 'DxL'
-          WHEN 1 THEN 'LxM'
-          WHEN 2 THEN 'MxM'
-          WHEN 3 THEN 'MxJ'
-          WHEN 4 THEN 'JxV'
-          WHEN 5 THEN 'VxS'
-          WHEN 6 THEN 'SxD'
-          ELSE 'LxM'
-        END || '/' AS puesto_turno
+        $3::text || '/' AS puesto_turno
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
     JOIN trazabilidad_proceso.parte_producto pp
       ON pp.id = ppcr.id_parte_producto
      AND pp.id_producto::text = ppcr.id_producto::text
     JOIN trazabilidad_proceso.tipo_parte_producto tpp
       ON tpp.id = pp.id_tipo_parte_producto
-     AND tpp.nombre IN ${TIPOS_SUBPRODUCTO}
+     AND TRIM(tpp.nombre) IN ${TIPOS_SUBPRODUCTO}
     JOIN trazabilidad_proceso.producto p
       ON p.id::text = pp.id_producto::text
     JOIN trazabilidad_proceso.producto_empresa pe
@@ -459,38 +491,26 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       ON s.id = ppel.id_local
     LEFT JOIN trazabilidad_proceso.destino de
       ON de.id = s.id_destino
+    LEFT JOIN trazabilidad_proceso.cava c
+      ON c.id = ppcr.id_cava
     WHERE ppcr.fecha_salida IS NULL
       AND ppel.fecha_programacion_despacho IS NOT NULL
-      AND (
-        (
-          $2::date IS NOT NULL
-          AND $3::date IS NOT NULL
-          AND $2::date = $3::date
-          AND ppel.fecha_programacion_despacho::date = $2::date
-        )
-        OR (
-          $2::date IS NOT NULL
-          AND ($3::date IS NULL OR $2::date <> $3::date)
-          AND ppel.fecha_programacion_despacho::date >= $2::date
-          AND ($3::date IS NULL OR ppel.fecha_programacion_despacho::date <= $3::date)
-        )
-        OR (
-          $2::date IS NULL
-          AND $3::date IS NULL
-          AND ppel.fecha_programacion_despacho::date >= (CURRENT_DATE - $1::int)
-        )
-      )
-    ORDER BY ppel.fecha_programacion_despacho ASC, ppcr.fecha_ingreso DESC
+      AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
+          EXTRACT(ISODOW FROM $2::date)
+      AND ppel.fecha_programacion_despacho::date >= ($2::date - ($1::int * INTERVAL '1 day'))
+    ORDER BY ppel.fecha_programacion_despacho DESC, ppcr.fecha_ingreso DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
+  const { rows } = await query(sql, [PROGRAMACION_REZAGO_DAYS, fechaOp, turnoOp]);
   return rows.map((r) => {
     const row = new Array(13).fill('');
     row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
     row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
+    row[2] = r.riel || '';
     row[3] = r.codigo || '';
     row[4] = r.propietario || '';
     row[5] = r.peso_pie || '';
+    row[6] = r.cava_nombre || '';
     row[7] = r.subproducto || '';
     row[8] = r.destino || '';
     row[9] = r.puesto_turno || '';
@@ -534,7 +554,7 @@ async function fetchDespachosProgramadosColbeefRows(range = {}) {
 
 /**
  * Consulta 1 — Despachos_Cavas del gestor.
- * programado (defecto): en cava + fecha_programacion_despacho + ruta/turno
+ * programado (defecto): en cava + turno ISODOW de la fecha operación (+ rezago)
  * erp: despacho_desposte · riel: solo fecha_salida física
  */
 export async function fetchDespachosCavasRows(range = {}) {
@@ -568,19 +588,20 @@ export async function consultarEnCavaDesdeSirt(range = {}) {
 export async function consultarSalidasCavaDesdeSirt(range = {}) {
   const from = normDate(range.from) || normDate(range.date);
   const to = normDate(range.to) || normDate(range.date);
-  const filas = await fetchDespachosCavasRows({ from, to, date: range.date });
-  const turno =
-    from && /^\d{4}-\d{2}-\d{2}$/.test(from)
-      ? resolverTurnoOperacion({ from, to, date: from }, filas)
-      : '';
+  const fechaOp = from || normDate(range.date) || hoyIso();
+  const filas = await fetchDespachosCavasRows({ from: fechaOp, to: fechaOp, date: range.date });
+  const turno = detectarTurnoPorFechaISO(fechaOp);
+  const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
+  const modoTurnoIsodow = fuente === 'programado';
   return {
     success: true,
-    modo: from && to ? 'fecha' : 'lookback',
-    desde: from,
-    hasta: to,
-    fechaConsulta: from,
+    modo: modoTurnoIsodow ? 'turno-isodow' : from && to ? 'fecha' : 'lookback',
+    desde: fechaOp,
+    hasta: to || fechaOp,
+    fechaConsulta: fechaOp,
     turnoOperacion: turno,
-    lookbackDias: from && to ? null : SALIDAS_CAVA_LOOKBACK_DAYS,
+    rezagoDias: modoTurnoIsodow ? PROGRAMACION_REZAGO_DAYS : null,
+    lookbackDias: modoTurnoIsodow ? null : from && to ? null : SALIDAS_CAVA_LOOKBACK_DAYS,
     totalFilas: filas.length,
     filas: filas.map(despachoCavaRowToDto),
   };

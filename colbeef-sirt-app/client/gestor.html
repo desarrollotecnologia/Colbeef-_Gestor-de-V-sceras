@@ -418,6 +418,22 @@
       <p style="margin-top:0.9rem;color:#4b6358;font-size:0.9rem;" id="progresoMeta">Cargando...</p>
     </div>
 
+    <div class="progreso-card" id="operacionVivoCard" style="margin-top:1rem;">
+      <div class="progreso-header">
+        <span>Operación en vivo — puestos programados</span>
+        <span id="operacionVivoMeta" style="font-size:0.72rem;font-weight:600;color:var(--gris);">Actualizando…</span>
+      </div>
+      <p style="font-size:0.78rem;color:var(--gris);margin:0.5rem 0 0.35rem;">
+        Cada fila es un <strong>puesto</strong> (código local · ciudad), no la zona comercial. Se refresca cada 45 s desde SIRT.
+      </p>
+      <div class="table-wrap" style="max-height:300px;margin-top:0.35rem;">
+        <table style="font-size:0.82rem;width:100%;">
+          <thead><tr><th>Puesto</th><th class="num">Juegos</th><th>OPL</th><th>Estado</th></tr></thead>
+          <tbody id="operacionVivoBody"><tr><td colspan="4" class="empty-state">Cargando puestos del turno…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="modulos-titulo">⚙️ Módulos de gestión</div>
     <div class="modulos-grid">
       <div class="modulo-card" onclick="showDecomisos()">
@@ -537,9 +553,9 @@
       <span class="turno-badge" id="despTurnoBadge">—</span>
     </h2>
     <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Agrupa por <strong>puesto/destino</strong> (en cava programados para el día/turno + decomisos).
-      El <strong>turno</strong> se calcula solo según la fecha y las salidas en SIRT.
-      Doble clic en una fila para el detalle.
+      Piezas <strong>en cava ahora</strong> (sin salida física) con programación del <strong>turno del día</strong>
+      (LxM, MxM, MxJ… según la fecha operación). Incluye <strong>rezago</strong> del mismo día de semana aún en frío.
+      Agrupa por <strong>puesto</strong> (código · ciudad). Doble clic en una fila para el detalle por pieza.
     </p>
     <div class="stats-grid">
       <div class="stat-card">
@@ -550,7 +566,7 @@
       <div class="stat-card">
         <div class="stat-label">Puestos</div>
         <div class="stat-valor" id="statPuestos">—</div>
-        <div class="stat-sub">Destinos del turno</div>
+        <div class="stat-sub">Locales programados (código · ciudad)</div>
       </div>
     </div>
     <div class="btn-row" style="align-items:center;flex-wrap:wrap;">
@@ -567,7 +583,7 @@
     <details class="ux-collapsible">
       <summary>Detalle línea a línea — Salidas SIRT (diagnóstico)</summary>
       <div class="ux-collapsible-body">
-        <p style="font-size:0.8rem;color:var(--gris);margin:0 0 0.65rem;">La tabla principal agrupa <strong>un puesto por fila</strong> con todos los juegos. Aquí se listan las salidas crudas de SIRT.</p>
+        <p style="font-size:0.8rem;color:var(--gris);margin:0 0 0.65rem;">Detalle línea a línea desde SIRT (programación, cava, riel). La tabla principal agrupa <strong>un puesto por fila</strong> con juegos completos.</p>
         <div class="ux-toolbar">
           <input type="search" class="ux-search" id="searchSalidasCava" placeholder="Buscar código, destino…" oninput="uxBuscarSalidasCava(this.value)" aria-label="Buscar salidas">
           <span id="salidasCavaPreviewMeta" style="font-size:0.8rem;color:var(--gris);">—</span>
@@ -576,8 +592,8 @@
         </div>
         <div class="table-wrap" style="max-height:220px;margin-top:0;">
           <table style="font-size:0.82rem;">
-            <thead><tr><th>Salida</th><th>Código</th><th>Subproducto</th><th>Destino / Puesto</th></tr></thead>
-            <tbody id="tablaSalidasCavaSirt"><tr><td colspan="4" class="empty-state">Se cargará al abrir el módulo.</td></tr></tbody>
+            <thead><tr><th>Prog.</th><th>Código</th><th>Subproducto</th><th>Puesto</th><th>Cava</th><th>Riel</th></tr></thead>
+            <tbody id="tablaSalidasCavaSirt"><tr><td colspan="6" class="empty-state">Se cargará al abrir el módulo.</td></tr></tbody>
           </table>
         </div>
       </div>
@@ -585,7 +601,7 @@
     <div class="alert" id="despAlert"></div>
     <p class="desp-leyenda">
       <strong>Rojo</strong> = subproducto con cantidad menor ·
-      <strong style="color:#9a3412;">Marrón ⚠</strong> = decomiso en ese subproducto ·
+      <strong style="color:#9a3412;">Marrón ⚠</strong> = decomiso (SAI + vw_decomisos) ·
       <strong style="color:#d97706;">Círculo naranja en VB</strong> = lleva cruda
     </p>
     <div class="table-wrap">
@@ -858,7 +874,7 @@
     <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:1rem;margin-bottom:1.2rem;">
       <div>
         <h2 style="color:var(--vp);margin-bottom:0.2rem;">📋 Planilla de Puntos por OPL</h2>
-        <p style="color:var(--gris);font-size:0.84rem;">Distribución de puestos por zona — solo Vísceras Rojas</p>
+        <p style="color:var(--gris);font-size:0.84rem;">Vísceras Rojas: vista por <strong>puesto</strong> (operación) o por <strong>zona</strong> (resumen comercial)</p>
       </div>
       <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-secondary" id="btnProcesarPlanilla" onclick="procesarPlanilla()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Procesar Planilla</button>
@@ -898,6 +914,11 @@
     </button>
   </div>
 </div>
+
+    <div style="display:flex;justify-content:center;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;">
+      <button type="button" class="btn btn-primary" id="btnPlanillaVistaPuestos" style="padding:0.4rem 1rem;font-size:0.82rem;" onclick="setPlanillaVista('puestos')">📍 Por puesto</button>
+      <button type="button" class="btn btn-secondary" id="btnPlanillaVistaZonas" style="padding:0.4rem 1rem;font-size:0.82rem;" onclick="setPlanillaVista('zonas')">🗺️ Por zona</button>
+    </div>
 
     <!-- Título planilla -->
     <div style="text-align:center;margin-bottom:1rem;">
@@ -1087,13 +1108,24 @@ window.onload = function() {
     .withSuccessHandler(function(){})
     .withFailureHandler(function(e){console.warn('initSheets:',e);})
     .initializeSheets();
+  iniciarRefrescoOperacion();
+};
+
+var operacionRefreshTimer = null;
+var OPERACION_REFRESH_MS = 45000;
+
+function iniciarRefrescoOperacion() {
   clearInterval(dashboardRefreshTimer);
-  dashboardRefreshTimer = setInterval(function(){
+  clearInterval(operacionRefreshTimer);
+  operacionRefreshTimer = setInterval(function () {
     if (document.getElementById('viewDashboard').style.display !== 'none') {
       loadDashboardData();
     }
-  }, 60000);
-};
+    if (document.getElementById('viewDespachos').classList.contains('active')) {
+      cargarDespachosDesdeSirt({ silent: true });
+    }
+  }, OPERACION_REFRESH_MS);
+}
 
 // ══════════════════════════════════════════════════════
 // NAVEGACIÓN
@@ -1143,16 +1175,19 @@ function cargarDespachosDesdeSirt(opts) {
       if (!opts.silent) {
         var extra =
           res.totalConDecomiso > 0
-            ? ' · <strong>' + res.totalConDecomiso + '</strong> con decomiso'
+            ? ' · <strong>' +
+              res.totalConDecomiso +
+              '</strong> anim. decomiso' +
+              (res.totalConDecomisoVw != null
+                ? ' (vw:' + res.totalConDecomisoVw + ' sai:' + (res.totalConDecomisoSai || 0) + ')'
+                : '')
             : '';
         var cavaInf =
-          res.filasEnCava != null
-            ? ' · <strong>' +
-              res.filasEnCava +
-              '</strong> animales en cava · <strong>' +
-              (res.filasSalidasUsadas || 0) +
-              '</strong> salidas usadas'
-            : '';
+          res.filasSalidasUsadas != null
+            ? ' · <strong>' + (res.filasSalidasUsadas || 0) + '</strong> piezas en cava (turno)'
+            : res.filasEnCava != null
+              ? ' · <strong>' + res.filasEnCava + '</strong> en stock cava'
+              : '';
         var aviso = res.avisoRango
           ? '<br><small style="color:#92400e;">' + escapeHtml(String(res.avisoRango)) + '</small>'
           : '';
@@ -1161,11 +1196,11 @@ function cargarDespachosDesdeSirt(opts) {
           'success',
           '✓ Turno <strong>' +
             escapeHtml(res.turno) +
-            '</strong> · ' +
+            '</strong> (auto por fecha) · ' +
             res.totalPuestos +
             ' puestos · ' +
             res.totalJuegos +
-            ' juegos completos' +
+            ' juegos · en cava + prog. mismo día de semana' +
             cavaInf +
             extra +
             aviso,
@@ -1464,6 +1499,8 @@ function updateDashboard(data) {
     } else {
       loadDashOPL();
     }
+
+    renderOperacionVivo(data);
   } catch (e) {
     console.error('updateDashboard error:', e);
     var meta = document.getElementById('progresoMeta');
@@ -1518,7 +1555,8 @@ function renderTablaSalidasCavaSirt(filas, totalFilas) {
   var tbody = document.getElementById('tablaSalidasCavaSirt');
   if (!tbody) return;
   if (!filas || !filas.length) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Sin salidas de cava para el rango consultado.</td></tr>';
+    tbody.innerHTML =
+      '<tr><td colspan="6" class="empty-state">Sin piezas en cava para el turno de la fecha operación.</td></tr>';
     return;
   }
   var slice = filas.slice(0, SIRT_PREVIEW_MAX);
@@ -1532,15 +1570,19 @@ function renderTablaSalidasCavaSirt(filas, totalFilas) {
         escapeHtml(f.codigo || '') +
         '</td><td>' +
         escapeHtml(f.descripcion || f.tipoProducto || '') +
-        '</td><td>' +
+        '</td><td style="max-width:200px;font-size:0.78rem;word-break:break-word;">' +
         escapeHtml(puesto) +
+        '</td><td>' +
+        escapeHtml(f.cava || '—') +
+        '</td><td>' +
+        escapeHtml(f.riel || '—') +
         '</td></tr>'
       );
     })
     .join('');
   if (totalFilas > slice.length) {
     html +=
-      '<tr><td colspan="4" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      '<tr><td colspan="6" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
       slice.length +
       ' de ' +
       totalFilas +
@@ -1668,12 +1710,22 @@ function cargarVistaSalidasCava() {
       }
       window._uxPreviewCache.salidas = res.filas || [];
       var modo =
-        res.modo === 'rango' && res.desde
-          ? 'Día ' + res.desde + (res.hasta !== res.desde ? ' → ' + res.hasta : '')
-          : 'Lookback ' + (res.lookbackDias || 30) + ' días';
+        res.modo === 'turno-isodow'
+          ? 'En cava · turno ' +
+            (res.turnoOperacion || '—') +
+            ' · op. ' +
+            (res.fechaConsulta || res.desde || '') +
+            (res.rezagoDias ? ' · rezago ' + res.rezagoDias + ' d' : '')
+          : res.modo === 'rango' && res.desde
+            ? 'Día ' + res.desde + (res.hasta !== res.desde ? ' → ' + res.hasta : '')
+            : 'Lookback ' + (res.lookbackDias || 30) + ' días';
       if (meta) {
         meta.textContent =
-          modo + ' · ' + res.totalFilas + ' filas' + (res.turno ? ' · turno ' + res.turno : '');
+          modo +
+          ' · ' +
+          res.totalFilas +
+          ' piezas' +
+          (res.turnoOperacion ? ' · ' + res.turnoOperacion : '');
       }
       renderTablaSalidasCavaSirt(res.filas || [], res.totalFilas || 0);
       var q = document.getElementById('searchSalidasCava');
@@ -1946,13 +1998,82 @@ function cargarCrudasDespachos() {
 var COLS_DESPACHO = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
 function clavePuestoAgrupacion(puesto) {
-  var s = String(puesto || '').trim();
-  if (!s) return '';
-  var sinTurno = s.replace(/\/(DxL|LxM|MxM|MxJ|JxV|VxS|SxD)\//gi, '/');
-  var i = sinTurno.indexOf('/');
-  var cod = (i >= 0 ? sinTurno.substring(0, i) : sinTurno).replace(/\s+/g, ' ').trim();
+  var parts = String(puesto || '')
+    .trim()
+    .split('/')
+    .map(function (x) {
+      return x.trim();
+    })
+    .filter(Boolean);
+  var turnos = ['DxL', 'LxM', 'MxM', 'MxJ', 'JxV', 'VxS', 'SxD'];
+  var sinTurno = parts.filter(function (p) {
+    return turnos.indexOf(p) < 0;
+  });
+  var cod = sinTurno[0] || '';
   if (/^\d+$/.test(cod)) cod = String(parseInt(cod, 10));
-  return (cod || s).toUpperCase();
+  var zona = sinTurno[1] ? sinTurno[1].toUpperCase() : '';
+  if (cod && zona) return cod.toUpperCase() + '|' + zona;
+  return (cod || String(puesto || '')).toUpperCase();
+}
+
+function formatPuestoCellHtml(r) {
+  var etiqueta = r.etiquetaPuesto || '';
+  var ruta = r.rutaPuesto || r.puesto || '';
+  if (etiqueta) {
+    return (
+      '<strong>' +
+      escapeHtml(etiqueta) +
+      '</strong>' +
+      (ruta ? '<span>' + escapeHtml(ruta) + '</span>' : '')
+    );
+  }
+  return escapeHtml(r.puesto || '');
+}
+
+function renderOperacionVivo(data) {
+  var tbody = document.getElementById('operacionVivoBody');
+  var meta = document.getElementById('operacionVivoMeta');
+  if (!tbody) return;
+  var puestos = (data && data.operacionPuestos) || [];
+  if (meta) {
+    var act = data && data.operacionActualizada ? data.operacionActualizada : '—';
+    var turno = data && (data.turnoOperacion || data.turnoDespacho) ? data.turnoOperacion || data.turnoDespacho : '';
+    meta.textContent =
+      (puestos.length ? puestos.length + ' puestos' : 'Sin puestos') +
+      (turno ? ' · turno ' + turno : '') +
+      ' · ' +
+      act;
+  }
+  if (!puestos.length) {
+    tbody.innerHTML =
+      '<tr><td colspan="4" class="empty-state">Sin puestos con juegos para esta fecha/turno. Revise la fecha de operación.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = puestos
+    .map(function (p) {
+      var estado = '';
+      if (p.incompleto) estado += '<span class="badge-incompleto">incompleto</span> ';
+      if (p.animalesDecomiso > 0) {
+        estado +=
+          '<span class="badge-decomiso">dec ' + p.animalesDecomiso + '</span>';
+      }
+      if (!estado) estado = '<span style="color:var(--gris);font-size:0.75rem;">OK</span>';
+      return (
+        '<tr><td class="puesto-cell">' +
+        '<strong>' +
+        escapeHtml(p.etiqueta || p.puesto) +
+        '</strong>' +
+        (p.ruta ? '<span>' + escapeHtml(p.ruta) + '</span>' : '') +
+        '</td><td class="num">' +
+        p.juegos +
+        '</td><td style="font-size:0.8rem;">' +
+        escapeHtml(p.opl || '—') +
+        '</td><td>' +
+        estado +
+        '</td></tr>'
+      );
+    })
+    .join('');
 }
 
 /** Une filas duplicadas del mismo puesto (p. ej. una fila por corte) en una sola fila con totales. */
@@ -2041,13 +2162,14 @@ function renderTablaDespachos(res) {
       var decPorTipo = r.decomisoPorTipo || {};
       var pe_raw = r.puesto || '';
       var pe = pe_raw.replace(/'/g, '&#39;');
+      var puestoHtml = formatPuestoCellHtml(r);
       var badge = '';
       if (desbalance) badge += '<span class="badge-incompleto">incompleto</span>';
       if (porDec) {
         badge +=
           '<span class="badge-decomiso" title="' +
           animDec +
-          ' animal(es) con decomiso">' +
+          ' animal(es) con decomiso (vw_decomisos + SAI)">' +
           'decomiso' +
           (animDec > 0 ? ' (' + animDec + ')' : '') +
           '</span>';
@@ -2064,8 +2186,8 @@ function renderTablaDespachos(res) {
         '" ondblclick="abrirDetalle(this)" data-puesto="' +
         pe +
         '">' +
-        '<td class="puesto-desp">' +
-        escapeHtml(pe_raw) +
+        '<td class="puesto-desp puesto-cell">' +
+        puestoHtml +
         badge +
         '</td>' +
         cols
@@ -2114,7 +2236,11 @@ function abrirDetalle(elOrStr) {
   google.script.run.withSuccessHandler(function(res){
     if(!res||!res.success||!res.filas||res.filas.length===0){document.getElementById('modalTbody').innerHTML='<tr><td colspan="5" class="empty-state">Sin datos.</td></tr>';return;}
     document.getElementById('modalTbody').innerHTML=res.filas.map(function(f){
-      var dec = f.decomiso ? ' <span class="badge-decomiso">decomiso</span>' + (f.productoDecomiso ? ' <small>'+escapeHtml(f.productoDecomiso)+'</small>' : '') : '';
+      var dec = f.decomiso
+        ? ' <span class="badge-decomiso">decomiso</span>' +
+          (f.fuenteDecomiso ? ' <small style="color:#9a3412;">(' + escapeHtml(f.fuenteDecomiso) + ')</small>' : '') +
+          (f.productoDecomiso ? ' <small>' + escapeHtml(f.productoDecomiso) + '</small>' : '')
+        : '';
       var est = [];
       if (f.cruda) est.push('<span style="color:#d97706;font-weight:600;">cruda</span>');
       if (f.enCava === false) est.push('<span style="color:#6b7280;">sin cava</span>');
@@ -2763,6 +2889,7 @@ var _plazaEditIdx = null;
 function showPlanilla() {
   _hideAll();
   document.getElementById('viewPlanilla').classList.add('active');
+  setPlanillaVista(_planillaVista);
 }
 
 function procesarPlanilla() {
@@ -2851,7 +2978,23 @@ function cargarDatosPlanilla(opl) {
     .generarPlanillaPuntos(opl);
 }
 
+var _planillaVista = 'puestos';
+
+function setPlanillaVista(modo) {
+  _planillaVista = modo === 'zonas' ? 'zonas' : 'puestos';
+  var bp = document.getElementById('btnPlanillaVistaPuestos');
+  var bz = document.getElementById('btnPlanillaVistaZonas');
+  if (bp) {
+    bp.className = _planillaVista === 'puestos' ? 'btn btn-primary' : 'btn btn-secondary';
+  }
+  if (bz) {
+    bz.className = _planillaVista === 'zonas' ? 'btn btn-primary' : 'btn btn-secondary';
+  }
+  if (_planillaUltimoDato) renderPlanilla(_planillaUltimoDato);
+}
+
 function renderPlanilla(res) {
+  _planillaUltimoDato = res;
   var filtro = leerFechaGlobal();
   var fecha =
     res.fecha ||
@@ -2879,12 +3022,40 @@ function renderPlanilla(res) {
     '% del total' +
     (res.turno ? ' · turno ' + res.turno : '');
 
-  if (!res.zonas || res.zonas.length === 0) {
+  if (_planillaVista === 'puestos' && res.puestos && res.puestos.length > 0) {
+    var filasP = res.puestos
+      .map(function (p) {
+        return (
+          '<tr style="border-bottom:1px solid #d1fae5;">' +
+          '<td style="padding:6px 10px;font-weight:600;">' +
+          escapeHtml(p.etiqueta || p.puesto) +
+          '<div style="font-size:0.72rem;color:var(--gris);font-weight:400;">' +
+          escapeHtml(p.puesto) +
+          '</div></td>' +
+          '<td style="padding:6px 10px;font-size:0.78rem;">' +
+          escapeHtml(p.zona || '—') +
+          '</td>' +
+          '<td class="num" style="padding:6px 10px;font-weight:700;color:#259c39;">' +
+          p.cantidad +
+          '</td></tr>'
+        );
+      })
+      .join('');
+    document.getElementById('planillaGrid').innerHTML =
+      '<div style="width:100%;max-width:720px;margin:0 auto;background:white;border-radius:12px;border:1px solid #b7e4c7;overflow:hidden;">' +
+      '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">' +
+      '<thead><tr style="background:#259c39;color:white;">' +
+      '<th style="padding:8px 10px;text-align:left;">Puesto</th>' +
+      '<th style="padding:8px 10px;text-align:left;">Zona ref.</th>' +
+      '<th style="padding:8px 10px;text-align:center;">Juegos VR</th>' +
+      '</tr></thead><tbody>' +
+      filasP +
+      '</tbody></table></div>';
+  } else if (!res.zonas || res.zonas.length === 0) {
     document.getElementById('planillaGrid').innerHTML =
       '<div style="width:100%;text-align:center;padding:3rem;color:var(--gris);">Sin datos para este OPL</div>';
     return;
-  }
-
+  } else {
   var html = res.zonas.map(function(z) {
     var filas = z.puestos.map(function(p) {
       return '<tr style="border-bottom:1px solid #d1fae5;">'
@@ -2909,6 +3080,7 @@ function renderPlanilla(res) {
   }).join('');
 
   document.getElementById('planillaGrid').innerHTML = html;
+  }
 
   // Resumen
   document.getElementById('planillaResumen').innerHTML =
