@@ -333,6 +333,21 @@ app.get('/api/historico/pdf', async (_req, res) => {
   }
 });
 
+app.get('/api/historial/pdf/:id', async (req, res) => {
+  try {
+    const out = await gestor.obtenerPdfHistorial(req.params.id);
+    if (!out?.buffer?.length) {
+      return res.status(404).type('text/plain').send('PDF no encontrado o archivo dañado.');
+    }
+    const nombre = String(out.nombre || 'documento.pdf').replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ ]/g, '_');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${nombre}"`);
+    res.send(out.buffer);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
 app.get('/api/historico/opl', async (req, res) => {
   try {
     res.json(await gestor.getHistoricoResumen(req.query.limit));

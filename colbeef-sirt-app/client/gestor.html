@@ -2485,10 +2485,15 @@ function loadHistorial(){
     var c=document.getElementById('historialContainer');
     if(!res||!res.success||!res.historial||res.historial.length===0){c.innerHTML='<p class="empty-state">No hay PDFs generados aún.</p>';return;}
     c.innerHTML=res.historial.map(function(item){
+      var href = item.url || '#';
+      var abrir = href.indexOf('/api/historial/pdf/') === 0
+        ? '<a class="historial-link" href="'+href+'" target="_blank" rel="noopener">Abrir</a>'
+          + '<a class="historial-link" style="background:#374151;margin-left:0.35rem;" href="'+href+'" download="'+(item.nombre||'documento.pdf').replace(/"/g,'')+'">Descargar</a>'
+        : '<span style="font-size:0.8rem;color:#991b1b;">Sin enlace — regenere el PDF</span>';
       return '<div class="historial-item">'
         +'<div><div style="font-weight:600;color:var(--vp);">📄 '+(item.nombre||'Sin nombre')+'</div>'
         +'<div style="font-size:0.8rem;color:var(--gris);">📅 '+(item.fecha||'—')+' | 🏷️ '+(item.tipo||'—')+' | 📊 '+(item.registros||0)+' registros</div></div>'
-        +'<a class="historial-link" href="'+(item.url||'#')+'" target="_blank">Abrir</a>'
+        + abrir
         +'</div>';
     }).join('');
   }).withFailureHandler(function(e){document.getElementById('historialContainer').innerHTML='<p class="empty-state" style="color:#991b1b;">Error: '+e.message+'</p>';}).getHistorialPDF();

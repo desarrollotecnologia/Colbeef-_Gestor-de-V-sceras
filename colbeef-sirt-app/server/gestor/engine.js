@@ -26,6 +26,11 @@ import {
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import {
+  guardarPdfHistorial,
+  leerPdfHistorial,
+  urlAbrirPdfHistorial,
+} from './pdfHistorial.js';
+import {
   fetchEstadoCavasRows,
   fetchReporteDecomisosRows,
   fetchDecomisosAnimalesVw,
@@ -833,7 +838,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-progreso-cava-v1';
+export const GESTOR_BUILD = 'historial-pdf-servir-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1993,9 +1998,77 @@ export async function generarHTMLPlanillaPDF(opl) {
   return { success: true, html };
 }
 
+/** Migra entradas antiguas (data:base64 en JSON) a archivos en disco. */
+async function migrarHistorialPdfLegacy(s) {
+  let cambio = false;
+  for (const it of s.historialPdf || []) {
+    if (it.fileName && it.id) continue;
+    const url = String(it.url || '');
+    if (!url.startsWith('data:application/pdf;base64,')) continue;
+    try {
+      const b64 = url.split(',')[1] || '';
+      const buf = Buffer.from(b64, 'base64');
+      if (!buf.length) continue;
+      const { id, fileName } = await guardarPdfHistorial(buf, { nombre: it.nombre });
+      it.id = id;
+      it.fileName = fileName;
+      delete it.url;
+      cambio = true;
+    } catch (_) {
+      /* omitir entrada corrupta */
+    }
+  }
+  if (cambio) await saveState(s);
+}
+
+function historialPdfParaCliente(items) {
+  return (items || []).map((it) => {
+    const id = String(it.id || it.fileName || '').trim();
+    const openUrl = id ? urlAbrirPdfHistorial(it.id || it.fileName) : '';
+    return {
+      id: it.id || '',
+      nombre: it.nombre || 'documento.pdf',
+      fecha: it.fecha || '',
+      tipo: it.tipo || '—',
+      registros: Number(it.registros || 0),
+      usuario: it.usuario || 'SISTEMA',
+      url: openUrl,
+    };
+  });
+}
+
 export async function getHistorialPDF() {
   const s = await loadState();
-  return { success: true, historial: (s.historialPdf || []).slice().reverse() };
+  await migrarHistorialPdfLegacy(s);
+  const historial = historialPdfParaCliente((s.historialPdf || []).slice().reverse());
+  return { success: true, historial };
+}
+
+/** Sirve un PDF del historial (archivo en disco o legacy en memoria). */
+export async function obtenerPdfHistorial(idParam) {
+  const id = String(idParam || '').trim();
+  if (!id) return null;
+  const s = await loadState();
+  const item = (s.historialPdf || []).find(
+    (x) => x.id === id || x.fileName === id || String(x.fileName || '').startsWith(`${id}_`)
+  );
+  if (!item) return null;
+
+  if (item.fileName) {
+    try {
+      const buffer = await leerPdfHistorial(item.fileName);
+      return { buffer, nombre: item.nombre || 'documento.pdf' };
+    } catch (_) {
+      /* intentar legacy */
+    }
+  }
+
+  const url = String(item.url || '');
+  if (url.startsWith('data:application/pdf;base64,')) {
+    const buffer = Buffer.from(url.split(',')[1] || '', 'base64');
+    if (buffer.length) return { buffer, nombre: item.nombre || 'documento.pdf' };
+  }
+  return null;
 }
 
 /** Consulta SIRT: subproductos en cava (consulta 2 del usuario). */
@@ -2430,14 +2503,16 @@ export async function generarPDFDecomisos() {
       });
   }
   const pdfBuffer = await generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha);
-  const url = `data:application/pdf;base64,${pdfBuffer.toString('base64')}`;
+  const nombre = `Listado_Decomisos_${fmtDateOnly().replace(/\//g, '-')}.pdf`;
+  const { id, fileName } = await guardarPdfHistorial(pdfBuffer, { nombre });
+  const openUrl = urlAbrirPdfHistorial(id);
   const s = await loadState();
   s.historialPdf = s.historialPdf || [];
-  const nombre = `Listado_Decomisos_${fmtDateOnly().replace(/\//g, '-')}.pdf`;
   s.historialPdf.push({
+    id,
+    fileName,
     nombre,
     fecha,
-    url,
     tipo: 'DECOMISOS',
     registros: res.resultados.length,
     usuario: 'SISTEMA',
@@ -2446,7 +2521,7 @@ export async function generarPDFDecomisos() {
   return {
     success: true,
     nombre,
-    url,
+    url: openUrl,
     message: 'PDF generado correctamente.',
   };
 }
