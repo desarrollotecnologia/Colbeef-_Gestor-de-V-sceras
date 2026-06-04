@@ -398,7 +398,7 @@ export async function consultarDecomisosDesdeSirt(range = {}) {
  * Salida física cava–riel (fecha_salida ya registrada en SIRT).
  * Fuente alternativa: SIRT_DESPACHOS_FUENTE=riel
  */
-async function fetchDespachosCavaRielRows(range = {}) {
+export async function fetchDespachosCavaRielRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
   const sql = `
@@ -413,8 +413,11 @@ async function fetchDespachosCavaRielRows(range = {}) {
       COALESCE(de.nombre, '')::text AS destino,
       split_part(COALESCE(de.nombre, ''), '/', 1) AS codigo_nueva_sucursal,
       COALESCE(ppcr.id_riel::text, '') AS riel,
-      COALESCE(pp.observaciones, '')::text AS observaciones
+      COALESCE(pp.observaciones, '')::text AS observaciones,
+      COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre
     ${SQL_CAVA_FROM}
+    LEFT JOIN trazabilidad_proceso.cava c
+      ON c.id = ppcr.id_cava
     WHERE (
       ($2::date IS NOT NULL OR $3::date IS NOT NULL)
       OR ppcr.fecha_salida >= (CURRENT_DATE - $1::int)
@@ -433,6 +436,7 @@ async function fetchDespachosCavaRielRows(range = {}) {
     row[3] = r.codigo || '';
     row[4] = r.propietario || '';
     row[5] = r.peso_pie || '';
+    row[6] = r.cava_nombre || '';
     row[7] = r.descripcion || '';
     row[8] = r.destino || '';
     row[9] = buildPuestoDespacho(r);

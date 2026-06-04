@@ -25,6 +25,8 @@ export function defaultState() {
     resumenDecomisoMeta: null,
     resumenFechaProc: null,
     despachosCavas: [],
+    /** Salidas físicas del día (fecha_salida en SIRT) para progreso OPL. */
+    salidasCavaDia: [],
     resumenDespachos: {
       turno: '',
       fechaStr: '',

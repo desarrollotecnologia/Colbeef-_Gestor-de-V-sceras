@@ -448,7 +448,7 @@
       <div class="modulo-card" onclick="showAnalytics()">
         <div class="modulo-icono">📈</div>
         <div class="modulo-nombre">Analytics OPL</div>
-        <div class="modulo-desc">KPIs, métricas históricas y gráficos de evolución por operador logístico.</div>
+        <div class="modulo-desc">KPIs y gráficos por OPL: histórico de cierres + operación de hoy con datos SIRT (despachados / en cava).</div>
         <span class="modulo-badge">Activo</span>
       </div>
       <div class="modulo-card" onclick="showCrudas()">
@@ -743,7 +743,11 @@
   <div id="viewAnalytics" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:0.3rem;">📈 Analytics OPL</h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1.5rem;">Métricas históricas de despachos por operador logístico.</p>
+    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
+      Métricas por operador logístico con los <strong>mismos valores</strong> que el programa (total turno, despachados que salieron de cava, pendientes en cava).
+      Incluye la <strong>operación de hoy</strong> si hay datos SIRT cargados; el histórico se consolida al <strong>cerrar operación</strong> en Despachos.
+    </p>
+    <p id="anlFuenteVivo" style="display:none;font-size:0.78rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:1rem;"></p>
 
     <!-- Fila 1: OPL + botones -->
     <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
@@ -788,7 +792,7 @@
       <!-- Evolución 14 días -->
       <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
         <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Evolución diaria — últimos 14 días</div>
-        <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Despachados y pendientes al cierre</div>
+        <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Despachados (salieron de cava) y pendientes (en cava)</div>
         <div style="position:relative;height:220px;"><canvas id="anlChart1"></canvas></div>
       </div>
 
@@ -994,6 +998,10 @@
           <span style="font-size:0.82rem;color:var(--gris);" id="oplModalFecha"></span>
           <button class="btn btn-primary" style="padding:0.5rem 1.2rem;font-size:0.85rem;" onclick="recalcularOPLModal()">🔄 Recalcular</button>
         </div>
+        <p style="font-size:0.75rem;color:var(--gris);margin:-0.4rem 0 0.8rem;line-height:1.35;">
+          <strong>T</strong> total en cava del turno · <strong>INV</strong> aún en inventario (sin salida en SIRT) ·
+          <strong>S</strong> salidas reales (<code>fecha_salida</code>). La barra solo sube cuando aumentan las salidas físicas, no al asignar programación.
+        </p>
         <div class="alert" id="oplModalAlert"></div>
         <div id="oplModalProgresoContainer">
           <p class="empty-state" style="padding:1.5rem;">Cargando...</p>
@@ -1482,6 +1490,10 @@ function updateDashboard(data) {
         document.getElementById('dashOplMini').innerHTML =
           '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">Sin datos OPL calculables para este día (sin despachos o sin juegos VR en estado).</div>';
       }
+    } else if (data.progresoOPL && data.progresoOPL.length > 0) {
+      renderDashOplMini(data.progresoOPL);
+    } else if (data.todosOPL && data.todosOPL.length > 0) {
+      renderDashOplMini(data.todosOPL);
     } else {
       loadDashOPL();
     }
@@ -2667,9 +2679,9 @@ function renderModalOplProgreso(progreso) {
       + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">'
       +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;">🚚 ' + p.opl + '</div>'
       +   '<div style="display:flex;gap:1rem;font-size:0.82rem;">'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">TOTAL</span><strong>' + p.total + '</strong></div>'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">DESPACHADOS</span><strong style="color:#16a34a;">' + p.despachados + '</strong></div>'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">PENDIENTES</span><strong style="color:#dc2626;">' + p.pendientes + '</strong></div>'
+      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">T</span><strong>' + p.total + '</strong></div>'
+      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">INV</span><strong style="color:#ca8a04;">' + p.pendientes + '</strong></div>'
+      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">S</span><strong style="color:#16a34a;">' + p.despachados + '</strong></div>'
       +   '</div>'
       + '</div>'
       // Barra de progreso
@@ -2679,7 +2691,7 @@ function renderModalOplProgreso(progreso) {
       // Porcentaje y estado
       + '<div style="display:flex;justify-content:space-between;align-items:center;">'
       +   '<span style="font-size:0.78rem;color:var(--gris);">'
-      +     (completo ? 'Operación completada ✅' : p.pendientes + ' juegos pendientes por despachar')
+      +     (completo ? 'Operación completada ✅' : p.pendientes + ' en inventario · ' + p.despachados + ' salidas registradas')
       +   '</span>'
       +   '<span style="font-size:0.85rem;font-weight:800;color:' + pctColor + ';">' + pct + '%</span>'
       + '</div>'
@@ -3305,12 +3317,26 @@ function cargarAnalytics() {
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
-        showAlert('anlAlert','warn','Sin datos históricos aún. Cierra una operación primero.');
+        var fuenteEl0 = document.getElementById('anlFuenteVivo');
+        if (fuenteEl0) fuenteEl0.style.display = 'none';
+        showAlert('anlAlert','warn', res && res.message ? res.message : 'Sin datos OPL. Sincronice Despachos desde SIRT.');
         document.getElementById('anlKpis').innerHTML =
-          '<p style="color:var(--gris);font-size:0.9rem;padding:1rem;">Completa al menos una operación para ver métricas.</p>';
+          '<p style="color:var(--gris);font-size:0.9rem;padding:1rem;">Cargue Despachos (fecha del turno) para ver métricas del día, o cierre operaciones para acumular histórico.</p>';
         return;
       }
       hideAlert('anlAlert');
+      var fuenteEl = document.getElementById('anlFuenteVivo');
+      if (fuenteEl) {
+        if (res.operacionEnCurso) {
+          fuenteEl.style.display = 'block';
+          fuenteEl.innerHTML =
+            '🟢 <strong>Operación en curso</strong> (turno ' +
+            escapeHtml(res.turnoEnCurso || '—') +
+            ') — cifras en vivo desde SIRT. Al cerrar la operación en Despachos quedan fijas en el histórico.';
+        } else {
+          fuenteEl.style.display = 'none';
+        }
+      }
       renderKPIs(res.kpis, opl, filtro);
       renderGraficos(res.graficos);
       renderBacklog(res.backlog);
