@@ -8,6 +8,7 @@ import {
 import {
   codigoBase,
   construirMapaReporteDecomisos,
+  normalizeProductIdForDecomisoCruce,
   esCruda,
   extraerPuesto,
   detectarTurnoDesdeDatos,
@@ -363,22 +364,62 @@ function contarAnimalesDecomisoEnSalidasProgramadas(
   return bases.size;
 }
 
-/** Cruce pieza programada ↔ decomiso SAI (una fila por id_producto con match). */
+function decomisoCruceDtoDesdeReporte(filaReporte, destino = '') {
+  const subproducto = String(filaReporte[2] ?? '').trim();
+  const puesto = String(filaReporte[6] ?? '').trim();
+  return {
+    id: String(filaReporte[0] ?? '').trim(),
+    destino: String(destino || '').trim(),
+    subproducto,
+    puesto,
+    causa: String(filaReporte[4] ?? '').trim(),
+    fecha: String(filaReporte[1] ?? '').trim(),
+    hora: String(filaReporte[7] ?? '').trim(),
+    responsable: String(filaReporte[5] ?? '').trim(),
+    producto: subproducto,
+  };
+}
+
+/** Cruce pieza programada ↔ decomiso SAI (una fila por parte decomisada en SIRT). */
 function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos) {
   const salidas = salidasFilas || [];
   if (!salidas.length || !reporteDecomisos?.length) return [];
-  const mapa = construirMapaReporteDecomisos(reporteDecomisos);
-  const resultado = [];
+
+  const destinoPorId = {};
   salidas.forEach((fila) => {
     const puestoTexto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
     if (puestoTexto && PUESTOS_EXCLUIDOS_DESP.includes(puestoTexto)) return;
     const { id, destino } = filaSalidaCavaIdDestino(fila);
-    const prod = productoDecomisoDesdeMapa(mapa, id);
-    if (id && prod !== undefined) resultado.push([id, destino, prod]);
+    if (!id) return;
+    const k = normalizeProductIdForDecomisoCruce(id);
+    if (k && destinoPorId[k] === undefined) destinoPorId[k] = destino;
+    const base = codigoBase(id);
+    if (base) {
+      const kb = normalizeProductIdForDecomisoCruce(base);
+      if (kb && destinoPorId[kb] === undefined) destinoPorId[kb] = destino;
+    }
   });
+
+  const idsSalida = new Set(Object.keys(destinoPorId));
+  const resultado = [];
+  (reporteDecomisos || []).forEach((fila) => {
+    const id = String(fila[0] ?? '').trim();
+    if (!id) return;
+    const k = normalizeProductIdForDecomisoCruce(id);
+    const base = codigoBase(id);
+    const kb = base ? normalizeProductIdForDecomisoCruce(base) : '';
+    const match = idsSalida.has(k) || (kb && idsSalida.has(kb));
+    if (!match) return;
+    const destino = destinoPorId[k] || destinoPorId[kb] || '';
+    resultado.push(decomisoCruceDtoDesdeReporte(fila, destino));
+  });
+
   resultado.sort((a, b) => {
-    const d = String(a[1] || '').localeCompare(String(b[1] || ''), 'es');
-    return d !== 0 ? d : String(a[0] || '').localeCompare(String(b[0] || ''), 'es');
+    const df = String(a.fecha || '').localeCompare(String(b.fecha || ''), 'es');
+    if (df !== 0) return df;
+    const dc = String(a.id || '').localeCompare(String(b.id || ''), 'es');
+    if (dc !== 0) return dc;
+    return String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es');
   });
   return resultado;
 }
@@ -660,8 +701,17 @@ export async function resumirDecomisos() {
   const totalPiezasVinculadas = resultado.length;
   const ahora = new Date();
   s.resumenRows = [
-    ['ID Producto', 'Destino', 'Producto/Subproducto', 'Fecha Procesamiento'],
-    ...resultado.map((r) => [...r, ahora]),
+    ['Código', 'Destino', 'Subproducto', 'Puesto', 'Causa', 'Fecha', 'Hora', 'Fecha Procesamiento'],
+    ...resultado.map((r) => [
+      r.id,
+      r.destino,
+      r.subproducto,
+      r.puesto,
+      r.causa,
+      r.fecha,
+      r.hora,
+      ahora,
+    ]),
   ];
   s.resumenFechaProc = ahora.toISOString();
   s.resumenDecomisoMeta = {
@@ -671,7 +721,7 @@ export async function resumirDecomisos() {
   };
   if (s.estadoFromRow12?.length) actualizarCantidadesInicialesOPLSync(s);
   await saveState(s);
-  const destinos = new Set(resultado.map((r) => r[1]).filter(Boolean));
+  const destinos = new Set(resultado.map((r) => r.destino).filter(Boolean));
   const sinCruce = resultado.length === 0 && nSal > 0 && nRep > 0;
   let muestraIdsSalidas = [];
   let muestraIdsReporte = [];
@@ -700,7 +750,7 @@ export async function resumirDecomisos() {
     totalDestinos: destinos.size,
     turnoOperacion: turno,
     fechaProcesamiento: fmtNow(),
-    resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
+    resultados: resultado.map((r) => ({ ...r })),
     filasEnCava: idxCava.basesEnCava.size,
     filasSalidasCruce: nSal,
     filasSalidasEnCava: nSal,
@@ -766,10 +816,11 @@ export async function getResumenDecomisos() {
       resultados: [],
     };
   }
-  const filas = data.slice(1).filter((r) => r[0] && r[1] && r[2]);
+  const filas = data.slice(1).filter((r) => r[0] && (r[2] || r[3]));
   let fechaFormatted = 'Sin datos';
-  if (filas.length && filas[0][3]) {
-    const fObj = filas[0][3] instanceof Date ? filas[0][3] : new Date(filas[0][3]);
+  const idxProc = filas.length && filas[0].length >= 8 ? 7 : 3;
+  if (filas.length && filas[0][idxProc]) {
+    const fObj = filas[0][idxProc] instanceof Date ? filas[0][idxProc] : new Date(filas[0][idxProc]);
     if (!Number.isNaN(fObj.getTime())) fechaFormatted = fmtNowFromDate(fObj);
   }
   const totalPiezasVinculadas =
@@ -786,7 +837,21 @@ export async function getResumenDecomisos() {
     totalDestinos: new Set(filas.map((r) => r[1])).size,
     fechaProcesamiento: fechaFormatted,
     turnoOperacion: meta.turno || '',
-    resultados: filas.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
+    resultados: filas.map((r) => {
+      if (r.length >= 8) {
+        return {
+          id: r[0],
+          destino: r[1],
+          subproducto: r[2],
+          puesto: r[3],
+          causa: r[4],
+          fecha: r[5],
+          hora: r[6],
+          producto: r[2],
+        };
+      }
+      return { id: r[0], destino: r[1], subproducto: r[2], puesto: '', causa: '', producto: r[2] };
+    }),
   };
 }
 
@@ -2175,9 +2240,9 @@ export async function consultarCruceDecomisosPreview(range) {
     totalProductos: resultado.length,
     totalPiezasVinculadas: resultado.length,
     totalAnimalesConDecomiso,
-    totalDestinos: new Set(resultado.map((r) => r[1]).filter(Boolean)).size,
+    totalDestinos: new Set(resultado.map((r) => r.destino).filter(Boolean)).size,
     turnoOperacion: turno,
-    resultados: resultado.map((r) => ({ id: r[0], destino: r[1], producto: r[2] })),
+    resultados: resultado.map((r) => ({ ...r })),
     filasSalidas: salidas.length,
     filasSalidasEnCava: salidas.length,
     filasDecomisosPeriodo:
@@ -2398,6 +2463,68 @@ function eficienciaOps(datos) {
   };
 }
 
+/** Serie diaria para Analytics: mes seleccionado (día a día) o ventana móvil de 14 días. */
+function construirEvolucionOpl(fuente, { anioFiltro, mesesFiltro, hoyBase }) {
+  const mapa = {};
+  (fuente || []).forEach((r) => {
+    const key = String(r.fechaStr || '').trim();
+    if (!key) return;
+    if (!mapa[key]) mapa[key] = { despachados: 0, pendientes: 0 };
+    mapa[key].despachados += Number(r.despachados || 0);
+    mapa[key].pendientes += Number(r.pendientes || 0);
+  });
+
+  const meses = Array.isArray(mesesFiltro) && mesesFiltro.length ? mesesFiltro.map(Number) : null;
+
+  if (meses && meses.length === 1) {
+    const mes = meses[0];
+    const diasMes = new Date(anioFiltro, mes + 1, 0).getDate();
+    const puntos = [];
+    for (let day = 1; day <= diasMes; day++) {
+      const key = `${String(day).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}/${anioFiltro}`;
+      puntos.push({
+        label: `${String(day).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}`,
+        despachados: mapa[key]?.despachados || 0,
+        pendientes: mapa[key]?.pendientes || 0,
+      });
+    }
+    const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+    return { puntos, modo: 'mes', etiqueta: `Evolución diaria — ${MESES[mes]} ${anioFiltro}` };
+  }
+
+  if (meses && meses.length > 1) {
+    const keys = Object.keys(mapa)
+      .filter((k) => {
+        const f = parseDateDdMmYyyy(k);
+        return f && f.getFullYear() === anioFiltro && meses.includes(f.getMonth());
+      })
+      .sort((a, b) => parseDateDdMmYyyy(a) - parseDateDdMmYyyy(b));
+    return {
+      puntos: keys.map((k) => ({
+        label: k.slice(0, 5),
+        despachados: mapa[k].despachados,
+        pendientes: mapa[k].pendientes,
+      })),
+      modo: 'periodo',
+      etiqueta: 'Evolución diaria — meses seleccionados',
+    };
+  }
+
+  const hoy = hoyBase || new Date();
+  const puntos = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(hoy);
+    d.setDate(hoy.getDate() - i);
+    const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+    puntos.push({
+      label: key.slice(0, 5),
+      despachados: mapa[key]?.despachados || 0,
+      pendientes: mapa[key]?.pendientes || 0,
+    });
+  }
+  return { puntos, modo: '14dias', etiqueta: 'Evolución diaria — últimos 14 días' };
+}
+
 function porDiaSemana(datos) {
   const dias = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
   const hoy = new Date();
@@ -2419,21 +2546,25 @@ function porDiaSemana(datos) {
     cntHis[d] += 1;
   });
   const totalAct = sumAct.reduce((s, v) => s + v, 0);
+  const usarPeriodo = totalAct === 0 && datos.length > 0;
   const diaHoy = hoy.getDay();
   return dias.map((nombre, i) => {
-    const actual = sumAct[i];
-    const anterior = sumAnt[i];
+    const promedio = cntHis[i] > 0 ? Math.round(sumHis[i] / cntHis[i]) : 0;
+    const actual = usarPeriodo ? promedio : sumAct[i];
+    const anterior = usarPeriodo ? 0 : sumAnt[i];
     const variacion = anterior > 0 ? Math.round(((actual - anterior) / anterior) * 100) : null;
+    const totalRef = usarPeriodo ? sumHis.reduce((s, v) => s + v, 0) : totalAct;
     return {
       dia: nombre,
       actual,
       anterior,
       variacion,
-      pctActual: totalAct > 0 ? Math.round((actual / totalAct) * 100) : 0,
+      pctActual: totalRef > 0 ? Math.round(((usarPeriodo ? sumHis[i] : actual) / totalRef) * 100) : 0,
       total: sumHis[i],
-      promedio: cntHis[i] > 0 ? Math.round(sumHis[i] / cntHis[i]) : 0,
+      promedio,
       esHoy: i === diaHoy,
       ops: cntHis[i],
+      modoPeriodo: usarPeriodo,
     };
   });
 }
@@ -2537,11 +2668,16 @@ export async function generarPDFDecomisos() {
     n: i + 1,
     id: r.id || '',
     destino: r.destino || '',
-    producto: r.producto || '',
+    subproducto: r.subproducto || r.producto || '',
+    puesto: r.puesto || '',
+    causa: r.causa || '',
+    fecha: r.fecha || '',
+    producto: r.subproducto || r.producto || '',
   }));
   const porProducto = {};
   rows.forEach((r) => {
-    porProducto[r.producto] = (porProducto[r.producto] || 0) + 1;
+    const key = r.puesto ? `${r.subproducto} — ${r.puesto}` : r.subproducto;
+    porProducto[key] = (porProducto[key] || 0) + 1;
   });
 
   const cr = await getCrudasDetalle();
@@ -2606,7 +2742,12 @@ async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha
 
     doc.font('Helvetica-Bold').fontSize(11).fillColor('#14532d').text('DETALLE DE DECOMISOS');
     doc.moveDown(0.35);
-    drawThemedPdfTable(doc, ['#', 'Código', 'Destino', 'Decomisos'], rows.map((r) => [r.n, r.id, r.destino, r.producto]), [32, 128, 248, 122], {
+    drawThemedPdfTable(
+      doc,
+      ['#', 'Fecha', 'Código', 'Subproducto', 'Puesto', 'Causa'],
+      rows.map((r) => [r.n, r.fecha, r.id, r.subproducto, r.puesto, r.causa]),
+      [24, 58, 108, 108, 108, 92],
+      {
       theme: 'decomisos',
     });
 
@@ -2795,6 +2936,9 @@ export async function getKPIs(opl, filtro) {
   const hoyDesp = sumarDespachados(hoy);
   const hoyProg = hoy.length ? Math.round(hoy.reduce((s2, r) => s2 + r.progreso, 0) / hoy.length) : 0;
   const turnoVivo = vivo[0]?.turno || '';
+  const fuenteEvol = periodo.length ? periodo : todosOpl;
+  const evoPack = construirEvolucionOpl(fuenteEvol, { anioFiltro, mesesFiltro, hoyBase });
+  const diasSemanaPack = porDiaSemana(periodo.length ? periodo : anio.length ? anio : todos);
   return {
     success: true,
     operacionEnCurso: vivo.length > 0,
@@ -2820,24 +2964,12 @@ export async function getKPIs(opl, filtro) {
       anomalias: anomalias.length,
     },
     graficos: {
-      evolucion: (() => {
-        const mapa = {};
-        todosOpl.forEach((r) => {
-          mapa[r.fechaStr] = mapa[r.fechaStr] || { despachados: 0, pendientes: 0 };
-          mapa[r.fechaStr].despachados += r.despachados;
-          mapa[r.fechaStr].pendientes += r.pendientes;
-        });
-        const out = [];
-        for (let i = 13; i >= 0; i--) {
-          const d = new Date(hoyBase);
-          d.setDate(hoyBase.getDate() - i);
-          const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-          out.push({ label: key.slice(0, 5), despachados: mapa[key]?.despachados || 0, pendientes: mapa[key]?.pendientes || 0 });
-        }
-        return out;
-      })(),
+      evolucion: evoPack.puntos,
+      evolucionModo: evoPack.modo,
+      evolucionEtiqueta: evoPack.etiqueta,
+      diasSemanaModo: diasSemanaPack.some((d) => d.modoPeriodo) ? 'periodo' : 'semana',
       ranking: comparacionOPLs.map((x) => ({ opl: x.opl, despachados: x.despachados, promedio: x.promedio })),
-      porDiaSemana: porDiaSemana(periodo.length ? periodo : anio.length ? anio : todos),
+      porDiaSemana: diasSemanaPack,
       eficiencia: efPeriodo,
       comparacionMeses,
       comparacionOPLs,

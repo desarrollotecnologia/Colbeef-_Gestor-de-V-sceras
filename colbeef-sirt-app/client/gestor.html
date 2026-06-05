@@ -501,8 +501,8 @@
     <div class="alert" id="decAlert"></div>
     <div class="table-wrap">
       <table id="tablaDecomisosPrincipal">
-        <thead><tr><th>#</th><th>ID pieza</th><th>Destino / ruta</th><th>Subproducto decomisado</th></tr></thead>
-        <tbody id="tablaDecomisos"><tr><td colspan="4" class="empty-state">Cargando salidas de cava y decomisos desde SIRT…</td></tr></tbody>
+        <thead><tr><th>Fecha</th><th>Código</th><th>Subproducto</th><th>Puesto</th><th>Causa</th></tr></thead>
+        <tbody id="tablaDecomisos"><tr><td colspan="5" class="empty-state">Cargando salidas de cava y decomisos desde SIRT…</td></tr></tbody>
       </table>
     </div>
     <details class="ux-collapsible" style="margin-top:1.25rem;">
@@ -791,8 +791,8 @@
 
       <!-- Evolución 14 días -->
       <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-        <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Evolución diaria — últimos 14 días</div>
-        <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Despachados (salieron de cava) y pendientes (en cava)</div>
+        <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;" id="anlChart1Title">Evolución diaria — últimos 14 días</div>
+        <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;" id="anlChart1Sub">Despachados (salieron de cava) y pendientes (en cava)</div>
         <div style="position:relative;height:220px;"><canvas id="anlChart1"></canvas></div>
       </div>
 
@@ -805,7 +805,7 @@
         </div>
         <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
           <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Días con más movimiento</div>
-          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Promedio histórico por día de semana</div>
+          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;" id="anlChart3Sub">Promedio histórico por día de semana</div>
           <div style="position:relative;height:220px;"><canvas id="anlChart3"></canvas></div>
         </div>
       </div>
@@ -998,7 +998,7 @@
           <span style="font-size:0.82rem;color:var(--gris);" id="oplModalFecha"></span>
           <button class="btn btn-primary" style="padding:0.5rem 1.2rem;font-size:0.85rem;" onclick="recalcularOPLModal()">🔄 Recalcular</button>
         </div>
-        <p style="font-size:0.75rem;color:var(--gris);margin:-0.4rem 0 0.8rem;line-height:1.35;">
+        <p style="font-size:0.75rem;color:var(--gris);margin:-0.4rem 0 0.8rem;line-height:1.4;">
           <strong>T</strong> total en cava del turno · <strong>INV</strong> aún en inventario (sin salida en SIRT) ·
           <strong>S</strong> salidas reales (<code>fecha_salida</code>). La barra solo sube cuando aumentan las salidas físicas, no al asignar programación.
         </p>
@@ -1028,8 +1028,8 @@
             </table>
           </div>
         </div>
-        <!-- Agregar nuevo -->
-        <div style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--vc);">
+        <!-- Agregar nuevo (solo manual si no hay propietarios en archivo) -->
+        <div id="oplModalManualSection" style="margin-top:1rem;padding-top:1rem;border-top:1px solid var(--vc);">
           <p style="font-size:0.82rem;font-weight:600;color:var(--vp);margin-bottom:0.6rem;">➕ Agregar / actualizar asignación manual</p>
           <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
             <input type="text" id="oplModalNewProp" class="inf-input" placeholder="Propietario" style="flex:2;min-width:180px;">
@@ -1862,7 +1862,7 @@ function cargarCruceDecomisos(opts) {
   if (!opts.silent) {
     showSpinner('Consultando cava, salidas y cruzando decomisos…');
     document.getElementById('tablaDecomisos').innerHTML =
-      '<tr><td colspan="4" class="empty-state">Consultando SIRT…</td></tr>';
+      '<tr><td colspan="5" class="empty-state">Consultando SIRT…</td></tr>';
   }
   google.script.run
     .withSuccessHandler(function (res) {
@@ -1876,7 +1876,7 @@ function cargarCruceDecomisos(opts) {
       var msg = e && e.message ? e.message : String(e);
       showAlert('decAlert', 'error', msg, { persistent: true, technical: msg });
       document.getElementById('tablaDecomisos').innerHTML =
-        '<tr><td colspan="4" class="empty-state">Error al consultar SIRT.</td></tr>';
+        '<tr><td colspan="5" class="empty-state">Error al consultar SIRT.</td></tr>';
     })
     .prepararModuloDecomisosDesdeSIRT(filtro);
 }
@@ -1885,7 +1885,7 @@ function limpiarDecomisos() {
   state.hayResultados = false;
   document.getElementById('btnPDF').disabled = true;
   document.getElementById('tablaDecomisos').innerHTML =
-    "<tr><td colspan='4' class='empty-state'>No hay datos.</td></tr>";
+    "<tr><td colspan='5' class='empty-state'>No hay datos.</td></tr>";
   hideAlert('decAlert');
   showSpinner('Limpiando…');
   google.script.run
@@ -1906,9 +1906,13 @@ function generarPDF() {
 }
 function renderTablaDecomisos(resultados) {
   var tbody=document.getElementById('tablaDecomisos');
-  if(!resultados||resultados.length===0){tbody.innerHTML='<tr><td colspan="4" class="empty-state">Sin decomisos vinculados a salidas de cava para esta fecha.</td></tr>';return;}
-  tbody.innerHTML=resultados.map(function(r,i){
-    return '<tr><td class="num">'+(i+1)+'</td><td>'+escapeHtml(r.id||'')+'</td><td>'+escapeHtml(r.destino||'')+'</td><td>'+escapeHtml(r.producto||'')+'</td></tr>';
+  if(!resultados||resultados.length===0){tbody.innerHTML='<tr><td colspan="5" class="empty-state">Sin decomisos vinculados a salidas de cava para esta fecha.</td></tr>';return;}
+  tbody.innerHTML=resultados.map(function(r){
+    var fechaTxt = String(r.fecha || '').trim();
+    if (r.hora) fechaTxt = (fechaTxt ? fechaTxt + ' ' : '') + String(r.hora).trim();
+    return '<tr><td>'+escapeHtml(fechaTxt)+'</td><td>'+escapeHtml(r.id||'')+'</td><td>'+
+      escapeHtml(r.subproducto||r.producto||'')+'</td><td>'+escapeHtml(r.puesto||'')+'</td><td>'+
+      escapeHtml(r.causa||'')+'</td></tr>';
   }).join('');
 }
 function cargarVistaSalidasDecomiso() {
@@ -2596,6 +2600,27 @@ function renderDashOplFinalizada(fecha) {
     + '</div>';
 }
 
+// Lista completa del modal (incluye OPL al 100 %, como referencia de planta)
+function listaOplParaModal(res) {
+  if (!res) return [];
+  if (res.todosOPL && res.todosOPL.length) return res.todosOPL;
+  return res.progreso || [];
+}
+
+function estiloSeccionManualOpl(mostrarTablaProp) {
+  var sec = document.getElementById('oplModalManualSection');
+  if (!sec) return;
+  if (mostrarTablaProp) {
+    sec.style.marginTop = '1rem';
+    sec.style.paddingTop = '1rem';
+    sec.style.borderTop = '1px solid var(--vc)';
+  } else {
+    sec.style.marginTop = '0';
+    sec.style.paddingTop = '0';
+    sec.style.borderTop = 'none';
+  }
+}
+
 // ── MODAL OPL ──
 function abrirModalOPL() {
   document.getElementById('modalOPL').classList.add('show');
@@ -2629,9 +2654,9 @@ function cargarProgresoModalOPL() {
         return;
       }
       if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
-      var listaOpl = (res.progreso && res.progreso.length) ? res.progreso : (res.todosOPL || []);
+      var listaOpl = listaOplParaModal(res);
       renderModalOplProgreso(listaOpl);
-      renderDashOplMini(listaOpl);
+      renderDashOplMini((res.progreso && res.progreso.length) ? res.progreso : listaOpl);
     })
     .withFailureHandler(function(e) {
       document.getElementById('oplModalProgresoContainer').innerHTML =
@@ -2651,9 +2676,9 @@ function recalcularOPLModal() {
       }
       if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
       showAlert('oplModalAlert', 'success', '✓ Recalculado — Turno: ' + res.turno);
-      var listaOplR = (res.progreso && res.progreso.length) ? res.progreso : (res.todosOPL || []);
+      var listaOplR = listaOplParaModal(res);
       renderModalOplProgreso(listaOplR);
-      renderDashOplMini(listaOplR);
+      renderDashOplMini((res.progreso && res.progreso.length) ? res.progreso : listaOplR);
     })
     .withFailureHandler(function(e) { showAlert('oplModalAlert', 'error', e.message); })
     .calcularProgresoOPL();
@@ -2680,7 +2705,7 @@ function renderModalOplProgreso(progreso) {
       +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;">🚚 ' + p.opl + '</div>'
       +   '<div style="display:flex;gap:1rem;font-size:0.82rem;">'
       +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">T</span><strong>' + p.total + '</strong></div>'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">INV</span><strong style="color:#ca8a04;">' + p.pendientes + '</strong></div>'
+      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">INV</span><strong style="color:' + (p.pendientes > 0 ? '#ca8a04' : '#6b7280') + ';">' + p.pendientes + '</strong></div>'
       +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">S</span><strong style="color:#16a34a;">' + p.despachados + '</strong></div>'
       +   '</div>'
       + '</div>'
@@ -2691,7 +2716,7 @@ function renderModalOplProgreso(progreso) {
       // Porcentaje y estado
       + '<div style="display:flex;justify-content:space-between;align-items:center;">'
       +   '<span style="font-size:0.78rem;color:var(--gris);">'
-      +     (completo ? 'Operación completada ✅' : p.pendientes + ' en inventario · ' + p.despachados + ' salidas registradas')
+      +     (completo ? 'Operación completada ✅' : p.pendientes + ' juegos pendientes por despachar')
       +   '</span>'
       +   '<span style="font-size:0.85rem;font-weight:800;color:' + pctColor + ';">' + pct + '%</span>'
       + '</div>'
@@ -2704,37 +2729,40 @@ function renderModalOplProgreso(progreso) {
 function cargarConfigOPLModal() {
   google.script.run
     .withSuccessHandler(function(res) {
-      if (!res || !res.success) return;
-      document.getElementById('oplModalPropSection').style.display = 'none';
-    })
-    .withFailureHandler(function(){})
-    .getOplConfig();
-
-  google.script.run
-    .withSuccessHandler(function(res) {
       if (!res || !res.success || !res.resultado || res.resultado.length === 0) {
         document.getElementById('oplModalPropSection').style.display = 'none';
+        estiloSeccionManualOpl(false);
         return;
       }
       document.getElementById('oplModalPropSection').style.display = 'block';
+      estiloSeccionManualOpl(true);
       var opls = res.opls || ['TRANSCARNES'];
       var html = res.resultado.map(function(r, i) {
         var opts = opls.map(function(o) {
-          return '<option value="' + o + '"' + (o === r.opl ? ' selected' : '') + '>' + o + '</option>';
+          return '<option value="' + escapeHtml(o) + '"' + (o === r.opl ? ' selected' : '') + '>' + escapeHtml(o) + '</option>';
         }).join('');
         return '<tr>'
-          + '<td style="font-size:0.82rem;font-weight:600;">' + r.propietario + '</td>'
+          + '<td style="font-size:0.82rem;font-weight:600;">' + escapeHtml(r.propietario) + '</td>'
           + '<td class="num" style="font-size:0.82rem;">' + r.juegos + '</td>'
-          + '<td style="font-size:0.82rem;"><span class="badge-opl' + (r.opl==='TRANSCARNES'?' default':'') + '">' + r.opl + '</span></td>'
-          + '<td><select class="opl-select" onchange="cambiarOPLModal(\'' + r.propietario.replace(/'/g,"\\'") + '\',this.value)">' + opts + '</select></td>'
+          + '<td style="font-size:0.82rem;"><span class="badge-opl' + (r.opl==='TRANSCARNES'?' default':'') + '">' + escapeHtml(r.opl) + '</span></td>'
+          + '<td><select class="opl-select" data-prop-idx="' + i + '" onchange="cambiarOPLModalDesdeSelect(this)">' + opts + '</select></td>'
           + '</tr>';
       }).join('');
       document.getElementById('oplModalPropBody').innerHTML = html;
+      window._oplModalPropList = res.resultado;
     })
     .withFailureHandler(function() {
       document.getElementById('oplModalPropSection').style.display = 'none';
+      estiloSeccionManualOpl(false);
     })
     .getOplPorPropietario();
+}
+
+function cambiarOPLModalDesdeSelect(sel) {
+  var idx = Number(sel.getAttribute('data-prop-idx'));
+  var row = window._oplModalPropList && window._oplModalPropList[idx];
+  if (!row) return;
+  cambiarOPLModal(row.propietario, sel.value);
 }
 
 function cambiarOPLModal(prop, opl) {
@@ -3423,7 +3451,24 @@ function renderGraficos(g) {
     try { anlCharts[id].destroy(); } catch(e){}
   });
 
-  // Chart 1 — Evolución 14 días
+  var t1 = document.getElementById('anlChart1Title');
+  var s1 = document.getElementById('anlChart1Sub');
+  if (t1) t1.textContent = g.evolucionEtiqueta || 'Evolución diaria — últimos 14 días';
+  if (s1) {
+    s1.textContent =
+      g.evolucionModo === 'mes' || g.evolucionModo === 'periodo'
+        ? 'Despachados y pendientes por día del mes/período seleccionado (misma fuente que el ranking).'
+        : 'Despachados (salieron de cava) y pendientes (en cava) — ventana móvil de 14 días.';
+  }
+  var s3 = document.getElementById('anlChart3Sub');
+  if (s3) {
+    s3.textContent =
+      g.diasSemanaModo === 'periodo'
+        ? 'Distribución del período seleccionado por día de semana (no hay cierres en los últimos 7 días).'
+        : 'Esta semana vs semana anterior (salidas reales de cava).';
+  }
+
+  // Chart 1 — Evolución diaria
   var labels1 = g.evolucion.map(function(d){ return d.label; });
   var desp1   = g.evolucion.map(function(d){ return d.despachados; });
   var pend1   = g.evolucion.map(function(d){ return d.pendientes; });
