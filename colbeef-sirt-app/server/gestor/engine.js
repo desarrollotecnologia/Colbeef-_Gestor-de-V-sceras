@@ -441,94 +441,121 @@ function isoDesdeCeldaFecha(celda) {
   return '';
 }
 
-/** Salidas físicas del día filtradas por turno según fecha_salida (no programación). */
-function filasSalidasCavaDelTurno(rows, turno) {
-  if (!turno) return rows || [];
-  return (rows || []).filter((fila) => {
-    const iso = isoDesdeCeldaFecha(fila[0]);
-    return iso && detectarTurnoPorFechaISO(iso) === turno;
-  });
-}
-
-/** Agrupa por cava (columna 6) o por OPL del propietario — coincide con CAVA MIREYA, DRA CAVA, etc. */
-function claveAgrupacionOplDespacho(fila, mapaOPL) {
+/** Agrupa progreso OPL por nombre de cava (col 6); si falta, OPL del propietario. */
+function nombreCavaDesdeFila(fila, mapaOPL) {
   const cava = String(fila[6] ?? '').trim();
   if (cava) return cava;
   const prop = String(fila[4] ?? '').trim().toUpperCase();
-  if (!prop) return OPL_DEFAULT;
   return mapaOPL[prop] || OPL_DEFAULT;
 }
 
-/** Carga salidas físicas del día (fecha_salida) para trazabilidad OPL. */
-async function asegurarSalidasCavaDiaEnSesion(s) {
-  const filtro = s.lastSyncRange || {};
-  if (!filtroSirtValido(filtro)) {
+/** Salidas físicas del día operación (fecha_salida en SIRT). */
+function filasSalidasCavaDelDia(rows, fechaOpIso) {
+  if (!fechaOpIso) return rows || [];
+  return (rows || []).filter((fila) => isoDesdeCeldaFecha(fila[0]) === fechaOpIso);
+}
+
+/** Carga salidas con fecha_salida del rango operativo (para marcar despachados). */
+async function sincronizarSalidasCavaDiaEnSesion(s, filtro) {
+  const f = normalizarRangoFechas(filtro || s.lastSyncRange || {});
+  if (!filtroSirtValido(f)) {
     s.salidasCavaDia = [];
     return;
   }
   try {
-    s.salidasCavaDia = await fetchDespachosCavaRielRows(filtro);
-  } catch (_) {
+    s.salidasCavaDia = await fetchDespachosCavaRielRows(f);
+  } catch {
     s.salidasCavaDia = s.salidasCavaDia || [];
   }
 }
 
-/**
- * Progreso OPL alineado con trazabilidad SIRT:
- * (T) total = (INV) en cava programado turno + (S) salidas reales con fecha_salida ese día.
- * La barra solo sube cuando aumentan las salidas físicas, no al asignar programación.
- */
-function construirProgresoOplDesdeDespachos(s, turno, fecha) {
-  const mapaOPL = cargarMapaOPL(s);
-  const clave = (fila) => claveAgrupacionOplDespacho(fila, mapaOPL);
+/** Reinicia totales OPL al cambiar el día de operación (baseline del turno). */
+function asegurarBaselineOplDelDia(s, fechaIso) {
+  const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
+  if (!dia) return;
+  if (String(s.oplBaselineFecha || '') !== dia) {
+    (s.oplConfig || []).forEach((r) => {
+      r.total = 0;
+    });
+    s.oplBaselineFecha = dia;
+  }
+}
 
-  const pendProp = contarJuegosCompletosPorClave(
+/** Congela el máximo de juegos vistos por propietario (no baja si salen de cava). */
+function actualizarBaselineOplDesdeDespachosSync(s, turno) {
+  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from);
+  const mapaOPL = cargarMapaOPL(s);
+  const porProp = contarJuegosCompletosPorClave(
     s.despachosCavas || [],
     COLS_DESPACHO_CAVA,
-    clave,
+    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
     turno
   );
-  const despProp = contarJuegosCompletosPorClave(
-    filasSalidasCavaDelTurno(s.salidasCavaDia || [], turno),
+  const propToIdx = {};
+  (s.oplConfig || []).forEach((r, i) => {
+    propToIdx[String(r.propietario).trim().toUpperCase()] = i;
+  });
+  Object.keys(porProp).forEach((propUpper) => {
+    const n = porProp[propUpper];
+    if (!n) return;
+    const idx = propToIdx[propUpper];
+    if (idx !== undefined) {
+      s.oplConfig[idx].total = Math.max(Number(s.oplConfig[idx].total || 0), n);
+    } else {
+      s.oplConfig.push({
+        propietario: propUpper,
+        opl: mapaOPL[propUpper] || OPL_DEFAULT,
+        total: n,
+      });
+      propToIdx[propUpper] = s.oplConfig.length - 1;
+    }
+  });
+}
+
+function construirProgresoOplDesdeDespachos(s, turno, fecha) {
+  const mapaOPL = cargarMapaOPL(s);
+  const fechaOp = String(s.lastSyncRange?.from || '').trim();
+  const claveCava = (fila) => nombreCavaDesdeFila(fila, mapaOPL);
+
+  const pendCava = contarJuegosCompletosPorClave(
+    s.despachosCavas || [],
     COLS_DESPACHO_CAVA,
-    clave,
+    claveCava,
+    turno
+  );
+
+  const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
+  const salCava = contarJuegosCompletosPorClave(
+    salidasDelDia,
+    COLS_DESPACHO_CAVA,
+    claveCava,
     ''
   );
 
-  const porOPL = {};
-  const ensureOpl = (k) => {
-    if (!porOPL[k]) porOPL[k] = { total: 0, despachados: 0, pendientes: 0 };
-  };
-
-  Object.keys(despProp).forEach((k) => {
-    ensureOpl(k);
-    porOPL[k].despachados = despProp[k];
-  });
-  Object.keys(pendProp).forEach((k) => {
-    ensureOpl(k);
-    porOPL[k].pendientes = pendProp[k];
-  });
-
+  const cavas = new Set([...Object.keys(pendCava), ...Object.keys(salCava)]);
   const todosOPL = [];
   const progreso = [];
-  Object.keys(porOPL)
+
+  [...cavas]
     .sort()
-    .forEach((opl) => {
-      const d = porOPL[opl];
-      d.total = d.despachados + d.pendientes;
-      if (d.total <= 0) return;
-      const pct = d.total > 0 ? Math.round((d.despachados / d.total) * 100) : 0;
+    .forEach((cava) => {
+      const pendientes = pendCava[cava] || 0;
+      const despachados = salCava[cava] || 0;
+      const total = pendientes + despachados;
+      if (total <= 0) return;
+      const pct = Math.round((despachados / total) * 100);
       const item = {
-        opl,
-        total: d.total,
-        despachados: d.despachados,
-        pendientes: d.pendientes,
+        opl: cava,
+        total,
+        despachados,
+        pendientes,
         progreso: pct,
         fecha,
       };
       todosOPL.push(item);
       if (pct < 100) progreso.push(item);
     });
+
   progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
   return {
     todosOPL,
@@ -656,7 +683,7 @@ export async function importarExcel(_base64, sheetName, range) {
         s.estadoFromRow12 = aplicarEstadoEnCavaNeto(s.estadoFromRow12, s.despachosCavas);
       }
       if (filtroSirtValido(filtro)) {
-        await asegurarSalidasCavaDiaEnSesion(s);
+        await sincronizarSalidasCavaDiaEnSesion(s, filtro);
       }
     } else {
       return { success: false, message: 'Hoja no soportada: ' + sheetName };
@@ -897,7 +924,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-salidas-reales-v1';
+export const GESTOR_BUILD = 'opl-cava-salidas-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -930,11 +957,12 @@ export async function getDashboardData(range) {
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
-      const [estadoBruto, reportePack, despPack, vwPack] = await Promise.all([
+      const [estadoBruto, reportePack, despPack, vwPack, salidasDia] = await Promise.all([
         fetchEstadoCavasRows({ stockActual: true }),
         fetchReporteDecomisosRows(filtro),
         fetchDespachosParaConsulta(filtro),
         fetchDecomisosAnimalesVw(filtro),
+        fetchDespachosCavaRielRows(filtro),
       ]);
       const indiceVw = construirIndiceDecomisosVw(vwPack.rows);
       const desp = despPack.desp;
@@ -957,6 +985,7 @@ export async function getDashboardData(range) {
           hasta: vwPack.hasta,
         },
         despachosCavas: desp,
+        salidasCavaDia: salidasDia,
         oplConfig: baseOpl,
         resumenDespachos: {
           turno: '',
@@ -977,7 +1006,6 @@ export async function getDashboardData(range) {
       rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} · turno ${turnoOp} (consulta SIRT)`;
       sWork.resumenDespachos = rd;
       sWork.lastSyncRange = filtro;
-      await asegurarSalidasCavaDiaEnSesion(sWork);
       const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
@@ -1234,7 +1262,7 @@ export async function procesarDespachos(turnoForzado) {
     fechaStr: fmtNow(),
   };
   if (!s.fechaInicioOperacion) s.fechaInicioOperacion = new Date().toISOString();
-  await asegurarSalidasCavaDiaEnSesion(s);
+  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
   await saveState(s);
   try {
     await calcularProgresoOPL(rd.totalJuegos);
@@ -1321,6 +1349,7 @@ export async function guardarFechaInicioOperacion() {
 export async function limpiarDespachos() {
   const s = await loadState();
   s.despachosCavas = [];
+  s.salidasCavaDia = [];
   s.resumenDespachos = { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
   s.oplConfig.forEach((r) => {
     r.total = 0;
@@ -1379,7 +1408,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
 
   if (!turno) return { success: false, message: 'Sin turno activo.' };
 
-  await asegurarSalidasCavaDiaEnSesion(s);
+  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
   const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
   let todosOPL = desdeDesp.todosOPL;
   let progreso = desdeDesp.progreso;
@@ -1555,6 +1584,7 @@ export async function cerrarOperacion() {
   const hist = await guardarHistoricoOPLInternal(s, ESTADO_PENDIENTE);
   if (!hist.success) return { success: false, message: 'Error guardando histórico: ' + hist.message };
   s.despachosCavas = [];
+  s.salidasCavaDia = [];
   s.resumenDespachos = { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
   s.oplConfig.forEach((r) => {
     r.total = 0;
@@ -2423,7 +2453,7 @@ async function sincronizarOplProgresoDesdeSirt(s) {
     String(s.resumenDespachos?.turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   if (!turno || !(s.despachosCavas || []).length) return null;
-  await asegurarSalidasCavaDiaEnSesion(s);
+  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
   const pack = construirProgresoOplDesdeDespachos(s, turno, fmtNow());
   s.oplProgreso = pack.todosOPL.map((p) => ({ ...p, fecha: fmtNow() }));
   return pack;
@@ -2862,7 +2892,6 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
 
 export async function getKPIs(opl, filtro) {
   const s = await loadState();
-  await asegurarSalidasCavaDiaEnSesion(s);
   const vivo = historicoVivoDesdeSesion(s);
   const todos = leerHistoricoConOperacionViva(s);
   if (!todos.length) {
@@ -2945,7 +2974,7 @@ export async function getKPIs(opl, filtro) {
     success: true,
     operacionEnCurso: vivo.length > 0,
     turnoEnCurso: turnoVivo,
-    fuenteHoy: vivo.length ? 'SIRT en vivo (inventario cava + salidas con fecha_salida)' : 'histórico cerrado',
+    fuenteHoy: vivo.length ? 'SIRT en vivo (programación turno + baseline OPL)' : 'histórico cerrado',
     kpis: {
       hoy: { despachados: hoyDesp, progreso: hoyProg, completas: hoy.filter((r) => r.estado === ESTADO_COMPLETO).length, total: hoy.length, badge: `${hoyProg}% promedio` },
       semana: { despachados: despSem, promDiario: promSem, diaMayor, maxDia },
@@ -2986,7 +3015,6 @@ export async function getKPIs(opl, filtro) {
 
 export async function getAniosDisponibles() {
   const s = await loadState();
-  await asegurarSalidasCavaDiaEnSesion(s);
   const set = {};
   leerHistoricoConOperacionViva(s).forEach((r) => {
     set[r.fecha.getFullYear()] = true;
@@ -2999,7 +3027,6 @@ export async function getAniosDisponibles() {
 
 export async function getListaOPLsHistorico() {
   const s = await loadState();
-  await asegurarSalidasCavaDiaEnSesion(s);
   const set = {};
   leerHistoricoConOperacionViva(s).forEach((r) => {
     if (r.opl) set[r.opl] = true;

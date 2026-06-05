@@ -4,7 +4,7 @@
       <header className="header">
         <div className="logo-area">
           <div className="logo-icon" aria-hidden>
-            🥩
+            <img src="/colbeef-icon.png" alt="" width="56" height="56" />
           </div>
           <div className="logo-text">
             <h1>Gestor de Vísceras</h1>
