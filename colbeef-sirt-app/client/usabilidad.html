@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usabilidad · Colbeef</title>
+  <link rel="icon" href="/colbeef-icon.png" type="image/png">
+  <style>
+    :root{--vp:#259c39;--vc:#b7e4c7;--gris:#6b7280;--fondo:#f8faf9;}
+    *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;}
+    body{margin:0;background:var(--fondo);color:#111827;padding:1.5rem;}
+    .wrap{max-width:1200px;margin:0 auto;}
+    .login-card,.panel{background:#fff;border-radius:16px;padding:1.5rem;box-shadow:0 8px 24px rgba(0,0,0,0.06);border:1px solid var(--vc);max-width:400px;margin:4rem auto;}
+    input,select{padding:0.65rem 0.8rem;border:1.5px solid var(--vc);border-radius:10px;width:100%;font-size:0.95rem;}
+    .btn{padding:0.65rem 1rem;border:none;border-radius:10px;background:var(--vp);color:#fff;font-weight:700;cursor:pointer;}
+    .btn.secondary{background:#fff;color:var(--vp);border:1.5px solid var(--vc);}
+    .btn-row{display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem;}
+    .header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;}
+    h1{margin:0;font-size:1.5rem;color:var(--vp);}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem;}
+    .kpi{background:#fff;border-radius:14px;padding:1rem;border:1px solid var(--vc);}
+    .kpi span{display:block;font-size:0.75rem;color:var(--gris);text-transform:uppercase;letter-spacing:0.5px;}
+    .kpi strong{font-size:1.8rem;color:var(--vp);}
+    .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-bottom:1.5rem;}
+    .box{background:#fff;border-radius:14px;padding:1rem;border:1px solid var(--vc);}
+    .box h2{margin:0 0 0.8rem;font-size:0.95rem;color:#374151;}
+    table{width:100%;border-collapse:collapse;font-size:0.82rem;}
+    th,td{padding:0.45rem 0.35rem;text-align:left;border-bottom:1px solid #f3f4f6;}
+    th{color:var(--gris);font-weight:600;}
+    .err{color:#dc2626;font-size:0.85rem;margin-top:0.5rem;}
+    #loginView{display:block;}
+    #dashView{display:none;}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div id="loginView" class="login-card">
+      <h1>Acceso restringido</h1>
+      <p style="color:var(--gris);font-size:0.9rem;">Dashboard de usabilidad del gestor</p>
+      <label style="display:block;margin:1rem 0 0.4rem;font-size:0.82rem;font-weight:600;">Contraseña</label>
+      <input id="pwdInput" type="password" placeholder="Contraseña de administrador">
+      <div class="btn-row">
+        <button class="btn" id="loginBtn" type="button">Entrar</button>
+        <button class="btn secondary" type="button" onclick="location.href='/portal.html'">← Portal</button>
+      </div>
+      <p class="err" id="loginErr" style="display:none;"></p>
+    </div>
+
+    <div id="dashView">
+      <div class="header">
+        <div>
+          <h1>📊 Usabilidad del Gestor</h1>
+          <p style="margin:0.3rem 0 0;color:var(--gris);font-size:0.88rem;">Actividad por usuario, módulo y acción</p>
+        </div>
+        <div class="btn-row" style="margin:0;">
+          <select id="daysSelect" style="width:auto;">
+            <option value="7">Últimos 7 días</option>
+            <option value="30" selected>Últimos 30 días</option>
+            <option value="90">Últimos 90 días</option>
+          </select>
+          <button class="btn secondary" type="button" onclick="location.href='/gestor.html'">← Volver al gestor</button>
+          <button class="btn secondary" type="button" onclick="location.href='/portal.html'">Portal principal</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpiRow"></div>
+      <div class="grid2">
+        <div class="box"><h2>Por usuario</h2><div id="tblUsuarios"></div></div>
+        <div class="box"><h2>Por módulo</h2><div id="tblModulos"></div></div>
+      </div>
+      <div class="grid2">
+        <div class="box"><h2>Por acción</h2><div id="tblAcciones"></div></div>
+        <div class="box"><h2>Actividad por día</h2><div id="tblDias"></div></div>
+      </div>
+      <div class="box">
+        <h2>Eventos recientes</h2>
+        <div id="tblRecientes" style="overflow-x:auto;"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    var TOKEN_KEY = 'colbeef_usabilidad_token';
+
+    function token() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
+    function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+
+    function tableFromRows(rows, cols) {
+      if (!rows || !rows.length) return '<p style="color:var(--gris);font-size:0.85rem;">Sin datos</p>';
+      var h = '<table><thead><tr>';
+      cols.forEach(function (c) { h += '<th>' + c.label + '</th>'; });
+      h += '</tr></thead><tbody>';
+      rows.forEach(function (r) {
+        h += '<tr>';
+        cols.forEach(function (c) { h += '<td>' + (r[c.key] != null ? r[c.key] : '') + '</td>'; });
+        h += '</tr>';
+      });
+      return h + '</tbody></table>';
+    }
+
+    function renderStats(data) {
+      document.getElementById('kpiRow').innerHTML =
+        '<div class="kpi"><span>Eventos</span><strong>' + data.totalEvents + '</strong></div>' +
+        '<div class="kpi"><span>Usuarios</span><strong>' + data.uniqueUsers + '</strong></div>' +
+        '<div class="kpi"><span>Sesiones</span><strong>' + data.uniqueSessions + '</strong></div>' +
+        (data.lastActivity
+          ? '<div class="kpi"><span>Última actividad</span><strong style="font-size:1rem;">' +
+            data.lastActivity.usuario + '<br><small style="font-weight:500;color:var(--gris)">' +
+            data.lastActivity.action + '</small></strong></div>'
+          : '');
+
+      document.getElementById('tblUsuarios').innerHTML = tableFromRows(data.byUsuario, [
+        { key: 'name', label: 'Usuario' }, { key: 'count', label: 'Eventos' },
+      ]);
+      document.getElementById('tblModulos').innerHTML = tableFromRows(data.byModule, [
+        { key: 'name', label: 'Módulo' }, { key: 'count', label: 'Visitas' },
+      ]);
+      document.getElementById('tblAcciones').innerHTML = tableFromRows(data.byAction, [
+        { key: 'name', label: 'Acción' }, { key: 'count', label: 'Veces' },
+      ]);
+      document.getElementById('tblDias').innerHTML = tableFromRows(data.byDay, [
+        { key: 'date', label: 'Fecha' }, { key: 'count', label: 'Eventos' },
+      ]);
+      document.getElementById('tblRecientes').innerHTML = tableFromRows(data.recent, [
+        { key: 'ts', label: 'Hora' },
+        { key: 'usuario', label: 'Usuario' },
+        { key: 'action', label: 'Acción' },
+        { key: 'module', label: 'Módulo' },
+        { key: 'detail', label: 'Detalle' },
+      ]);
+    }
+
+    function loadStats() {
+      var days = document.getElementById('daysSelect').value;
+      fetch('/api/usability/stats?days=' + days, {
+        headers: { Authorization: 'Bearer ' + token() },
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) throw new Error(data.message || 'Error');
+          renderStats(data);
+        })
+        .catch(function (e) {
+          sessionStorage.removeItem(TOKEN_KEY);
+          showLogin(e.message);
+        });
+    }
+
+    function showDash() {
+      document.getElementById('loginView').style.display = 'none';
+      document.getElementById('dashView').style.display = 'block';
+      loadStats();
+    }
+
+    function showLogin(msg) {
+      document.getElementById('loginView').style.display = 'block';
+      document.getElementById('dashView').style.display = 'none';
+      var err = document.getElementById('loginErr');
+      if (msg) { err.textContent = msg; err.style.display = 'block'; }
+      else err.style.display = 'none';
+    }
+
+    document.getElementById('loginBtn').addEventListener('click', function () {
+      var pwd = document.getElementById('pwdInput').value;
+      fetch('/api/usability/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pwd }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (!data.success) throw new Error(data.message || 'Contraseña incorrecta');
+          setToken(data.token);
+          showDash();
+        })
+        .catch(function (e) {
+          document.getElementById('loginErr').textContent = e.message;
+          document.getElementById('loginErr').style.display = 'block';
+        });
+    });
+
+    document.getElementById('pwdInput').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') document.getElementById('loginBtn').click();
+    });
+
+    document.getElementById('daysSelect').addEventListener('change', loadStats);
+
+    if (token()) showDash();
+    else showLogin();
+  </script>
+</body>
+</html>

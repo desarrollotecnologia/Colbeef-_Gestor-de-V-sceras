@@ -24,6 +24,9 @@
     .logo-text h1{font-size:1.8rem;font-weight:700;letter-spacing:-0.5px;}
     .logo-text p{color:var(--gris);font-size:0.9rem;}
     .fecha-badge{background:white;padding:0.45rem 1rem;border-radius:40px;font-weight:500;color:var(--vp);box-shadow:var(--sombra);border:1px solid var(--vc);display:flex;align-items:center;gap:0.5rem;}
+    .btn-volver-portal{width:42px;height:42px;border-radius:12px;border:1.5px solid var(--vc);background:#fff;color:var(--vp);font-size:1.25rem;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:var(--sombra);}
+    .btn-volver-portal:hover{background:var(--vc);}
+    .usuario-badge{background:#ecfdf5;color:var(--vp);padding:0.4rem 0.85rem;border-radius:999px;font-size:0.78rem;font-weight:600;border:1px solid var(--vc);white-space:nowrap;}
 
     /* ── TARJETAS DASHBOARD ── */
     .resumen-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.5rem;margin-bottom:2.5rem;}
@@ -358,13 +361,15 @@
 
   <!-- ═══ HEADER ═══ -->
   <div class="header">
+    <button type="button" class="btn-volver-portal" onclick="volverPortalPrincipal()" title="Volver al programa principal">←</button>
     <div class="logo-area">
-      <div class="logo-icon"><img src="/colbeef-icon.png" alt="Colbeef" width="60" height="60"></div>
+      <div class="logo-icon" id="logoIconGestor" title="Colbeef"><img src="/colbeef-icon.png" alt="Colbeef" width="60" height="60"></div>
       <div class="logo-text">
         <h1><span style="color:var(--vp)">Col</span><span style="color:var(--rojo)">beef</span> · Gestor de Vísceras</h1>
         <p>Control de inventario y despachos · todos los módulos en una sola pantalla</p>
       </div>
     </div>
+    <span id="usuarioBadge" class="usuario-badge" style="display:none;"></span>
     <div class="fecha-badge">
       <label for="fechaGlobal" style="font-size:0.8rem;color:var(--gris);font-weight:600;white-space:nowrap;" title="Fecha de programación y turno automático (LxM, MxM, …)">Fecha operación</label>
       <input type="date" id="fechaGlobal" class="inf-input" style="padding:0.35rem 0.5rem;max-width:158px;border:none;background:transparent;" onchange="onDashboardFechaChange()">
@@ -1051,7 +1056,63 @@
 
 </div><!-- /container -->
 
+<script src="/usabilidad-tracker.js"></script>
+<script>window.COLBEEF_PORTAL_RETURN=window.COLBEEF_PORTAL_RETURN||'http://192.168.20.205:8501/?session=active';</script>
+<!--PORTAL_RETURN_INJECT-->
 <script src="/google-script-shim.js"></script>
+<script>
+(function () {
+  var portalReturn = window.COLBEEF_PORTAL_RETURN || '/portal.html';
+
+  var params = new URLSearchParams(location.search);
+  var fromUrl = params.get('usuario');
+  var stored = localStorage.getItem('colbeef_usuario');
+  if (fromUrl) localStorage.setItem('colbeef_usuario', fromUrl.trim());
+  else if (!stored) {
+    location.replace(portalReturn);
+    return;
+  }
+
+  window.volverPortalPrincipal = function () {
+    if (window.ColbeefUsage) ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
+    location.href = portalReturn;
+  };
+
+  var logoClicks = 0;
+  var logoTimer = null;
+  document.addEventListener('DOMContentLoaded', function () {
+    if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
+
+    var logo = document.getElementById('logoIconGestor');
+    if (logo) {
+      logo.style.cursor = 'pointer';
+      logo.addEventListener('click', function () {
+        logoClicks++;
+        clearTimeout(logoTimer);
+        logoTimer = setTimeout(function () { logoClicks = 0; }, 900);
+        if (logoClicks >= 5) {
+          logoClicks = 0;
+          var pwd = prompt('Contraseña de administración:');
+          if (!pwd) return;
+          fetch('/api/usability/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pwd }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (!data.success) { alert('Contraseña incorrecta'); return; }
+              sessionStorage.setItem('colbeef_usabilidad_token', data.token);
+              if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
+              location.href = '/usabilidad.html';
+            })
+            .catch(function () { alert('No se pudo verificar la contraseña'); });
+        }
+      });
+    }
+  });
+})();
+</script>
 <script>
 // ══════════════════════════════════════════════════════
 // ESTADO GLOBAL

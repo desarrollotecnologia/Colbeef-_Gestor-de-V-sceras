@@ -3,6 +3,7 @@ import cors from 'cors';
 import multer from 'multer';
 import os from 'os';
 import path from 'path';
+import fs from 'fs/promises';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 
@@ -14,6 +15,13 @@ import * as gestor from './gestor/engine.js';
 import { GESTOR_BUILD } from './gestor/engine.js';
 import { procesarDespachos, getDetallePuesto } from './logic/despachos.logic.js';
 import { setPuestosCrudas } from './logic/crudas.logic.js';
+import {
+  recordEvent,
+  loginAdmin,
+  verifyAdminToken,
+  getUsageStats,
+  buildGestorLink,
+} from './gestor/usabilityStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -22,6 +30,9 @@ const app = express();
 const PORT = Number(process.env.SERVER_PORT || 3001);
 const BIND_HOST = process.env.SERVER_BIND || '0.0.0.0';
 const VITE_DEV_PORT = Number(process.env.VITE_PORT || 5173);
+const PORTAL_RETURN_URL =
+  String(process.env.PORTAL_RETURN_URL || '').trim() ||
+  'http://192.168.20.205:8501/?session=active';
 const isProd = process.env.NODE_ENV === 'production';
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 
@@ -44,6 +55,70 @@ app.post('/api/rpc', async (req, res) => {
   } catch (e) {
     res.status(500).json({ _error: e.message });
   }
+});
+
+function reqMeta(req) {
+  return {
+    ip: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+    userAgent: req.headers['user-agent'] || '',
+  };
+}
+
+function adminTokenFromReq(req) {
+  const auth = String(req.headers.authorization || '');
+  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
+  return String(req.headers['x-usability-admin'] || '').trim();
+}
+
+function requireUsabilityAdmin(req, res, next) {
+  const token = adminTokenFromReq(req);
+  if (!verifyAdminToken(token)) {
+    return res.status(401).json({ success: false, message: 'No autorizado.' });
+  }
+  next();
+}
+
+app.post('/api/usability/event', async (req, res) => {
+  try {
+    const out = await recordEvent(req.body || {}, reqMeta(req));
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/usability/login', (req, res) => {
+  const token = loginAdmin(req.body?.password);
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
+  }
+  res.json({ success: true, token });
+});
+
+app.get('/api/usability/stats', requireUsabilityAdmin, async (req, res) => {
+  try {
+    const days = req.query.days ? Number(req.query.days) : 30;
+    const stats = await getUsageStats(days);
+    res.json(stats);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/usability/enlace', (req, res) => {
+  const usuario = String(req.query.usuario || '').trim();
+  if (!usuario) {
+    return res.status(400).json({ success: false, message: 'Indique usuario.' });
+  }
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+  const host = req.get('host') || `127.0.0.1:${PORT}`;
+  const baseUrl = `${proto}://${host}`;
+  res.json({
+    success: true,
+    usuario,
+    enlace: buildGestorLink(baseUrl, usuario),
+    enlacePortal: `${baseUrl}/portal.html?usuario=${encodeURIComponent(usuario)}`,
+  });
 });
 
 app.get('/api/health', async (_req, res) => {
@@ -430,13 +505,31 @@ function noCacheGestor(_req, res, next) {
 }
 
 /** Rutas del gestor antes de static: evita servir archivos v2 antiguos. */
-app.get('/', (_req, res) => {
-  res.redirect(302, '/gestor.html');
+app.get('/', noCacheGestor, (_req, res) => {
+  res.sendFile(path.join(clientRoot, 'portal.html'));
+});
+
+app.get('/portal.html', noCacheGestor, (_req, res) => {
+  res.sendFile(path.join(clientRoot, 'portal.html'));
+});
+
+app.get('/usabilidad.html', noCacheGestor, (_req, res) => {
+  res.sendFile(path.join(clientRoot, 'usabilidad.html'));
 });
 
 /** Siempre el gestor.html fuente (no la copia vieja de client/dist). */
-app.get('/gestor.html', noCacheGestor, (_req, res) => {
-  res.sendFile(path.join(clientRoot, 'gestor.html'));
+app.get('/gestor.html', noCacheGestor, async (_req, res) => {
+  try {
+    const filePath = path.join(clientRoot, 'gestor.html');
+    const html = await fs.readFile(filePath, 'utf8');
+    const inject = `<script>window.COLBEEF_PORTAL_RETURN=${JSON.stringify(PORTAL_RETURN_URL)};</script>`;
+    const out = html.includes('<!--PORTAL_RETURN_INJECT-->')
+      ? html.replace('<!--PORTAL_RETURN_INJECT-->', inject)
+      : html;
+    res.type('html').send(out);
+  } catch (e) {
+    res.status(500).send('Error cargando gestor.html');
+  }
 });
 
 app.get(['/gestor-v2.html', '/gestor-v2.js'], (_req, res) => {
@@ -447,7 +540,7 @@ app.get(['/gestor-v2.html', '/gestor-v2.js'], (_req, res) => {
 app.use(
   express.static(publicDir, {
     setHeaders(res, filePath) {
-      if (/gestor-ux\.js$/.test(filePath) || /google-script-shim\.js$/.test(filePath)) {
+      if (/gestor-ux\.js$/.test(filePath) || /google-script-shim\.js$/.test(filePath) || /usabilidad-tracker\.js$/.test(filePath)) {
         res.set('Cache-Control', 'no-cache, no-store, must-revalidate');
       }
     },
@@ -482,8 +575,12 @@ app.listen(PORT, BIND_HOST, () => {
   const primary = pref && lan.includes(pref) ? pref : lan[0];
   console.log(`Colbeef SIRT API escuchando en ${BIND_HOST}:${PORT} (${isProd ? 'producción' : 'desarrollo'})`);
   console.log(`  API  http://127.0.0.1:${PORT}/api/health`);
+  console.log(`  Portal http://127.0.0.1:${PORT}/portal.html`);
   console.log(`  Gestor http://127.0.0.1:${PORT}/gestor.html`);
-  for (const ip of lan) console.log(`  Gestor (compartir) http://${ip}:${PORT}/gestor.html`);
+  for (const ip of lan) {
+    console.log(`  Portal (compartir) http://${ip}:${PORT}/portal.html`);
+    console.log(`  Gestor (compartir) http://${ip}:${PORT}/gestor.html?usuario=NOMBRE`);
+  }
   if (!isProd) {
     console.log(`  Gestor con recarga en vivo (Vite) http://127.0.0.1:${VITE_DEV_PORT}/gestor.html`);
   }
