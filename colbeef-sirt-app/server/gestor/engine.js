@@ -441,10 +441,8 @@ function isoDesdeCeldaFecha(celda) {
   return '';
 }
 
-/** Agrupa progreso OPL por nombre de cava (col 6); si falta, OPL del propietario. */
-function nombreCavaDesdeFila(fila, mapaOPL) {
-  const cava = String(fila[6] ?? '').trim();
-  if (cava) return cava;
+/** Agrupa progreso OPL por operador logístico (mapeo propietario → OPL). */
+function claveOplDesdeFila(fila, mapaOPL) {
   const prop = String(fila[4] ?? '').trim().toUpperCase();
   return mapaOPL[prop] || OPL_DEFAULT;
 }
@@ -515,47 +513,46 @@ function actualizarBaselineOplDesdeDespachosSync(s, turno) {
 function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const mapaOPL = cargarMapaOPL(s);
   const fechaOp = String(s.lastSyncRange?.from || '').trim();
-  const claveCava = (fila) => nombreCavaDesdeFila(fila, mapaOPL);
+  const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
 
-  const pendCava = contarJuegosCompletosPorClave(
+  const pendOpl = contarJuegosCompletosPorClave(
     s.despachosCavas || [],
     COLS_DESPACHO_CAVA,
-    claveCava,
+    claveOpl,
     turno
   );
 
   const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
-  const salCava = contarJuegosCompletosPorClave(
+  const salOpl = contarJuegosCompletosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
-    claveCava,
+    claveOpl,
     ''
   );
 
-  const cavas = new Set([...Object.keys(pendCava), ...Object.keys(salCava)]);
+  const opls = new Set([...Object.keys(pendOpl), ...Object.keys(salOpl)]);
   const todosOPL = [];
   const progreso = [];
 
-  [...cavas]
-    .sort()
-    .forEach((cava) => {
-      const pendientes = pendCava[cava] || 0;
-      const despachados = salCava[cava] || 0;
-      const total = pendientes + despachados;
-      if (total <= 0) return;
-      const pct = Math.round((despachados / total) * 100);
-      const item = {
-        opl: cava,
-        total,
-        despachados,
-        pendientes,
-        progreso: pct,
-        fecha,
-      };
-      todosOPL.push(item);
-      if (pct < 100) progreso.push(item);
-    });
+  [...opls].forEach((opl) => {
+    const pendientes = pendOpl[opl] || 0;
+    const despachados = salOpl[opl] || 0;
+    const total = pendientes + despachados;
+    if (total <= 0) return;
+    const pct = Math.round((despachados / total) * 100);
+    const item = {
+      opl,
+      total,
+      despachados,
+      pendientes,
+      progreso: pct,
+      fecha,
+    };
+    todosOPL.push(item);
+    if (pct < 100) progreso.push(item);
+  });
 
+  todosOPL.sort((a, b) => b.pendientes - a.pendientes || b.total - a.total || a.opl.localeCompare(b.opl));
   progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
   return {
     todosOPL,
@@ -924,7 +921,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-cava-salidas-v1';
+export const GESTOR_BUILD = 'opl-por-operador-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);

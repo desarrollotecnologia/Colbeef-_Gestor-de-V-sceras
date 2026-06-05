@@ -19,11 +19,6 @@
     input:focus{outline:none;border-color:var(--vp);}
     .btn{width:100%;margin-top:1.2rem;padding:0.85rem;border:none;border-radius:12px;background:var(--vp);color:#fff;font-weight:700;font-size:1rem;cursor:pointer;}
     .btn:hover{filter:brightness(1.05);}
-    .link-box{margin-top:1.4rem;padding:1rem;background:#f0fdf4;border-radius:12px;border:1px solid var(--vc);}
-    .link-box h3{margin:0 0 0.5rem;font-size:0.85rem;color:var(--vp);}
-    .link-box code{display:block;font-size:0.75rem;word-break:break-all;color:#374151;background:#fff;padding:0.6rem;border-radius:8px;border:1px solid #e5e7eb;}
-    .copy-btn{margin-top:0.5rem;padding:0.45rem 0.8rem;border:1px solid var(--vc);background:#fff;border-radius:8px;cursor:pointer;font-size:0.8rem;color:var(--vp);font-weight:600;}
-    .msg{margin-top:0.8rem;font-size:0.82rem;color:var(--gris);}
   </style>
 </head>
 <body>
@@ -41,36 +36,15 @@
       <input id="usuarioInput" type="text" placeholder="Ej: jperez, operador1" required autocomplete="username">
       <button class="btn" type="submit">Entrar al gestor →</button>
     </form>
-
-    <div class="link-box">
-      <h3>Enlace para otro programa</h3>
-      <code id="embedLink">Ingrese un usuario arriba</code>
-      <button type="button" class="copy-btn" id="copyLinkBtn">Copiar enlace</button>
-      <p class="msg">Use este URL en un botón externo; el parámetro <strong>usuario</strong> queda registrado en usabilidad.</p>
-    </div>
   </div>
 
   <script src="/usabilidad-tracker.js"></script>
   <script>
     (function () {
       var input = document.getElementById('usuarioInput');
-      var embed = document.getElementById('embedLink');
       var params = new URLSearchParams(location.search);
       var pre = params.get('usuario');
       if (pre) input.value = pre;
-
-      function buildLink(user) {
-        var u = encodeURIComponent(String(user || '').trim());
-        return location.origin + '/gestor.html?usuario=' + u;
-      }
-
-      function updateLink() {
-        var u = input.value.trim();
-        embed.textContent = u ? buildLink(u) : 'Ingrese un usuario arriba';
-      }
-
-      input.addEventListener('input', updateLink);
-      updateLink();
 
       document.getElementById('portalForm').addEventListener('submit', function (e) {
         e.preventDefault();
@@ -79,19 +53,7 @@
         localStorage.setItem('colbeef_usuario', user);
         ColbeefUsage.setUsuario(user);
         ColbeefUsage.track('portal_enter', 'portal', 'Entrada desde portal');
-        location.href = buildLink(user);
-      });
-
-      document.getElementById('copyLinkBtn').addEventListener('click', function () {
-        var u = input.value.trim();
-        if (!u) return;
-        var link = buildLink(u);
-        navigator.clipboard.writeText(link).then(function () {
-          document.getElementById('copyLinkBtn').textContent = '✓ Copiado';
-          setTimeout(function () {
-            document.getElementById('copyLinkBtn').textContent = 'Copiar enlace';
-          }, 2000);
-        });
+        location.href = '/gestor.html?usuario=' + encodeURIComponent(user);
       });
 
       if (pre && params.get('auto') === '1') {

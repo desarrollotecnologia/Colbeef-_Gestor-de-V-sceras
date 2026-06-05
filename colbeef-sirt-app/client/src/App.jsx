@@ -3,20 +3,12 @@ import './App.css';
 
 export default function App() {
   const [usuario, setUsuario] = useState('');
-  const [embedLink, setEmbedLink] = useState('Ingrese un usuario');
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const pre = params.get('usuario');
     if (pre) setUsuario(pre);
   }, []);
-
-  useEffect(() => {
-    const u = usuario.trim();
-    setEmbedLink(
-      u ? `${window.location.origin}/gestor.html?usuario=${encodeURIComponent(u)}` : 'Ingrese un usuario'
-    );
-  }, [usuario]);
 
   function entrar(e) {
     e.preventDefault();
@@ -36,13 +28,6 @@ export default function App() {
       }),
     }).catch(() => {});
     window.location.href = `/gestor.html?usuario=${encodeURIComponent(u)}`;
-  }
-
-  function copiarEnlace() {
-    const u = usuario.trim();
-    if (!u) return;
-    const link = `${window.location.origin}/gestor.html?usuario=${encodeURIComponent(u)}`;
-    navigator.clipboard.writeText(link);
   }
 
   return (
@@ -78,18 +63,6 @@ export default function App() {
             Entrar al gestor →
           </button>
         </form>
-
-        <div className="portal-link-box">
-          <h3>Enlace para otro programa</h3>
-          <code>{embedLink}</code>
-          <button type="button" className="btn btn-secondary portal-copy" onClick={copiarEnlace}>
-            Copiar enlace
-          </button>
-          <p className="portal-hint">
-            Use este URL en un botón externo; el parámetro <strong>usuario</strong> queda registrado en
-            usabilidad.
-          </p>
-        </div>
       </div>
     </div>
   );

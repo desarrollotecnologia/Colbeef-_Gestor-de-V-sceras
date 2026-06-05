@@ -75,6 +75,7 @@
     .opl-exp-barra-int.completo{background:linear-gradient(90deg,#16a34a,#4ade80);}
     .opl-exp-barra-int.critico{background:linear-gradient(90deg,#dc2626,#f87171);}
     .opl-exp-pct{font-size:0.78rem;font-weight:700;color:var(--gris);text-align:right;}
+    #oplModalProgresoContainer{max-height:min(62vh,520px);overflow-y:auto;padding-right:0.25rem;}
     .opl-cambiar-btn{font-size:0.75rem;background:var(--vc);color:var(--vp);border:none;border-radius:20px;padding:0.25rem 0.7rem;cursor:pointer;font-weight:600;margin-top:0.3rem;}
     .opl-cambiar-btn:hover{background:var(--vs);color:white;}
     .badge-opl{display:inline-block;padding:0.2rem 0.6rem;border-radius:20px;font-size:0.75rem;font-weight:700;background:var(--vc);color:var(--vp);}
@@ -1006,12 +1007,6 @@
           <span style="font-size:0.82rem;color:var(--gris);" id="oplModalFecha"></span>
           <button class="btn btn-primary" style="padding:0.5rem 1.2rem;font-size:0.85rem;" onclick="recalcularOPLModal()">🔄 Recalcular</button>
         </div>
-        <p class="desp-leyenda" style="margin-bottom:1rem;">
-          Por <strong>cava</strong>: piezas en cava con programación del turno (módulo Despachos).
-          <strong>Pendientes</strong> = aún en cava sin salida en SIRT.
-          <strong>Despachados</strong> = salida física registrada hoy (<code>fecha_salida</code>).
-          La barra sube solo cuando aumentan las salidas reales.
-        </p>
         <div class="alert" id="oplModalAlert"></div>
         <div id="oplModalProgresoContainer">
           <p class="empty-state" style="padding:1.5rem;">Cargando...</p>
@@ -2777,26 +2772,25 @@ function renderModalOplProgreso(progreso) {
                  :            'linear-gradient(90deg,var(--vp),#74c69d)';
     var pctColor = completo ? '#16a34a' : (critico ? '#dc2626' : 'var(--vp)');
 
+    var barW = completo ? pct : (pct <= 0 ? 2 : Math.max(pct, 4));
+
     return '<div class="opl-exp-item">'
-      // Cabecera: nombre + números
-      + '<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.4rem;margin-bottom:0.6rem;">'
-      +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;">🚚 ' + p.opl + '</div>'
-      +   '<div style="display:flex;gap:1rem;font-size:0.82rem;">'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">TOTAL</span><strong>' + p.total + '</strong></div>'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">DESPACHADOS</span><strong style="color:#16a34a;">' + p.despachados + '</strong></div>'
-      +     '<div style="text-align:center;"><span style="color:var(--gris);display:block;font-size:0.7rem;">PENDIENTES</span><strong style="color:#dc2626;">' + p.pendientes + '</strong></div>'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem;">'
+      +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;line-height:1.3;">🚚 ' + escapeHtml(p.opl) + '</div>'
+      +   '<div style="display:flex;gap:1.1rem;font-size:0.82rem;flex-shrink:0;">'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">TOTAL</span><strong style="font-size:1.05rem;">' + p.total + '</strong></div>'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">DESPACHADOS</span><strong style="color:#16a34a;font-size:1.05rem;">' + p.despachados + '</strong></div>'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">PENDIENTES</span><strong style="color:#dc2626;font-size:1.05rem;">' + p.pendientes + '</strong></div>'
       +   '</div>'
       + '</div>'
-      // Barra de progreso
-      + '<div style="background:#e5e7eb;height:12px;border-radius:20px;overflow:hidden;margin-bottom:0.25rem;">'
-      +   '<div style="height:100%;border-radius:20px;background:' + barColor + ';width:' + Math.max(pct, 2) + '%;transition:width 0.7s ease;"></div>'
+      + '<div style="background:#e5e7eb;height:12px;border-radius:20px;overflow:hidden;margin-bottom:0.35rem;">'
+      +   '<div style="height:100%;border-radius:20px;background:' + barColor + ';width:' + barW + '%;transition:width 0.7s ease;"></div>'
       + '</div>'
-      // Porcentaje y estado
-      + '<div style="display:flex;justify-content:space-between;align-items:center;">'
+      + '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">'
       +   '<span style="font-size:0.78rem;color:var(--gris);">'
       +     (completo ? 'Operación completada ✅' : p.pendientes + ' juegos pendientes por despachar')
       +   '</span>'
-      +   '<span style="font-size:0.85rem;font-weight:800;color:' + pctColor + ';">' + pct + '%</span>'
+      +   '<span style="font-size:0.88rem;font-weight:800;color:' + pctColor + ';">' + pct + '%</span>'
       + '</div>'
       + '</div>';
   }).join('');
