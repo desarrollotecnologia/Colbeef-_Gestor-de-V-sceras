@@ -971,8 +971,8 @@
       </div>
       <div class="table-wrap" style="margin-top:0;">
         <table>
-          <thead><tr><th>Código</th><th>Base</th><th>Propietario</th><th>Tipo</th><th>Estado</th></tr></thead>
-          <tbody id="modalTbody"><tr><td colspan="5" class="empty-state">Cargando...</td></tr></tbody>
+          <thead><tr><th>Código</th><th>Base</th><th>Propietario</th><th>Tipo</th><th>Decomiso</th><th>Estado</th></tr></thead>
+          <tbody id="modalTbody"><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -2176,25 +2176,36 @@ function renderTablaDespachos(res) {
     '</tr>';
   document.getElementById('despTbody').innerHTML = html;
 }
+function formatoDecomisoDetalle(f) {
+  if (!f.decomiso) return '—';
+  var html =
+    '<span class="badge-decomiso">decomiso</span>' +
+    '<div style="margin-top:0.35rem;font-size:0.72rem;line-height:1.45;color:#7c2d12;">';
+  if (f.subproductosDecomiso) {
+    html += '<div><span style="color:var(--gris);">Subproducto:</span> <strong>' + escapeHtml(f.subproductosDecomiso) + '</strong></div>';
+  }
+  if (f.partesDecomiso) {
+    html += '<div><span style="color:var(--gris);">Parte:</span> <strong style="color:#9a3412;">' + escapeHtml(f.partesDecomiso) + '</strong></div>';
+  } else if (f.productoDecomiso) {
+    html += '<div><span style="color:var(--gris);">Parte:</span> <strong style="color:#9a3412;">' + escapeHtml(f.productoDecomiso) + '</strong></div>';
+  }
+  return html + '</div>';
+}
+
 function abrirDetalle(elOrStr) {
   var puesto = typeof elOrStr === 'string' ? elOrStr : elOrStr.getAttribute('data-puesto');
   document.getElementById('modalPuestoTitulo').textContent=puesto;
-  document.getElementById('modalTbody').innerHTML='<tr><td colspan="5" class="empty-state">Cargando...</td></tr>';
+  document.getElementById('modalTbody').innerHTML='<tr><td colspan="6" class="empty-state">Cargando...</td></tr>';
   document.getElementById('modalDetalle').classList.add('show');
   google.script.run.withSuccessHandler(function(res){
-    if(!res||!res.success||!res.filas||res.filas.length===0){document.getElementById('modalTbody').innerHTML='<tr><td colspan="5" class="empty-state">Sin datos.</td></tr>';return;}
+    if(!res||!res.success||!res.filas||res.filas.length===0){document.getElementById('modalTbody').innerHTML='<tr><td colspan="6" class="empty-state">Sin datos.</td></tr>';return;}
     document.getElementById('modalTbody').innerHTML=res.filas.map(function(f){
-      var dec = f.decomiso
-        ? ' <span class="badge-decomiso">decomiso</span>' +
-          (f.fuenteDecomiso ? ' <small style="color:#9a3412;">(' + escapeHtml(f.fuenteDecomiso) + ')</small>' : '') +
-          (f.productoDecomiso ? ' <small>' + escapeHtml(f.productoDecomiso) + '</small>' : '')
-        : '';
       var est = [];
       if (f.cruda) est.push('<span style="color:#d97706;font-weight:600;">cruda</span>');
       if (f.enCava === false) est.push('<span style="color:#6b7280;">sin cava</span>');
-      return '<tr'+(f.decomiso?' style="background:#fef2f2;"':'')+'><td>'+escapeHtml(f.id||'')+dec+'</td><td>'+escapeHtml(f.codigoBase||'')+'</td><td>'+escapeHtml(f.propietario||'')+'</td><td>'+escapeHtml(f.tipo||'')+'</td><td>'+(est.length?est.join(' '):'—')+'</td></tr>';
+      return '<tr'+(f.decomiso?' style="background:#fff7ed;"':'')+'><td>'+escapeHtml(f.id||'')+'</td><td>'+escapeHtml(f.codigoBase||'')+'</td><td>'+escapeHtml(f.propietario||'')+'</td><td>'+escapeHtml(f.tipo||'')+'</td><td style="min-width:140px;vertical-align:top;">'+formatoDecomisoDetalle(f)+'</td><td>'+(est.length?est.join(' '):'—')+'</td></tr>';
     }).join('');
-  }).withFailureHandler(function(e){document.getElementById('modalTbody').innerHTML='<tr><td colspan="5" class="empty-state" style="color:#991b1b;">Error: '+escapeHtml(e.message)+'</td></tr>';}).getDetallesPuesto(puesto);
+  }).withFailureHandler(function(e){document.getElementById('modalTbody').innerHTML='<tr><td colspan="6" class="empty-state" style="color:#991b1b;">Error: '+escapeHtml(e.message)+'</td></tr>';}).getDetallesPuesto(puesto);
 }
 function cerrarModal(){document.getElementById('modalDetalle').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')cerrarModal();});

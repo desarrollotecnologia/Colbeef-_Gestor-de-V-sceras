@@ -99,26 +99,42 @@ export function productoDecomisoDesdeMapa(mapa, idEstadoRaw) {
   return mapa[kb];
 }
 
+function mergeUniqueList(a, b) {
+  const out = [...(a || [])];
+  (b || []).forEach((x) => {
+    const s = String(x || '').trim();
+    if (s && !out.includes(s)) out.push(s);
+  });
+  return out;
+}
+
 /**
- * Mapa animal (id normalizado / base) → tipos decomisados y nombres de subproducto.
- * Usado en despacho para marcar juegos incompletos por decomiso.
+ * Mapa animal (id normalizado / base) → tipos decomisados, subproducto y parte (puesto SAI).
  */
 export function construirMapaDecomisosPorAnimal(reporteFilas) {
   const mapa = {};
   (reporteFilas || []).forEach((fila) => {
     const id = String(fila[0] ?? '').trim();
-    const prod = String(fila[2] ?? '').trim();
+    const subproducto = String(fila[2] ?? '').trim();
+    const parte = String(fila[6] ?? '').trim();
+    const causa = String(fila[4] ?? '').trim();
     if (!id) return;
-    const tipoDec = mapTipoProductoNombre(prod);
+    const tipoDec = mapTipoProductoNombre(subproducto || parte);
     const claves = [normalizeProductIdForDecomisoCruce(id)];
     const base = codigoBase(id);
     const kb = base ? normalizeProductIdForDecomisoCruce(base) : '';
     if (kb && kb !== claves[0]) claves.push(kb);
     claves.forEach((k) => {
       if (!k) return;
-      if (!mapa[k]) mapa[k] = { tipos: new Set(), productos: [] };
+      if (!mapa[k]) {
+        mapa[k] = { tipos: new Set(), subproductos: [], partes: [], productos: [], causas: [] };
+      }
       mapa[k].tipos.add(tipoDec);
-      if (prod && !mapa[k].productos.includes(prod)) mapa[k].productos.push(prod);
+      if (subproducto && !mapa[k].subproductos.includes(subproducto)) mapa[k].subproductos.push(subproducto);
+      if (parte && !mapa[k].partes.includes(parte)) mapa[k].partes.push(parte);
+      if (subproducto && !mapa[k].productos.includes(subproducto)) mapa[k].productos.push(subproducto);
+      if (parte && parte !== subproducto && !mapa[k].productos.includes(parte)) mapa[k].productos.push(parte);
+      if (causa && !mapa[k].causas.includes(causa)) mapa[k].causas.push(causa);
     });
   });
   return mapa;
@@ -147,14 +163,20 @@ export function construirIndiceDecomisosVw(vwFilas) {
       porAnimal.set(animal, {
         codigoAnimal: animal,
         tipos: new Set(),
+        subproductos: [],
+        partes: [],
         productos: [],
+        causas: [],
         fuente: 'vw_decomisos',
       });
     }
     const e = porAnimal.get(animal);
     const parte = String(r.tipo_parte ?? r.parte_decomisada ?? '').trim();
     if (parte) {
-      e.tipos.add(mapTipoProductoNombre(parte));
+      const sub = mapTipoProductoNombre(parte);
+      e.tipos.add(sub);
+      if (!e.partes.includes(parte)) e.partes.push(parte);
+      if (sub && !e.subproductos.includes(sub)) e.subproductos.push(sub);
       if (!e.productos.includes(parte)) e.productos.push(parte);
     }
   });
@@ -185,13 +207,12 @@ export function decomisoInfoUnificado(mapaSai, indiceVw, idRaw) {
   if (!sai) return { ...vw, fuentes: ['vw_decomisos'] };
   if (!vw) return { ...sai, fuentes: ['sai'] };
   const tipos = new Set([...sai.tipos, ...vw.tipos]);
-  const productos = [...sai.productos];
-  vw.productos.forEach((p) => {
-    if (p && !productos.includes(p)) productos.push(p);
-  });
   return {
     tipos,
-    productos,
+    subproductos: mergeUniqueList(sai.subproductos, vw.subproductos),
+    partes: mergeUniqueList(sai.partes, vw.partes),
+    productos: mergeUniqueList(sai.productos, vw.productos),
+    causas: mergeUniqueList(sai.causas, vw.causas),
     codigoAnimal: vw.codigoAnimal || codigoBase(idRaw),
     fuentes: ['sai', 'vw_decomisos'],
   };

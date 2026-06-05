@@ -1299,8 +1299,10 @@ export async function getDetallesPuesto(puesto) {
       enCava: Boolean(base && basesEnCava.has(base)),
       cruda: tipo === 'Visceras Blancas' && Boolean(base && crudaBases.has(base)),
       decomiso: Boolean(dec),
-      productoDecomiso: dec?.productos?.join(', ') || '',
-      fuenteDecomiso: (dec?.fuentes || []).join(' + ') || '',
+      subproductosDecomiso: (dec?.subproductos || []).join(', '),
+      partesDecomiso: (dec?.partes || []).join(', '),
+      causaDecomiso: (dec?.causas || []).join(', '),
+      productoDecomiso: (dec?.partes?.length ? dec.partes : dec?.subproductos || dec?.productos || []).join(', '),
     });
   });
   filas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.id.localeCompare(b.id));
