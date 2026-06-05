@@ -1069,7 +1069,8 @@
   var stored = localStorage.getItem('colbeef_usuario');
   if (fromUrl) localStorage.setItem('colbeef_usuario', fromUrl.trim());
   else if (!stored) {
-    location.replace(portalReturn);
+    // Sin usuario: portal local (no redirigir al programa 8501 — eso solo la flecha ←)
+    location.replace('/portal.html');
     return;
   }
 

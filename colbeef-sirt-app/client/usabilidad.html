@@ -6,30 +6,39 @@
   <title>Usabilidad · Colbeef</title>
   <link rel="icon" href="/colbeef-icon.png" type="image/png">
   <style>
-    :root{--vp:#259c39;--vc:#b7e4c7;--gris:#6b7280;--fondo:#f8faf9;}
+    :root{--vp:#259c39;--vh:#40916c;--vs:#74c69d;--vc:#b7e4c7;--gris:#6b7280;--fondo:#f8faf9;}
     *{box-sizing:border-box;font-family:'Segoe UI',system-ui,sans-serif;}
     body{margin:0;background:var(--fondo);color:#111827;padding:1.5rem;}
-    .wrap{max-width:1200px;margin:0 auto;}
-    .login-card,.panel{background:#fff;border-radius:16px;padding:1.5rem;box-shadow:0 8px 24px rgba(0,0,0,0.06);border:1px solid var(--vc);max-width:400px;margin:4rem auto;}
+    .wrap{max-width:1280px;margin:0 auto;}
+    .login-card{background:#fff;border-radius:16px;padding:1.5rem;box-shadow:0 8px 24px rgba(0,0,0,0.06);border:1px solid var(--vc);max-width:400px;margin:4rem auto;}
     input,select{padding:0.65rem 0.8rem;border:1.5px solid var(--vc);border-radius:10px;width:100%;font-size:0.95rem;}
     .btn{padding:0.65rem 1rem;border:none;border-radius:10px;background:var(--vp);color:#fff;font-weight:700;cursor:pointer;}
     .btn.secondary{background:#fff;color:var(--vp);border:1.5px solid var(--vc);}
     .btn-row{display:flex;gap:0.6rem;flex-wrap:wrap;margin-top:1rem;}
     .header{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:1.5rem;}
     h1{margin:0;font-size:1.5rem;color:var(--vp);}
-    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem;}
-    .kpi{background:#fff;border-radius:14px;padding:1rem;border:1px solid var(--vc);}
-    .kpi span{display:block;font-size:0.75rem;color:var(--gris);text-transform:uppercase;letter-spacing:0.5px;}
-    .kpi strong{font-size:1.8rem;color:var(--vp);}
-    .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1rem;margin-bottom:1.5rem;}
-    .box{background:#fff;border-radius:14px;padding:1rem;border:1px solid var(--vc);}
-    .box h2{margin:0 0 0.8rem;font-size:0.95rem;color:#374151;}
+    .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:1.5rem;}
+    .kpi{background:#fff;border-radius:14px;padding:1.1rem 1.2rem;border:1px solid var(--vc);position:relative;overflow:hidden;}
+    .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,var(--vp),var(--vs));}
+    .kpi span{display:block;font-size:0.72rem;color:var(--gris);text-transform:uppercase;letter-spacing:0.6px;font-weight:600;}
+    .kpi strong{font-size:2rem;color:var(--vp);line-height:1.2;margin-top:0.25rem;display:block;}
+    .kpi small{font-size:0.78rem;color:var(--gris);font-weight:500;}
+    .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:1rem;margin-bottom:1.5rem;}
+    .box{background:#fff;border-radius:14px;padding:1.1rem 1.2rem;border:1px solid var(--vc);margin-bottom:1.5rem;}
+    .box h2{margin:0 0 0.9rem;font-size:0.95rem;color:#374151;font-weight:700;}
+    .chart-box{min-height:280px;}
+    .chart-wide{min-height:300px;}
+    .chart-wrap{position:relative;height:240px;}
+    .chart-wide .chart-wrap{height:260px;}
     table{width:100%;border-collapse:collapse;font-size:0.82rem;}
-    th,td{padding:0.45rem 0.35rem;text-align:left;border-bottom:1px solid #f3f4f6;}
-    th{color:var(--gris);font-weight:600;}
+    th,td{padding:0.5rem 0.4rem;text-align:left;border-bottom:1px solid #f3f4f6;}
+    th{color:var(--gris);font-weight:600;font-size:0.75rem;text-transform:uppercase;letter-spacing:0.3px;}
+    tr:hover td{background:#f9fafb;}
     .err{color:#dc2626;font-size:0.85rem;margin-top:0.5rem;}
+    .empty-chart{color:var(--gris);font-size:0.85rem;text-align:center;padding:3rem 1rem;}
     #loginView{display:block;}
     #dashView{display:none;}
+    .section-title{font-size:0.8rem;color:var(--gris);text-transform:uppercase;letter-spacing:1px;margin:0 0 0.75rem;font-weight:700;}
   </style>
 </head>
 <body>
@@ -64,26 +73,90 @@
       </div>
 
       <div class="kpis" id="kpiRow"></div>
-      <div class="grid2">
-        <div class="box"><h2>Por usuario</h2><div id="tblUsuarios"></div></div>
-        <div class="box"><h2>Por módulo</h2><div id="tblModulos"></div></div>
+
+      <p class="section-title">Gráficas</p>
+      <div class="box chart-box chart-wide">
+        <h2>📈 Evolución de eventos por día</h2>
+        <div class="chart-wrap"><canvas id="chartDias"></canvas></div>
+        <div id="emptyDias" class="empty-chart" style="display:none;">Sin actividad en el período</div>
       </div>
+
       <div class="grid2">
-        <div class="box"><h2>Por acción</h2><div id="tblAcciones"></div></div>
-        <div class="box"><h2>Actividad por día</h2><div id="tblDias"></div></div>
+        <div class="box chart-box">
+          <h2>👤 Usuarios más activos</h2>
+          <div class="chart-wrap"><canvas id="chartUsuarios"></canvas></div>
+          <div id="emptyUsuarios" class="empty-chart" style="display:none;">Sin usuarios</div>
+        </div>
+        <div class="box chart-box">
+          <h2>📦 Módulos visitados</h2>
+          <div class="chart-wrap"><canvas id="chartModulos"></canvas></div>
+          <div id="emptyModulos" class="empty-chart" style="display:none;">Sin módulos</div>
+        </div>
       </div>
+
+      <div class="grid2">
+        <div class="box chart-box">
+          <h2>⚡ Acciones realizadas</h2>
+          <div class="chart-wrap"><canvas id="chartAcciones"></canvas></div>
+          <div id="emptyAcciones" class="empty-chart" style="display:none;">Sin acciones</div>
+        </div>
+        <div class="box">
+          <h2>📋 Resumen por módulo</h2>
+          <div id="tblModulos"></div>
+        </div>
+      </div>
+
       <div class="box">
-        <h2>Eventos recientes</h2>
+        <h2>🕐 Eventos recientes</h2>
         <div id="tblRecientes" style="overflow-x:auto;"></div>
       </div>
     </div>
   </div>
 
+  <script src="/vendor/chart.umd.min.js"></script>
   <script>
     var TOKEN_KEY = 'colbeef_usabilidad_token';
+    var charts = {};
+    var COLORS = ['#259c39','#40916c','#74c69d','#16a34a','#059669','#047857','#065f46','#dc2626','#ea580c','#ca8a04'];
 
     function token() { return sessionStorage.getItem(TOKEN_KEY) || ''; }
     function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+
+    function labelAccion(name) {
+      var map = {
+        session_start: 'Inicio sesión',
+        portal_enter: 'Entrada portal',
+        portal_back: 'Volver al programa',
+        admin_open: 'Dashboard admin',
+        module_open: 'Abrir módulo',
+        event: 'Evento'
+      };
+      return map[name] || String(name || '').replace(/_/g, ' ');
+    }
+
+    function labelModulo(name) {
+      var map = {
+        gestor: 'Gestor',
+        decomisos: 'Decomisos',
+        despachos: 'Despachos',
+        planilla: 'Planilla',
+        analytics: 'Analytics',
+        crudas: 'Crudas',
+        informe: 'Informe',
+        historial: 'Historial',
+        opl: 'OPL',
+        portal: 'Portal',
+        usabilidad: 'Usabilidad',
+        dashboard: 'Dashboard'
+      };
+      return map[name] || name || '—';
+    }
+
+    function destroyCharts() {
+      Object.keys(charts).forEach(function (k) {
+        if (charts[k]) { charts[k].destroy(); charts[k] = null; }
+      });
+    }
 
     function tableFromRows(rows, cols) {
       if (!rows || !rows.length) return '<p style="color:var(--gris);font-size:0.85rem;">Sin datos</p>';
@@ -92,10 +165,120 @@
       h += '</tr></thead><tbody>';
       rows.forEach(function (r) {
         h += '<tr>';
-        cols.forEach(function (c) { h += '<td>' + (r[c.key] != null ? r[c.key] : '') + '</td>'; });
+        cols.forEach(function (c) {
+          var v = r[c.key];
+          if (c.fmt) v = c.fmt(v, r);
+          h += '<td>' + (v != null ? v : '') + '</td>';
+        });
         h += '</tr>';
       });
       return h + '</tbody></table>';
+    }
+
+    function fmtTs(ts) {
+      if (!ts) return '';
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return ts;
+      return d.toLocaleString('es-CO', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' });
+    }
+
+    function showEmpty(id, show) {
+      var el = document.getElementById(id);
+      if (el) el.style.display = show ? 'block' : 'none';
+    }
+
+    function makeLineChart(id, labels, values) {
+      var ctx = document.getElementById(id);
+      if (!ctx) return;
+      showEmpty('emptyDias', !labels.length);
+      ctx.parentElement.style.display = labels.length ? 'block' : 'none';
+      if (!labels.length) return;
+      charts[id] = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Eventos',
+            data: values,
+            borderColor: '#259c39',
+            backgroundColor: 'rgba(37,156,57,0.12)',
+            fill: true,
+            tension: 0.35,
+            pointRadius: 4,
+            pointBackgroundColor: '#259c39',
+            borderWidth: 2.5
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 }, grid: { color: '#f3f4f6' } },
+            x: { grid: { display: false } }
+          }
+        }
+      });
+    }
+
+    function makeBarChart(id, labels, values, horizontal) {
+      var emptyId = id === 'chartUsuarios' ? 'emptyUsuarios' : 'emptyAcciones';
+      var ctx = document.getElementById(id);
+      if (!ctx) return;
+      showEmpty(emptyId, !labels.length);
+      ctx.parentElement.style.display = labels.length ? 'block' : 'none';
+      if (!labels.length) return;
+      charts[id] = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Cantidad',
+            data: values,
+            backgroundColor: labels.map(function (_, i) { return COLORS[i % COLORS.length]; }),
+            borderRadius: 6,
+            borderSkipped: false
+          }]
+        },
+        options: {
+          indexAxis: horizontal ? 'y' : 'x',
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 }, grid: { color: '#f3f4f6' } },
+            x: { grid: { display: horizontal } }
+          }
+        }
+      });
+    }
+
+    function makeDoughnut(id, labels, values) {
+      var ctx = document.getElementById(id);
+      if (!ctx) return;
+      showEmpty('emptyModulos', !labels.length);
+      ctx.parentElement.style.display = labels.length ? 'block' : 'none';
+      if (!labels.length) return;
+      charts[id] = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: labels,
+          datasets: [{
+            data: values,
+            backgroundColor: labels.map(function (_, i) { return COLORS[i % COLORS.length]; }),
+            borderWidth: 2,
+            borderColor: '#fff'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          cutout: '58%',
+          plugins: {
+            legend: { position: 'right', labels: { boxWidth: 12, padding: 10, font: { size: 11 } } }
+          }
+        }
+      });
     }
 
     function renderStats(data) {
@@ -104,29 +287,49 @@
         '<div class="kpi"><span>Usuarios</span><strong>' + data.uniqueUsers + '</strong></div>' +
         '<div class="kpi"><span>Sesiones</span><strong>' + data.uniqueSessions + '</strong></div>' +
         (data.lastActivity
-          ? '<div class="kpi"><span>Última actividad</span><strong style="font-size:1rem;">' +
-            data.lastActivity.usuario + '<br><small style="font-weight:500;color:var(--gris)">' +
-            data.lastActivity.action + '</small></strong></div>'
-          : '');
+          ? '<div class="kpi"><span>Última actividad</span><strong style="font-size:1.15rem;">' +
+            data.lastActivity.usuario + '</strong><small>' + labelAccion(data.lastActivity.action) + '</small></div>'
+          : '<div class="kpi"><span>Última actividad</span><strong style="font-size:1rem;color:var(--gris);">—</strong></div>');
 
-      document.getElementById('tblUsuarios').innerHTML = tableFromRows(data.byUsuario, [
-        { key: 'name', label: 'Usuario' }, { key: 'count', label: 'Eventos' },
+      destroyCharts();
+
+      var dias = data.byDay || [];
+      makeLineChart('chartDias',
+        dias.map(function (d) { return d.date.slice(5).replace('-', '/'); }),
+        dias.map(function (d) { return d.count; })
+      );
+
+      var users = (data.byUsuario || []).slice(0, 8);
+      makeBarChart('chartUsuarios',
+        users.map(function (u) { return u.name; }),
+        users.map(function (u) { return u.count; }),
+        true
+      );
+
+      var mods = data.byModule || [];
+      makeDoughnut('chartModulos',
+        mods.map(function (m) { return labelModulo(m.name); }),
+        mods.map(function (m) { return m.count; })
+      );
+
+      var acts = (data.byAction || []).slice(0, 8);
+      makeBarChart('chartAcciones',
+        acts.map(function (a) { return labelAccion(a.name); }),
+        acts.map(function (a) { return a.count; }),
+        false
+      );
+
+      document.getElementById('tblModulos').innerHTML = tableFromRows(mods, [
+        { key: 'name', label: 'Módulo', fmt: labelModulo },
+        { key: 'count', label: 'Visitas' }
       ]);
-      document.getElementById('tblModulos').innerHTML = tableFromRows(data.byModule, [
-        { key: 'name', label: 'Módulo' }, { key: 'count', label: 'Visitas' },
-      ]);
-      document.getElementById('tblAcciones').innerHTML = tableFromRows(data.byAction, [
-        { key: 'name', label: 'Acción' }, { key: 'count', label: 'Veces' },
-      ]);
-      document.getElementById('tblDias').innerHTML = tableFromRows(data.byDay, [
-        { key: 'date', label: 'Fecha' }, { key: 'count', label: 'Eventos' },
-      ]);
+
       document.getElementById('tblRecientes').innerHTML = tableFromRows(data.recent, [
-        { key: 'ts', label: 'Hora' },
+        { key: 'ts', label: 'Hora', fmt: fmtTs },
         { key: 'usuario', label: 'Usuario' },
-        { key: 'action', label: 'Acción' },
-        { key: 'module', label: 'Módulo' },
-        { key: 'detail', label: 'Detalle' },
+        { key: 'action', label: 'Acción', fmt: labelAccion },
+        { key: 'module', label: 'Módulo', fmt: labelModulo },
+        { key: 'detail', label: 'Detalle' }
       ]);
     }
 
@@ -153,6 +356,7 @@
     }
 
     function showLogin(msg) {
+      destroyCharts();
       document.getElementById('loginView').style.display = 'block';
       document.getElementById('dashView').style.display = 'none';
       var err = document.getElementById('loginErr');
