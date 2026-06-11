@@ -25,7 +25,7 @@ import {
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
   despachosProgramadosSinSalidasDelDia,
-  filtrarFilasPorTurnoOperacion,
+  filasDespachoTurnoOperacion,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -82,13 +82,7 @@ function tieneJuegoCompleto(tipos) {
 
 /** Filas de salida del turno con puesto normalizado (sufijo /turno/). */
 function filasDespachoTurno(despachosCavas, turno) {
-  return (despachosCavas || []).map((fila) => {
-    const p = String(fila[9] ?? '').trim();
-    if (p.includes(turno)) return fila;
-    const c = fila.slice();
-    c[9] = (p ? `${p} ` : '') + `/${turno}/`;
-    return c;
-  });
+  return filasDespachoTurnoOperacion(despachosCavas, turno);
 }
 
 /**
@@ -485,14 +479,15 @@ const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
 
 /** Propietarios únicos con juegos del turno (desde filas Despachos_Cavas). */
 function propietariosConJuegosDesdeDespachos(despachos, turno) {
+  const neto = filasDespachoTurnoOperacion(despachos || [], turno);
   const conteo = contarJuegosCompletosPorClave(
-    despachos || [],
+    neto,
     COLS_DESPACHO_CAVA,
     (fila) => String(fila[4] ?? '').trim().toUpperCase(),
-    turno
+    ''
   );
   const etiqueta = {};
-  (despachos || []).forEach((fila) => {
+  neto.forEach((fila) => {
     const prop = String(fila[4] ?? '').trim();
     const upper = prop.toUpperCase();
     if (prop && !etiqueta[upper]) etiqueta[upper] = prop;
@@ -575,20 +570,20 @@ function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
 }
 
 /** Congela el total a despachar por OPL (crece si entra más programación, no baja). */
-function actualizarBaselineOplSubproductosSync(s, turno, programadosNeto, salidasDelDia) {
+function actualizarBaselineOplSubproductosSync(s, turno, programadosTurno, salidasDelDia) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
   if (!s.oplTotalsSubproducto || typeof s.oplTotalsSubproducto !== 'object') {
     s.oplTotalsSubproducto = {};
   }
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  const pendSet = agruparSubproductosPorClave(programadosNeto, COLS_DESPACHO_CAVA, claveOpl, turno);
-  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, turno);
+  // TOTAL = programación completa del turno (+ salidas ya registradas), no solo neto en cava
+  const progSet = agruparSubproductosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
 
-  const opls = new Set([...Object.keys(pendSet), ...Object.keys(salSet)]);
+  const opls = new Set([...Object.keys(progSet), ...Object.keys(salSet)]);
   opls.forEach((opl) => {
-    const union = new Set(pendSet[opl] || []);
-    (salSet[opl] || new Set()).forEach((k) => union.add(k));
+    const union = new Set([...(progSet[opl] || []), ...(salSet[opl] || [])]);
     const n = union.size;
     if (n > 0) {
       s.oplTotalsSubproducto[opl] = Math.max(Number(s.oplTotalsSubproducto[opl] || 0), n);
@@ -635,30 +630,33 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     String(turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
 
-  const salidasDelDia = filtrarFilasPorTurnoOperacion(
+  const salidasDelDia = filasDespachoTurnoOperacion(
     filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
     turnoOp
   );
-  const programadosTurno = filtrarFilasPorTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
   const programadosNeto = despachosProgramadosSinSalidasDelDia(programadosTurno, salidasDelDia);
 
   const pendOpl = contarSubproductosPorClave(
     programadosNeto,
     COLS_DESPACHO_CAVA,
     claveOpl,
-    turnoOp
+    ''
   );
 
   const salOpl = contarSubproductosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
     claveOpl,
-    turnoOp
+    ''
   );
 
-  actualizarBaselineOplSubproductosSync(s, turnoOp, programadosNeto, salidasDelDia);
+  actualizarBaselineOplSubproductosSync(s, turnoOp, programadosTurno, salidasDelDia);
 
   const opls = new Set([
+    ...Object.keys(
+      contarSubproductosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '')
+    ),
     ...Object.keys(pendOpl),
     ...Object.keys(salOpl),
     ...Object.keys(s.oplTotalsSubproducto || {}),
@@ -709,7 +707,7 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
   const consultaSirt = Boolean(opts.consultaSirt);
   const fecha = fmtNow();
   const rd = s.resumenDespachos;
-  const turno = String(rd.turno || '').trim();
+  let turno = String(rd.turno || '').trim();
 
   if (totalJuegosParam !== undefined && Number(totalJuegosParam) === 0) {
     if (consultaSirt) {
@@ -751,7 +749,9 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
     };
   }
 
-  if (!turno) return { success: false, message: 'Sin turno en despachos para esta fecha.', progreso: [] };
+  if (!turno) {
+    turno = resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  }
 
   const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
   if (desdeDesp.todosOPL.length > 0) {
@@ -767,7 +767,7 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
     }
     return {
       success: true,
-      turno,
+      turno: desdeDesp.turno || turno,
       progreso: operacionFinalizada ? [] : desdeDesp.progreso,
       operacionFinalizada,
       fecha,
@@ -778,7 +778,11 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
 
   const hayTotales = s.oplConfig.some((r) => Number(r.total || 0) > 0);
   if (!hayTotales) {
-    return { success: false, message: 'Sin juegos programados para OPL en esta fecha.', progreso: [] };
+    const msg =
+      Number(rd.totalJuegos || 0) > 0
+        ? `${rd.totalJuegos} juegos programados del turno ${turno || desdeDesp.turno || ''}; pulse Recalcular en OPL.`
+        : 'Sin juegos programados para OPL en esta fecha.';
+    return { success: false, message: msg.trim(), progreso: [] };
   }
 
   return { success: false, message: 'Sin despachos del turno para calcular OPL.', progreso: [] };
@@ -1059,7 +1063,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-turno-jxv-v1';
+export const GESTOR_BUILD = 'opl-turno-alineado-v3';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1557,7 +1561,12 @@ export async function calcularProgresoOPL(totalJuegosParam) {
   let operacionFinalizada = desdeDesp.operacionFinalizada;
 
   if (!todosOPL.length) {
-    return { success: false, message: 'Sin subproductos en cava para este turno. Sincronice despachos desde SIRT.' };
+    const nJuegos = Number(s.resumenDespachos?.totalJuegos || 0);
+    const msg =
+      nJuegos > 0
+        ? `${nJuegos} juegos programados del turno ${turnoLive}; sincronice despachos y recalcule OPL.`
+        : 'Sin subproductos en cava para este turno. Sincronice despachos desde SIRT.';
+    return { success: false, message: msg };
   }
 
   if (operacionFinalizada && rd.historicoGuardadoFlag !== '1') {

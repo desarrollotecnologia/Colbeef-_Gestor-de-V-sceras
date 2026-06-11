@@ -316,16 +316,17 @@ export function detectarTurnoPorFechaISO(iso) {
   return TURNO_POR_DIA[d.getDay()] || 'SxD';
 }
 
+const TURNOS_OPERACION = ['SxD', 'VxS', 'JxV', 'MxJ', 'MxM', 'LxM', 'DxL'];
+
 export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
-  const turnos = ['SxD', 'VxS', 'JxV', 'MxJ', 'MxM', 'LxM', 'DxL'];
   const conteo = {};
-  turnos.forEach((t) => {
+  TURNOS_OPERACION.forEach((t) => {
     conteo[t] = 0;
   });
   const muestra = (rows || []).slice(0, 300);
   muestra.forEach((fila) => {
     const puesto = String(fila[9] ?? fila[8] ?? '').trim();
-    turnos.forEach((t) => {
+    TURNOS_OPERACION.forEach((t) => {
       if (puesto.includes(t)) conteo[t]++;
     });
   });
@@ -333,7 +334,7 @@ export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
     ? detectarTurnoPorFechaISO(fechaIsoFallback)
     : detectarTurnoPorDia();
   let max = 0;
-  turnos.forEach((t) => {
+  TURNOS_OPERACION.forEach((t) => {
     if (conteo[t] > max) {
       max = conteo[t];
       ganador = t;
@@ -342,15 +343,32 @@ export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
   return ganador;
 }
 
-/** Solo filas cuyo puesto/destino contiene el sufijo del turno (JxV, LxM, …). */
-export function filtrarFilasPorTurnoOperacion(filas, turno, colPuesto = 9, colDestino = 8) {
+/**
+ * Filas del turno operativo (como Apps Script / tablero):
+ * - Excluye piezas marcadas con otro sufijo (LxM, MxM, …).
+ * - Si no traen turno en puesto, asigna el turno detectado (JxV, etc.).
+ */
+export function filasDespachoTurnoOperacion(filas, turno, colPuesto = 9, colDestino = 8) {
   const t = String(turno || '').trim();
   if (!t) return filas || [];
-  return (filas || []).filter((fila) => {
-    const puesto = String(fila[colPuesto] ?? '').trim();
-    const destino = String(fila[colDestino] ?? '').trim();
-    return puesto.includes(t) || destino.includes(t);
-  });
+  return (filas || [])
+    .filter((fila) => {
+      const haystack = `${String(fila[colPuesto] ?? '').trim()} ${String(fila[colDestino] ?? '').trim()}`;
+      return !TURNOS_OPERACION.some((ot) => ot !== t && haystack.includes(ot));
+    })
+    .map((fila) => {
+      const p = String(fila[colPuesto] ?? '').trim();
+      if (p.includes(t)) return fila;
+      const c = fila.slice();
+      const base = p ? (p.endsWith('/') ? p : `${p}/`) : '';
+      c[colPuesto] = `${base}${t}/`;
+      return c;
+    });
+}
+
+/** @deprecated Usar filasDespachoTurnoOperacion */
+export function filtrarFilasPorTurnoOperacion(filas, turno, colPuesto = 9, colDestino = 8) {
+  return filasDespachoTurnoOperacion(filas, turno, colPuesto, colDestino);
 }
 
 /**
