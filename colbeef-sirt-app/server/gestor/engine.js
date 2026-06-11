@@ -694,7 +694,7 @@ function actualizarBaselineOplDesdeDespachosSync(s, turno) {
   });
 }
 
-function construirProgresoOplDesdeDespachos(s, turno, fecha) {
+export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const mapaOPL = cargarMapaOPL(s);
   const fechaOp = String(s.lastSyncRange?.from || '').trim();
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
@@ -702,22 +702,19 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     String(turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
 
-  const salidasDelDia = filasDespachoTurnoOperacion(
+  const salidasTurno = filasDespachoTurnoOperacion(
     filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
     turnoOp
   );
-  const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const programadosTurno = despachosProgramadosSinSalidasDelDia(programadosBruto, salidasTurno);
 
   const salOpl = contarJuegosCompletosPorClave(
-    salidasDelDia,
+    salidasTurno,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
-
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosTurno, salidasDelDia);
-  const totals = obtenerOplTotalsJuego(s);
-
   const progOpl = contarJuegosCompletosPorClave(
     programadosTurno,
     COLS_DESPACHO_CAVA,
@@ -725,23 +722,15 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     ''
   );
 
-  const opls = new Set([
-    ...Object.keys(progOpl),
-    ...Object.keys(salOpl),
-    ...Object.keys(totals),
-  ]);
+  const opls = new Set([...Object.keys(progOpl), ...Object.keys(salOpl)]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
+    const pendientes = progOpl[opl] || 0;
     const despachados = salOpl[opl] || 0;
-    let total = Number(totals[opl] || 0);
-    if (despachados > total) {
-      total = despachados;
-      totals[opl] = total;
-    }
+    const total = pendientes + despachados;
     if (total <= 0) return;
-    const pendientes = Math.max(0, total - despachados);
     const pct = Math.min(100, Math.round((despachados / total) * 100));
     const item = {
       opl,
@@ -824,21 +813,11 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
 
   const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
   if (desdeDesp.todosOPL.length > 0) {
-    let operacionFinalizada = desdeDesp.operacionFinalizada;
-    const totalJuegosRD = Number(rd.totalJuegos || 0);
-    if (!consultaSirt && totalJuegosRD === 0 && desdeDesp.todosOPL.length > 0) {
-      desdeDesp.todosOPL.forEach((p) => {
-        p.despachados = p.total;
-        p.pendientes = 0;
-        p.progreso = 100;
-      });
-      operacionFinalizada = true;
-    }
     return {
       success: true,
       turno: desdeDesp.turno || turno,
-      progreso: operacionFinalizada ? [] : desdeDesp.progreso,
-      operacionFinalizada,
+      progreso: desdeDesp.operacionFinalizada ? [] : desdeDesp.progreso,
+      operacionFinalizada: desdeDesp.operacionFinalizada,
       fecha,
       totalJuegos: desdeDesp.totalJuegos,
       todosOPL: desdeDesp.todosOPL,
@@ -1136,7 +1115,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'planilla-logistica-sirt-v2';
+export const GESTOR_BUILD = 'opl-salida-real-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);

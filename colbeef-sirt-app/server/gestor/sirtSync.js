@@ -451,6 +451,7 @@ export async function consultarDecomisosDesdeSirt(range = {}) {
 export async function fetchDespachosCavaRielRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
+  const fechaOp = from || to;
   const sql = `
     SELECT
       ppcr.fecha_salida AS fecha_salida,
@@ -476,10 +477,22 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       AND ppcr.fecha_salida IS NOT NULL
       AND ($2::date IS NULL OR ppcr.fecha_salida::date >= $2::date)
       AND ($3::date IS NULL OR ppcr.fecha_salida::date <= $3::date)
+      AND ($4::date IS NULL OR (
+        ppel.fecha_programacion_despacho IS NOT NULL
+        AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
+            EXTRACT(ISODOW FROM $4::date)
+        AND ppel.fecha_programacion_despacho::date >= ($4::date - ($5::int * INTERVAL '1 day'))
+      ))
     ORDER BY ppcr.fecha_salida DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
+  const { rows } = await query(sql, [
+    SALIDAS_CAVA_LOOKBACK_DAYS,
+    from,
+    to,
+    fechaOp,
+    PROGRAMACION_REZAGO_DAYS,
+  ]);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r, { fechaSalida: true }));
 }
 
