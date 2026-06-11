@@ -1163,7 +1163,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-salida-real-v2';
+export const GESTOR_BUILD = 'opl-salida-real-v3';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1193,7 +1193,14 @@ function mapearOperacionPuestos(resultado) {
 }
 
 export async function getDashboardData(range) {
-  const filtro = normalizarRangoFechas(range || {});
+  let filtro = normalizarRangoFechas(range || {});
+  if (!filtroSirtValido(filtro)) {
+    const persisted = await loadState();
+    const fallback = normalizarRangoFechas(persisted.lastSyncRange || {});
+    filtro = filtroSirtValido(fallback)
+      ? fallback
+      : { from: hoyIsoLocal(), to: hoyIsoLocal() };
+  }
   if (filtroSirtValido(filtro)) {
     try {
       const persisted = await loadState();
@@ -1263,8 +1270,8 @@ export async function getDashboardData(range) {
       const rezagoDias = Number(process.env.SIRT_PROGRAMACION_REZAGO_DAYS || 21);
       const modoProg = despachosFuenteProgramadoTurno();
       if (filasSalidasDia > 0 && totalJuegosDespachar > 0) {
-        juegosTotalesOperacion = totalJuegosDespachar;
         const oplLive = construirProgresoOplDesdeDespachos(sWork, turnoOp, fmtNow());
+        juegosTotalesOperacion = oplLive.totalJuegos || totalJuegosDespachar;
         despachados = oplLive.totalDespachados || 0;
         progreso =
           juegosTotalesOperacion > 0
@@ -1324,7 +1331,7 @@ export async function getDashboardData(range) {
 
       const progresoOPL = preview.success
         ? preview.operacionFinalizada
-          ? preview.todosOPL || []
+          ? []
           : preview.progreso || []
         : [];
 
@@ -1377,79 +1384,7 @@ export async function getDashboardData(range) {
     }
   }
 
-  const s = await loadState();
-  const resSalidas = contarJuegosVisceralesSync(s);
-  const totalSalidas = resSalidas.total || 0;
-  const desp = getDashboardDataDespachosSync(s);
-  const rd = s.resumenDespachos || {};
-  const turnoDespacho = String(rd.turno || desp.turnoDespacho || '').trim();
-  const totalJuegosDespachar = Number(rd.totalJuegos || desp.totalJuegosDespachar || 0);
-  const metaDec = s.resumenDecomisoMeta || {};
-  const totalDecomisos =
-    rd.totalConDecomiso != null && rd.totalConDecomiso !== ''
-      ? Number(rd.totalConDecomiso)
-      : Number(metaDec.totalAnimalesConDecomiso) > 0
-        ? Number(metaDec.totalAnimalesConDecomiso)
-        : 0;
-  const totalDecomisosPiezas =
-    Number(metaDec.totalPiezasVinculadas) > 0
-      ? Number(metaDec.totalPiezasVinculadas)
-      : Math.max(0, (s.resumenRows?.length || 0) - 1);
-  const ultimaActDespachos = desp.ultimaActDespachos || rd.fechaStr || '';
-  const oplPack =
-    turnoDespacho && (s.despachosCavas?.length || (s.oplConfig || []).some((r) => Number(r.total || 0) > 0))
-      ? construirProgresoOplDesdeDespachos(s, turnoDespacho, fmtNow())
-      : null;
-  const juegosTotalesOperacion = oplPack?.totalJuegos || Math.max(totalSalidas, totalJuegosDespachar);
-  const totalJuegosDespacharLive = oplPack?.totalPendientes ?? totalJuegosDespachar;
-  const despachados = oplPack?.totalDespachados ?? Math.max(0, juegosTotalesOperacion - totalJuegosDespachar);
-  const progreso =
-    juegosTotalesOperacion > 0
-      ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
-      : 0;
-  const cr =
-    rd.totalCrudas != null && rd.totalCrudas !== ''
-      ? { success: true, total: Number(rd.totalCrudas) }
-      : turnoDespacho && s.despachosCavas?.length
-        ? contarCrudasProgramadasSync(s, turnoDespacho)
-        : contarCrudasSync(s);
-  const juegosEnCava = totalJuegosDespacharLive > 0 ? totalJuegosDespacharLive : totalSalidas;
-  const progresoOPL = oplPack
-    ? oplPack.operacionFinalizada
-      ? oplPack.todosOPL
-      : oplPack.progreso
-    : [];
-  return {
-    success: true,
-    juegosEnCava,
-    totalSalidas: juegosEnCava,
-    totalDecomisos,
-    totalDecomisosVinculadosCava: totalDecomisos,
-    totalDecomisosPiezas,
-    totalCrudas: cr.total,
-    totalJuegosDespachar: totalJuegosDespacharLive,
-    despachados,
-    juegosTotalesOperacion,
-    turnoDespacho,
-    ultimaActDespachos,
-    progreso,
-    progresoMensaje:
-      despachados +
-      ' despachados · ' +
-      totalJuegosDespacharLive +
-      ' en cava · ' +
-      juegosTotalesOperacion +
-      ' juegos turno' +
-      (turnoDespacho ? ' · ' + turnoDespacho : ''),
-    meta: totalSalidas,
-    consultaSIRT: false,
-    gestorBuild: GESTOR_BUILD,
-    progresoOPL,
-    todosOPL: oplPack?.todosOPL || [],
-    operacionPuestos: mapearOperacionPuestos(rd.resultado || []),
-    totalPuestosOperacion: (rd.resultado || []).length,
-    operacionActualizada: fmtNow(),
-  };
+  return { success: false, message: 'Sin fecha de consulta SIRT válida.' };
 }
 
 function getDashboardDataDespachosSync(s) {

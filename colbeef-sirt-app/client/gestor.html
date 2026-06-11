@@ -1327,7 +1327,7 @@ function loadDashboardData() {
     var iso = el && el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : fechaHoyISO();
     chain.getDashboardData({ date: iso });
   } else {
-    chain.getDashboardData();
+    chain.getDashboardData({ date: fechaHoyISO() });
   }
 }
 function updateDashboard(data) {
@@ -1454,25 +1454,27 @@ function updateDashboard(data) {
     // ── Tarjeta OPL ──
     if (finalizada) {
       renderDashOplFinalizada();
-    } else if (data.consultaSIRT) {
+    } else if (data.consultaSIRT || data.operacionOPLFinalizada != null) {
       if (data.operacionOPLFinalizada) {
-        renderDashOplFinalizada(data.oplPreviewFecha || '');
-      } else if (data.progresoOPL && data.progresoOPL.length > 0) {
-        renderDashOplMini(data.progresoOPL);
+        renderDashOplFinalizada(data.oplPreviewFecha || data.fechaConsulta || '');
       } else if (data.todosOPL && data.todosOPL.length > 0) {
         renderDashOplMini(data.todosOPL);
+      } else if (data.progresoOPL && data.progresoOPL.length > 0) {
+        renderDashOplMini(data.progresoOPL);
       } else if (data.oplPreviewMessage) {
         var esc = escapeHtml(String(data.oplPreviewMessage));
         document.getElementById('dashOplMini').innerHTML =
           '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">' + esc + '</div>';
       } else {
         document.getElementById('dashOplMini').innerHTML =
-          '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">Sin datos OPL calculables para este día (sin despachos o sin juegos VR en estado).</div>';
+          '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">Sin datos OPL para este día.</div>';
       }
-    } else if (data.progresoOPL && data.progresoOPL.length > 0) {
-      renderDashOplMini(data.progresoOPL);
+    } else if (data.operacionOPLFinalizada) {
+      renderDashOplFinalizada(data.oplPreviewFecha || '');
     } else if (data.todosOPL && data.todosOPL.length > 0) {
       renderDashOplMini(data.todosOPL);
+    } else if (data.progresoOPL && data.progresoOPL.length > 0) {
+      renderDashOplMini(data.progresoOPL);
     } else {
       loadDashOPL();
     }
@@ -2589,10 +2591,10 @@ function loadDashOPL() {
       if (!res || !res.success) return;
       if (res.operacionFinalizada) {
         renderDashOplFinalizada(res.fecha);
-      } else if (res.progreso && res.progreso.length > 0) {
-        renderDashOplMini(res.progreso);
       } else if (res.todosOPL && res.todosOPL.length > 0) {
         renderDashOplMini(res.todosOPL);
+      } else if (res.progreso && res.progreso.length > 0) {
+        renderDashOplMini(res.progreso);
       }
     })
     .withFailureHandler(function(){})
