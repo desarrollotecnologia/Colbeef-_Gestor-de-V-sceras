@@ -87,6 +87,25 @@ function hoyIso() {
 }
 
 /**
+ * Animales beneficiados del día — plan de faena (cabecera + detalle producto).
+ * Equivale a: COUNT(*) FROM plan_faena pf JOIN plan_faena_producto pfp WHERE pf.fecha_plan = fecha.
+ */
+export async function fetchAnimalesBeneficiadosDia(range = {}) {
+  const from = normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
+  const to = normDate(range.to) || from;
+  const sql = `
+    SELECT COUNT(*)::int AS total
+    FROM trazabilidad_proceso.plan_faena pf
+    JOIN trazabilidad_proceso.plan_faena_producto pfp
+      ON pfp.id_plan_faena = pf.id
+    WHERE pf.fecha_plan::date >= $1::date
+      AND pf.fecha_plan::date <= $2::date
+  `;
+  const { rows } = await query(sql, [from, to]);
+  return rows[0]?.total ?? 0;
+}
+
+/**
  * Rango automático de decomisos: desde (fecha tope − N días) hasta fecha tope (inclusive).
  * La fecha tope es la del encabezado (`date`/`from`/`to`) o hoy si no se indica.
  */

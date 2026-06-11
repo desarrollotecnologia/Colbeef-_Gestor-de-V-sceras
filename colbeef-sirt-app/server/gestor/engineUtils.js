@@ -36,6 +36,16 @@ export function construirSetSalidasDelDia(despachosCavas) {
   return salidas;
 }
 
+/** Programación en cava sin piezas que ya tienen fecha_salida (evita doble conteo OPL). */
+export function despachosProgramadosSinSalidasDelDia(programados, salidasDelDia) {
+  const salidas = construirSetSalidasDelDia(salidasDelDia);
+  if (!salidas.size) return programados || [];
+  return (programados || []).filter((fila) => {
+    const k = claveSubproductoSalida(fila);
+    return !k || !salidas.has(k);
+  });
+}
+
 /**
  * Quita del stock en cava los subproductos que ya aparecen en salidas del día
  * (evita doble conteo cuando SIRT aún no actualizó fecha_salida).

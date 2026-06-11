@@ -270,8 +270,8 @@
 
     /* ── BENEFICIO ── */
     .beneficio-wrap{text-align:center;margin-bottom:1.5rem;}
-    .beneficio-input{width:160px;padding:0.8rem;font-size:1.4rem;font-weight:700;border:3px solid var(--vp);border-radius:12px;background:#e8f5e8;text-align:center;display:inline-block;}
-    .beneficio-input:focus{outline:none;border-color:var(--vh);}
+    .beneficio-display{font-size:2.4rem;font-weight:900;color:var(--vh);line-height:1.1;padding:0.5rem 0;}
+    .beneficio-nota{font-size:0.78rem;color:var(--gris);margin-top:0.35rem;}
 
     /* ── ALERTAS ── */
     .alert{padding:1rem 1.2rem;border-radius:12px;margin:1rem 0;display:none;font-size:0.9rem;}
@@ -662,8 +662,9 @@
       <div class="inf-section">
         <div class="inf-section-title" style="text-align:center;justify-content:center;">🐄 Beneficio del día</div>
         <div class="beneficio-wrap">
-          <input type="number" id="infBeneficio" class="beneficio-input" placeholder="0" min="0" oninput="autoGuardar()">
-          <div style="color:var(--gris);font-size:0.85rem;margin-top:0.5rem;">animales beneficiados</div>
+          <div class="beneficio-display" id="infBeneficioVal">—</div>
+          <div style="color:var(--gris);font-size:0.85rem;">animales beneficiados</div>
+          <div class="beneficio-nota" id="infBeneficioNota">Consultando SIRT…</div>
         </div>
       </div>
       <div class="inf-section">
@@ -1257,6 +1258,10 @@ function onDashboardFechaChange() {
   }
   if (document.getElementById('viewDespachos').classList.contains('active')) {
     cargarDespachosDesdeSirt({ silent: true });
+  }
+  if (document.getElementById('viewInforme').classList.contains('active')) {
+    syncFechaGlobalAModulos();
+    cargarDatosInforme();
   }
 }
 function setDashboardVistaSirt() {
@@ -2260,10 +2265,10 @@ function cargarDatosInforme() {
     .withSuccessHandler(function(res){
       hideSpinner();
       if(!res||!res.success){showAlert('infAlert','warn','No se pudieron cargar los datos guardados.');_renderInformeDefault();return;}
-      // Sincronizar estado (la fecha del informe = fecha global SIRT del encabezado)
       infState.completos    = res.completos;
       infState.incompletos  = res.incompletos;
       infState.beneficioDia = res.beneficioDia;
+      infState.beneficioFuente = res.beneficioFuente || '';
       infState.stockTotal   = res.stockTotal;
       infState.danados      = res.danados;
       infState.novedades    = res.novedades || [];
@@ -2273,7 +2278,7 @@ function cargarDatosInforme() {
       _renderInforme();
     })
     .withFailureHandler(function(){hideSpinner();_renderInformeDefault();})
-    .getInformeDatos();
+    .getInformeDatos(leerFechaGlobal());
 }
 
 function _renderInformeDefault() {
@@ -2286,7 +2291,12 @@ function _renderInforme() {
   document.getElementById('infFecha').value       = infState.fecha;
   document.getElementById('infCompletos').value   = infState.completos;
   document.getElementById('infIncompletos').value = infState.incompletos;
-  document.getElementById('infBeneficio').value   = infState.beneficioDia;
+  document.getElementById('infBeneficioVal').textContent =
+    infState.beneficioDia != null && infState.beneficioDia !== '' ? infState.beneficioDia : '—';
+  document.getElementById('infBeneficioNota').textContent =
+    infState.beneficioFuente === 'sirt'
+      ? 'Fuente: SIRT · plan de faena · fecha operación ' + infState.fecha
+      : 'Sin conexión SIRT para esta fecha';
   document.getElementById('percStock').value      = infState.stockTotal;
   document.getElementById('percDanados').value    = infState.danados;
   // Novedades
@@ -2419,11 +2429,10 @@ function recalcPercheros(){
 
 // ── Guardar automático con debounce ──
 function autoGuardar(){
-  // Leer inputs al vuelo
-  infState.fecha        = document.getElementById('infFecha').value;
+  infState.fecha        = fechaISOaTexto(getFechaGlobalISO());
+  document.getElementById('infFecha').value = infState.fecha;
   infState.completos    = Number(document.getElementById('infCompletos').value)||0;
   infState.incompletos  = Number(document.getElementById('infIncompletos').value)||0;
-  infState.beneficioDia = Number(document.getElementById('infBeneficio').value)||0;
   infState.stockTotal   = Number(document.getElementById('percStock').value)||100;
   infState.danados      = Number(document.getElementById('percDanados').value)||2;
   clearTimeout(autoGuardarTimer);
@@ -2452,10 +2461,10 @@ function confirmarLimpiarInforme(){
 
 // ── Generar informe ──
 function syncInformeStateFromForm() {
-  infState.fecha        = document.getElementById('infFecha').value;
+  infState.fecha        = fechaISOaTexto(getFechaGlobalISO());
+  document.getElementById('infFecha').value = infState.fecha;
   infState.completos    = Number(document.getElementById('infCompletos').value) || 0;
   infState.incompletos  = Number(document.getElementById('infIncompletos').value) || 0;
-  infState.beneficioDia = Number(document.getElementById('infBeneficio').value) || 0;
   infState.stockTotal   = Number(document.getElementById('percStock').value) || 100;
   infState.danados      = Number(document.getElementById('percDanados').value) || 2;
 }
@@ -2470,6 +2479,7 @@ function generarInforme(){
     inclPerch:     document.getElementById('inclPerch').checked,
     inclDist:      document.getElementById('inclDist').checked,
     origin:        window.location.origin,
+    date:          getFechaGlobalISO(),
     datos:         JSON.parse(JSON.stringify(infState))
   };
   google.script.run

@@ -24,6 +24,7 @@ import {
   parsePuestoOperacion,
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
+  despachosProgramadosSinSalidasDelDia,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -264,9 +265,9 @@ function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
   return conteo;
 }
 
-/** Piezas individuales por clave (OPL): cada subproducto con salida cuenta por separado. */
-export function contarSubproductosPorClave(rows, cols, getClave, turno = '') {
-  const conteo = {};
+/** Agrupa subproductos únicos (animal+tipo) por clave OPL / propietario. */
+function agruparSubproductosPorClave(rows, cols, getClave, turno = '') {
+  const grupos = {};
   (rows || []).forEach((fila) => {
     const id = String(fila[cols.id] ?? '').trim();
     const tipo = String(fila[cols.tipo] ?? '').trim();
@@ -275,7 +276,20 @@ export function contarSubproductosPorClave(rows, cols, getClave, turno = '') {
     if (turno && puesto && !puesto.includes(turno)) return;
     const clave = String(getClave(fila) || '').trim();
     if (!clave) return;
-    conteo[clave] = (conteo[clave] || 0) + 1;
+    const base = codigoBase(id);
+    if (!base) return;
+    if (!grupos[clave]) grupos[clave] = new Set();
+    grupos[clave].add(`${base}|${tipo}`);
+  });
+  return grupos;
+}
+
+/** Piezas individuales por clave (OPL): cada subproducto con salida cuenta por separado (sin duplicados). */
+export function contarSubproductosPorClave(rows, cols, getClave, turno = '') {
+  const grupos = agruparSubproductosPorClave(rows, cols, getClave, turno);
+  const conteo = {};
+  Object.keys(grupos).forEach((clave) => {
+    conteo[clave] = grupos[clave].size;
   });
   return conteo;
 }
@@ -529,6 +543,19 @@ async function sincronizarSalidasCavaDiaEnSesion(s, filtro) {
   }
 }
 
+/** Refresca programación en cava y salidas físicas antes de calcular OPL (evita caché obsoleta). */
+async function refrescarDatosOplDesdeSirt(s) {
+  const filtro = normalizarRangoFechas(s.lastSyncRange || {});
+  if (!filtroSirtValido(filtro)) return;
+  try {
+    const despPack = await fetchDespachosParaConsulta(filtro);
+    s.despachosCavas = despPack.desp;
+  } catch {
+    /* conservar programación en caché si SIRT falla */
+  }
+  await sincronizarSalidasCavaDiaEnSesion(s, filtro);
+}
+
 /** Reinicia totales OPL al cambiar el día de operación (baseline del turno). */
 function asegurarBaselineOplDelDia(s, fechaIso) {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
@@ -537,8 +564,31 @@ function asegurarBaselineOplDelDia(s, fechaIso) {
     (s.oplConfig || []).forEach((r) => {
       r.total = 0;
     });
+    s.oplTotalsSubproducto = {};
     s.oplBaselineFecha = dia;
   }
+}
+
+/** Congela el total a despachar por OPL (crece si entra más programación, no baja). */
+function actualizarBaselineOplSubproductosSync(s, turno, programadosNeto, salidasDelDia) {
+  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from);
+  if (!s.oplTotalsSubproducto || typeof s.oplTotalsSubproducto !== 'object') {
+    s.oplTotalsSubproducto = {};
+  }
+  const mapaOPL = cargarMapaOPL(s);
+  const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
+  const pendSet = agruparSubproductosPorClave(programadosNeto, COLS_DESPACHO_CAVA, claveOpl, turno);
+  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
+
+  const opls = new Set([...Object.keys(pendSet), ...Object.keys(salSet)]);
+  opls.forEach((opl) => {
+    const union = new Set(pendSet[opl] || []);
+    (salSet[opl] || new Set()).forEach((k) => union.add(k));
+    const n = union.size;
+    if (n > 0) {
+      s.oplTotalsSubproducto[opl] = Math.max(Number(s.oplTotalsSubproducto[opl] || 0), n);
+    }
+  });
 }
 
 /** Congela el máximo de juegos vistos por propietario (no baja si salen de cava). */
@@ -577,14 +627,16 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const fechaOp = String(s.lastSyncRange?.from || '').trim();
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
 
+  const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
+  const programadosNeto = despachosProgramadosSinSalidasDelDia(s.despachosCavas || [], salidasDelDia);
+
   const pendOpl = contarSubproductosPorClave(
-    s.despachosCavas || [],
+    programadosNeto,
     COLS_DESPACHO_CAVA,
     claveOpl,
     turno
   );
 
-  const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
   const salOpl = contarSubproductosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
@@ -592,16 +644,26 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     ''
   );
 
-  const opls = new Set([...Object.keys(pendOpl), ...Object.keys(salOpl)]);
+  actualizarBaselineOplSubproductosSync(s, turno, programadosNeto, salidasDelDia);
+
+  const opls = new Set([
+    ...Object.keys(pendOpl),
+    ...Object.keys(salOpl),
+    ...Object.keys(s.oplTotalsSubproducto || {}),
+  ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const pendientes = pendOpl[opl] || 0;
     const despachados = salOpl[opl] || 0;
-    const total = pendientes + despachados;
+    let total = Number(s.oplTotalsSubproducto?.[opl] || 0);
+    if (despachados > total) {
+      total = despachados;
+      s.oplTotalsSubproducto[opl] = total;
+    }
     if (total <= 0) return;
-    const pct = Math.round((despachados / total) * 100);
+    const pendientes = Math.max(0, total - despachados);
+    const pct = Math.min(100, Math.round((despachados / total) * 100));
     const item = {
       opl,
       total,
@@ -984,7 +1046,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-subproducto-v1';
+export const GESTOR_BUILD = 'opl-total-fijo-beneficio-sirt-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1415,6 +1477,7 @@ export async function limpiarDespachos() {
     r.total = 0;
   });
   s.oplBaselineFecha = '';
+  s.oplTotalsSubproducto = {};
   s.oplProgreso = [];
   s.fechaInicioOperacion = null;
   await saveState(s);
@@ -1432,6 +1495,7 @@ export async function limpiarResumen() {
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
+  s.oplTotalsSubproducto = {};
   s.oplProgreso = [];
   await saveState(s);
   return { success: true };
@@ -1468,7 +1532,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
 
   if (!turno) return { success: false, message: 'Sin turno activo.' };
 
-  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
+  await refrescarDatosOplDesdeSirt(s);
   const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
   let todosOPL = desdeDesp.todosOPL;
   let progreso = desdeDesp.progreso;
@@ -2489,8 +2553,9 @@ async function sincronizarOplProgresoDesdeSirt(s) {
   const turno =
     String(s.resumenDespachos?.turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
-  if (!turno || !(s.despachosCavas || []).length) return null;
-  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
+  if (!turno) return null;
+  await refrescarDatosOplDesdeSirt(s);
+  if (!(s.despachosCavas || []).length && !(s.salidasCavaDia || []).length) return null;
   const pack = construirProgresoOplDesdeDespachos(s, turno, fmtNow());
   s.oplProgreso = pack.todosOPL.map((p) => ({ ...p, fecha: fmtNow() }));
   return pack;

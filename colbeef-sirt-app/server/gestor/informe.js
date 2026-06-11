@@ -1,4 +1,5 @@
 import { loadState, saveState } from './store.js';
+import { fetchAnimalesBeneficiadosDia } from './sirtSync.js';
 
 const CAVAS_DEFAULT = [
   { grupo: 'V. Rojas & Blancas (V.Rojas)', carros: 40, capPorCarro: 20, inventario: 0 },
@@ -21,6 +22,45 @@ function fmtDateOnly() {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+function fechaTextoAIso(fecha) {
+  const s = String(fecha || '').trim();
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return iso[0];
+  const dm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dm) {
+    return `${dm[3]}-${String(dm[2]).padStart(2, '0')}-${String(dm[1]).padStart(2, '0')}`;
+  }
+  return null;
+}
+
+function resolverFechaInformeIso(opts, s, datos) {
+  const fromOpt = fechaTextoAIso(opts?.from || opts?.date);
+  if (fromOpt) return fromOpt;
+  const fromDatos = fechaTextoAIso(datos?.fecha);
+  if (fromDatos) return fromDatos;
+  const fromSync = fechaTextoAIso(s.lastSyncRange?.from);
+  if (fromSync) return fromSync;
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function isoAFechaTexto(iso) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return fmtDateOnly();
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+async function enriquecerBeneficioDesdeSirt(datos, fechaIso) {
+  if (!fechaIso) return datos;
+  try {
+    datos.beneficioDia = await fetchAnimalesBeneficiadosDia({ from: fechaIso, to: fechaIso });
+    datos.beneficioFuente = 'sirt';
+  } catch {
+    datos.beneficioFuente = datos.beneficioFuente || 'manual';
+  }
+  return datos;
+}
+
 function escHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
@@ -39,21 +79,25 @@ function normalizarOpcionesInforme(opts) {
   };
 }
 
-export async function getInformeDatos() {
+export async function getInformeDatos(opts = {}) {
   const s = await loadState();
-  if (s.informe) return { success: true, ...s.informe };
-  return {
-    success: true,
-    fecha: fmtDateOnly(),
-    completos: 0,
-    incompletos: 0,
-    beneficioDia: 0,
-    stockTotal: 100,
-    danados: 2,
-    novedades: [],
-    cavas: JSON.parse(JSON.stringify(CAVAS_DEFAULT)),
-    percheros: JSON.parse(JSON.stringify(PERCHEROS_DEFAULT)),
-  };
+  const base = s.informe
+    ? { ...s.informe }
+    : {
+        fecha: fmtDateOnly(),
+        completos: 0,
+        incompletos: 0,
+        beneficioDia: 0,
+        stockTotal: 100,
+        danados: 2,
+        novedades: [],
+        cavas: JSON.parse(JSON.stringify(CAVAS_DEFAULT)),
+        percheros: JSON.parse(JSON.stringify(PERCHEROS_DEFAULT)),
+      };
+  const fechaIso = resolverFechaInformeIso(opts, s, base);
+  base.fecha = isoAFechaTexto(fechaIso);
+  await enriquecerBeneficioDesdeSirt(base, fechaIso);
+  return { success: true, ...base, fechaConsulta: fechaIso };
 }
 
 export async function guardarInformeDatos(payload) {
@@ -85,9 +129,13 @@ export async function generarInformeHTML(payload) {
   if (raw.datos && typeof raw.datos === 'object') {
     d = { success: true, ...raw.datos };
   } else {
-    d = await getInformeDatos();
+    d = await getInformeDatos(raw);
   }
   if (!d.success) return d;
+
+  const fechaIso = resolverFechaInformeIso(raw, await loadState(), d);
+  d.fecha = isoAFechaTexto(fechaIso);
+  await enriquecerBeneficioDesdeSirt(d, fechaIso);
 
   const fecha = String(d.fecha || fmtDateOnly());
   const total = Number(d.completos || 0) + Number(d.incompletos || 0);
@@ -99,6 +147,7 @@ export async function generarInformeHTML(payload) {
       <div class="beneficio-box">
         <div class="beneficio-label">ANIMALES BENEFICIADOS</div>
         <div class="beneficio-num">${Number(d.beneficioDia || 0)}</div>
+        <div style="font-size:10px;color:#666;margin-top:6px;">Fuente: SIRT · plan de faena (fecha_plan)</div>
       </div>
     </div>`
     : '';
