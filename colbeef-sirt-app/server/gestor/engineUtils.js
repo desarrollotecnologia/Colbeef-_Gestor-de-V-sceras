@@ -250,7 +250,7 @@ export function esCruda(valor) {
 
 const TURNOS_EN_RUTA = ['DxL', 'LxM', 'MxM', 'MxJ', 'JxV', 'VxS', 'SxD'];
 
-/** Descompone ruta SIRT: 01028/CIUDAD/DIRECCION/LxM → código, zona, ruta legible. */
+/** Descompone ruta SIRT: sucursal/destino/turno — sucursal=puesto, destino=zona. */
 export function parsePuestoOperacion(puestoFull) {
   const raw = String(puestoFull || '').trim();
   const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
@@ -260,21 +260,45 @@ export function parsePuestoOperacion(puestoFull) {
     const n = parseInt(codigo, 10);
     if (Number.isFinite(n)) codigo = String(n);
   }
-  const zona = sinTurno[1] ? String(sinTurno[1]).toUpperCase() : '';
+  const zona = sinTurno[1] ? String(sinTurno[1]).trim() : '';
   const direccion = sinTurno[2] || '';
   const turno = parts.find((p) => TURNOS_EN_RUTA.includes(p)) || '';
   const etiqueta =
     codigo && zona ? `${codigo} · ${zona}` : codigo || zona || raw.slice(0, 96);
   const ruta = sinTurno.join(' / ');
+  const zonaKey = zona.toUpperCase();
   const clave =
-    codigo && zona
-      ? `${codigo.toUpperCase()}|${zona}`
+    codigo && zonaKey
+      ? `${String(codigo).toUpperCase()}|${zonaKey}`
       : codigo
-        ? codigo.toUpperCase()
+        ? String(codigo).toUpperCase()
         : String(raw)
             .replace(/\s+/g, ' ')
             .toUpperCase();
   return { codigo, zona, direccion, turno, etiqueta, ruta, rutaCompleta: raw, clave };
+}
+
+/**
+ * Logística desde fila Despachos_Cavas:
+ * [8]=destino (zona), [9]=ruta, [10]=sucursal (puesto), [11]=dirección.
+ */
+export function parseLogisticaDespacho(fila) {
+  const zona = String(fila[8] ?? '').trim();
+  const sucursal = String(fila[10] ?? '').trim();
+  const direccion = String(fila[11] ?? '').trim();
+  const puestoFull = String(fila[9] ?? '').trim();
+  const po = parsePuestoOperacion(puestoFull);
+  const suc = sucursal || po.codigo;
+  const z = zona || po.zona;
+  return {
+    zona: z,
+    sucursal: suc,
+    direccion: direccion || po.direccion,
+    etiqueta: suc && z ? `${suc} · ${z}` : po.etiqueta,
+    clave: po.clave,
+    puestoFull: puestoFull || (suc && z ? `${suc}/${z}/` : ''),
+    turno: po.turno,
+  };
 }
 
 export function extraerPuesto(destinoRaw) {

@@ -21,6 +21,7 @@ import {
   decomisoInfoUnificado,
   construirIndiceDecomisosVw,
   claveAgrupacionPuesto,
+  parseLogisticaDespacho,
   parsePuestoOperacion,
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
@@ -157,9 +158,20 @@ function construirResumenDespachosDesdeFilas(
         tieneCruda: false,
         props: {},
         baseProp: {},
+        zonaLogistica: '',
+        sucursalNombre: '',
+        direccionEntrega: '',
       };
     } else if (puestoTexto.length > puestoMeta[clave].puesto.length) {
       puestoMeta[clave].puesto = puestoTexto;
+    }
+    const log = parseLogisticaDespacho(fila);
+    if (log.zona && !puestoMeta[clave].zonaLogistica) puestoMeta[clave].zonaLogistica = log.zona;
+    if (log.sucursal && !puestoMeta[clave].sucursalNombre) {
+      puestoMeta[clave].sucursalNombre = log.sucursal;
+    }
+    if (log.direccion && !puestoMeta[clave].direccionEntrega) {
+      puestoMeta[clave].direccionEntrega = log.direccion;
     }
     const prop = String(fila[4] ?? '').trim().toUpperCase();
     if (prop) puestoMeta[clave].props[prop] = (puestoMeta[clave].props[prop] || 0) + 1;
@@ -228,11 +240,15 @@ function construirResumenDespachosDesdeFilas(
         Object.keys(juegosPorOpl).sort((a, b) => juegosPorOpl[b] - juegosPorOpl[a])[0] ||
         (propTop ? mapaOPL[propTop] || OPL_DEFAULT : OPL_DEFAULT);
       const po = parsePuestoOperacion(meta.puesto);
-      r.etiquetaPuesto = po.etiqueta;
-      r.zonaPuesto = po.zona;
+      r.zonaPuesto = meta.zonaLogistica || po.zona;
+      r.sucursalPuesto = meta.sucursalNombre || po.codigo;
+      r.direccionPuesto = meta.direccionEntrega || po.direccion;
+      r.etiquetaPuesto =
+        meta.sucursalNombre && meta.zonaLogistica
+          ? `${meta.sucursalNombre} · ${meta.zonaLogistica}`
+          : po.etiqueta;
       r.rutaPuesto = po.ruta;
-      r.codigoPuesto =
-        po.codigo || extraerPuesto(meta.puesto) || codigoPuestoPlanilla(meta.puesto);
+      r.codigoPuesto = meta.sucursalNombre || po.codigo || codigoPuestoPlanilla(meta.puesto);
       resultado.push(r);
     });
 
@@ -1120,7 +1136,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'planilla-opl-puesto-v1';
+export const GESTOR_BUILD = 'planilla-logistica-sirt-v2';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1138,6 +1154,7 @@ function mapearOperacionPuestos(resultado) {
         puesto: String(r.puesto || ''),
         etiqueta: String(r.etiquetaPuesto || po.etiqueta),
         zona: String(r.zonaPuesto || po.zona),
+        sucursal: String(r.sucursalPuesto || po.codigo),
         ruta: String(r.rutaPuesto || po.ruta),
         juegos: Number(r.Juegos || 0),
         opl: String(r.opl || ''),
@@ -2027,8 +2044,11 @@ function inferirZonaDesdeRuta(puestoFull) {
   return '';
 }
 
-function resolverZonaPlanilla(puestoFull, mapaPlazas) {
+function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
+  const z = String(zonaExplicita || '').trim();
+  if (z) return z;
   const po = parsePuestoOperacion(puestoFull);
+  if (po.zona) return po.zona;
   const codigo = po.codigo || codigoPuestoPlanilla(puestoFull);
   const claves = [codigo, String(puestoFull || '').split('/')[0].trim()].filter(Boolean);
   for (const k of claves) {
@@ -2066,7 +2086,7 @@ function construirMapaPuestoOpl(despachosCavas, turno, mapaOPL) {
   return mapa;
 }
 
-/** Consolidado planilla: juegos por puesto + OPL (propietario real), alineado con despachos. */
+/** Consolidado planilla: juegos por sucursal + zona SIRT (de.nombre / s.nombre). */
 function construirConsolidadoPlanillaSync(s) {
   const rd = s.resumenDespachos;
   const turno =
@@ -2080,51 +2100,28 @@ function construirConsolidadoPlanillaSync(s) {
   const consolidado = [];
   let totalJuegos = 0;
 
-  const resultado = rd?.resultado || [];
-  if (resultado.length) {
-    resultado.forEach((r) => {
-      const puestoFull = String(r.puesto || '').trim();
-      if (!puestoFull) return;
-      const codigo =
-        String(r.codigoPuesto || '').trim() || extraerPuesto(puestoFull) || codigoPuestoPlanilla(puestoFull);
-      const plaza = resolverZonaPlanilla(puestoFull, s.plazasMap);
-      const porOpl =
-        r.juegosPorOpl && Object.keys(r.juegosPorOpl).length
-          ? r.juegosPorOpl
-          : { [String(r.opl || OPL_DEFAULT).trim() || OPL_DEFAULT]: Number(r.Juegos || 0) };
-      Object.keys(porOpl).forEach((opl) => {
-        const juegos = Number(porOpl[opl] || 0);
-        if (juegos <= 0) return;
-        totalJuegos += juegos;
-        consolidado.push([
-          codigo,
-          'Visceras Rojas',
-          '',
-          puestoFull,
-          codigo,
-          plaza,
-          opl,
-          juegos,
-          fechaHoy,
-          turno,
-        ]);
-      });
-    });
-    if (consolidado.length) return { consolidado, totalJuegos, turno, fechaHoy };
-  }
-
   const grupos = {};
   filasDespachoTurnoOperacion(s.despachosCavas || [], turno).forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
-    const puestoFull = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    const log = parseLogisticaDespacho(fila);
+    const puestoFull = log.puestoFull || String(fila[9] ?? '').trim();
     if (!id || !tipo || !puestoFull || !TIPOS_PRODUCTO.includes(tipo)) return;
     const clave = claveAgrupacionPuesto(puestoFull);
     const opl = claveOplDesdeFila(fila, mapaOPL);
     const base = codigoBase(id);
     if (!base) return;
     const gk = `${clave}|${opl}`;
-    if (!grupos[gk]) grupos[gk] = { puestoFull, opl, animales: {} };
+    if (!grupos[gk]) {
+      grupos[gk] = {
+        puestoFull,
+        opl,
+        zona: log.zona,
+        sucursal: log.sucursal,
+        direccion: log.direccion,
+        animales: {},
+      };
+    }
     if (!grupos[gk].animales[base]) grupos[gk].animales[base] = new Set();
     grupos[gk].animales[base].add(tipo);
   });
@@ -2135,21 +2132,59 @@ function construirConsolidadoPlanillaSync(s) {
       if (tieneJuegoCompleto(tipos)) juegos++;
     });
     if (juegos <= 0) return;
-    const codigo = codigoPuestoPlanilla(g.puestoFull);
-    const plaza = resolverZonaPlanilla(g.puestoFull, s.plazasMap);
+    const sucursal = g.sucursal || codigoPuestoPlanilla(g.puestoFull);
+    const zona =
+      g.zona ||
+      resolverZonaPlanilla(g.puestoFull, s.plazasMap, g.zona);
     totalJuegos += juegos;
     consolidado.push([
-      codigo,
+      sucursal,
       'Visceras Rojas',
-      '',
+      g.direccion || '',
       g.puestoFull,
-      codigo,
-      plaza,
+      sucursal,
+      zona,
       g.opl,
       juegos,
       fechaHoy,
       turno,
     ]);
+  });
+
+  if (consolidado.length) return { consolidado, totalJuegos, turno, fechaHoy };
+
+  const resultado = rd?.resultado || [];
+  resultado.forEach((r) => {
+    const puestoFull = String(r.puesto || '').trim();
+    if (!puestoFull) return;
+    const sucursal =
+      String(r.sucursalPuesto || r.codigoPuesto || '').trim() ||
+      extraerPuesto(puestoFull) ||
+      codigoPuestoPlanilla(puestoFull);
+    const zona =
+      String(r.zonaPuesto || '').trim() ||
+      resolverZonaPlanilla(puestoFull, s.plazasMap, r.zonaPuesto);
+    const porOpl =
+      r.juegosPorOpl && Object.keys(r.juegosPorOpl).length
+        ? r.juegosPorOpl
+        : { [String(r.opl || OPL_DEFAULT).trim() || OPL_DEFAULT]: Number(r.Juegos || 0) };
+    Object.keys(porOpl).forEach((opl) => {
+      const juegos = Number(porOpl[opl] || 0);
+      if (juegos <= 0) return;
+      totalJuegos += juegos;
+      consolidado.push([
+        sucursal,
+        'Visceras Rojas',
+        String(r.direccionPuesto || ''),
+        puestoFull,
+        sucursal,
+        zona,
+        opl,
+        juegos,
+        fechaHoy,
+        turno,
+      ]);
+    });
   });
 
   return consolidado.length ? { consolidado, totalJuegos, turno, fechaHoy } : null;
@@ -2254,14 +2289,11 @@ export async function getListaOPLsParaPlanilla() {
 
 export async function generarPlanillaPuntos(opl) {
   const s = await loadState();
-  if (!s.consolidado?.length) {
-    const pack = consolidarDesdeResumenDespachos(s);
-    if (pack) {
-      s.consolidado = pack.consolidado;
-      await saveState(s);
-    }
-  }
-  if (!s.consolidado?.length) {
+  const pack = construirConsolidadoPlanillaSync(s);
+  if (pack) {
+    s.consolidado = pack.consolidado;
+    await saveState(s);
+  } else if (!s.consolidado?.length) {
     return { success: false, message: "No hay datos. Ejecuta 'Procesar Planilla' para la fecha operación." };
   }
   const zonasMap = {};
@@ -2274,7 +2306,7 @@ export async function generarPlanillaPuntos(opl) {
     const zona = String(fila[5] ?? 'SIN ZONA').trim();
     const puestoFull = String(fila[3] ?? '').trim();
     const po = parsePuestoOperacion(puestoFull);
-    const puestoLabel = po.etiqueta || String(fila[0] ?? '').trim() || puestoFull;
+    const sucursal = String(fila[0] ?? '').trim() || po.codigo;
     let cantidad = Number(fila[7] ?? 0);
     if (Number.isNaN(cantidad)) cantidad = 0;
     if (!turno && fila[9]) turno = String(fila[9]);
@@ -2284,9 +2316,9 @@ export async function generarPlanillaPuntos(opl) {
     totalOPL += cantidad;
     if (!zonasMap[zona]) zonasMap[zona] = { total: 0, puestosMap: {} };
     zonasMap[zona].total += cantidad;
-    const pk = po.clave || puestoFull;
+    const pk = sucursal && zona ? `${sucursal}|${zona.toUpperCase()}` : po.clave || puestoFull;
     if (!zonasMap[zona].puestosMap[pk]) {
-      zonasMap[zona].puestosMap[pk] = { etiqueta: puestoLabel, cantidad: 0 };
+      zonasMap[zona].puestosMap[pk] = { etiqueta: sucursal, cantidad: 0 };
     }
     zonasMap[zona].puestosMap[pk].cantidad += cantidad;
   });
@@ -2314,11 +2346,13 @@ export async function generarPlanillaPuntos(opl) {
     const cantidad = Number(fila[7] ?? 0);
     if (!puestoFull || cantidad <= 0) return;
     const po = parsePuestoOperacion(puestoFull);
-    const zona = String(fila[5] ?? '').trim();
+    const sucursal = String(fila[0] ?? '').trim() || po.codigo;
+    const zonaFila = String(fila[5] ?? '').trim() || po.zona;
     puestosFlat.push({
       puesto: puestoFull,
-      etiqueta: po.etiqueta,
-      zona: po.zona || zona,
+      etiqueta: sucursal && zonaFila ? `${sucursal} · ${zonaFila}` : po.etiqueta,
+      sucursal,
+      zona: zonaFila,
       cantidad: Math.round(cantidad * 100) / 100,
       opl: oplReg,
     });

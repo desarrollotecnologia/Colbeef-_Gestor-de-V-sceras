@@ -29,10 +29,13 @@ const DECOMISO_LOOKBACK_DAYS = Math.max(
 
 const TIPOS_SUBPRODUCTO = `('Visceras Rojas', 'Visceras Blancas', 'Cabeza', 'Patas y Manos')`;
 
-/** Puesto SIRT con sufijo de turno real (de.nombre), sin inyectar turno del calendario. */
-const SQL_PUESTO_TURNO_REAL = `
-  (LPAD(COALESCE(s.id::text, '0'), 5, '0') || '/' ||
-   TRIM(BOTH '/' FROM COALESCE(NULLIF(TRIM(de.nombre), ''), NULLIF(TRIM(s.nombre), ''), 'SIN CIUDAD')) || '/')`;
+/** Ruta logística SIRT: sucursal (puesto) / destino (zona) / — turno se añade en JS. */
+const SQL_PUESTO_LOGISTICO = `
+  (TRIM(COALESCE(NULLIF(TRIM(s.nombre), ''), 'STOCK INTERNO')) || '/' ||
+   TRIM(BOTH '/' FROM COALESCE(NULLIF(TRIM(de.nombre), ''), 'SIN RUTA')) || '/')`;
+
+/** @deprecated Usar SQL_PUESTO_LOGISTICO */
+const SQL_PUESTO_TURNO_REAL = SQL_PUESTO_LOGISTICO;
 
 /** Joins comunes a consultas de cava (en stock y salidas). */
 const SQL_CAVA_FROM = `
@@ -141,7 +144,30 @@ const SQL_DECOMISO_FROM = `
 `;
 
 function buildPuestoDespacho(r) {
-  return [r.sucursal_origen || '', r.destino || '', r.riel ? `Riel ${r.riel}` : ''].filter(Boolean).join(' / ');
+  const suc = String(r.sucursal_origen || r.sucursal || '').trim();
+  const dest = String(r.destino || r.destino_zona || '').trim();
+  if (suc && dest) return `${suc}/${dest}/`;
+  return [suc, dest, r.riel ? `Riel ${r.riel}` : ''].filter(Boolean).join(' / ');
+}
+
+/** Matriz Despachos_Cavas: [8]=destino/zona, [9]=ruta puesto, [10]=sucursal, [11]=dirección. */
+function mapFilaDespachoCavaMatrix(r, opts = {}) {
+  const row = new Array(13).fill('');
+  if (opts.fechaSalida) row[0] = fmtDateCell(r.fecha_salida);
+  else row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
+  row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
+  row[2] = r.riel || '';
+  row[3] = r.codigo || '';
+  row[4] = r.propietario || '';
+  row[5] = r.peso_pie || '';
+  row[6] = r.cava_nombre || '';
+  row[7] = r.subproducto || r.descripcion || '';
+  row[8] = String(r.destino || '').trim();
+  row[9] = String(r.puesto_turno || r.puesto_ruta || buildPuestoDespacho(r)).trim();
+  row[10] = String(r.sucursal_origen || r.sucursal || '').trim();
+  row[11] = String(r.direccion_entrega || r.direccion || '').trim();
+  row[12] = r.observaciones || '';
+  return row;
 }
 
 /** Puesto/destino como en ERP (orden · placa · producto); el turno suele ir en orden_despacho (/LxM/). */
@@ -435,11 +461,11 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
       COALESCE(s.nombre, '')::text AS sucursal_origen,
       COALESCE(de.nombre, '')::text AS destino,
-      split_part(COALESCE(de.nombre, ''), '/', 1) AS codigo_nueva_sucursal,
+      COALESCE(s.direccion, '')::text AS direccion_entrega,
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
-      ${SQL_PUESTO_TURNO_REAL} AS puesto_turno
+      ${SQL_PUESTO_LOGISTICO} AS puesto_turno
     ${SQL_CAVA_FROM}
     LEFT JOIN trazabilidad_proceso.cava c
       ON c.id = ppcr.id_cava
@@ -454,21 +480,7 @@ export async function fetchDespachosCavaRielRows(range = {}) {
     LIMIT 80000
   `;
   const { rows } = await query(sql, [SALIDAS_CAVA_LOOKBACK_DAYS, from, to]);
-  return rows.map((r) => {
-    const row = new Array(13).fill('');
-    row[0] = fmtDateCell(r.fecha_salida);
-    row[1] = fmtDateCell(r.fecha_ingreso);
-    row[3] = r.codigo || '';
-    row[4] = r.propietario || '';
-    row[5] = r.peso_pie || '';
-    row[6] = r.cava_nombre || '';
-    row[7] = r.descripcion || '';
-    row[8] = r.destino || '';
-    row[9] = r.puesto_turno || buildPuestoDespacho(r);
-    row[10] = String(r.codigo_nueva_sucursal || '').trim();
-    row[12] = r.observaciones || '';
-    return row;
-  });
+  return rows.map((r) => mapFilaDespachoCavaMatrix(r, { fechaSalida: true }));
 }
 
 /**
@@ -489,10 +501,11 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       COALESCE(NULLIF(TRIM(e3.nombre), ''), 'SIN PROPIETARIO')::text AS propietario,
       COALESCE(de.nombre, '')::text AS destino,
       COALESCE(s.nombre, '')::text AS sucursal_origen,
+      COALESCE(s.direccion, '')::text AS direccion_entrega,
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
-      ${SQL_PUESTO_TURNO_REAL} AS puesto_turno
+      ${SQL_PUESTO_LOGISTICO} AS puesto_turno
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
     JOIN trazabilidad_proceso.parte_producto pp
       ON pp.id = ppcr.id_parte_producto
@@ -527,22 +540,7 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
     LIMIT 80000
   `;
   const { rows } = await query(sql, [PROGRAMACION_REZAGO_DAYS, fechaOp]);
-  return rows.map((r) => {
-    const row = new Array(13).fill('');
-    row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
-    row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
-    row[2] = r.riel || '';
-    row[3] = r.codigo || '';
-    row[4] = r.propietario || '';
-    row[5] = r.peso_pie || '';
-    row[6] = r.cava_nombre || '';
-    row[7] = r.subproducto || '';
-    row[8] = r.destino || '';
-    row[9] = r.puesto_turno || '';
-    row[10] = String(r.puesto_turno || '').split('/')[0] || '';
-    row[12] = r.observaciones || '';
-    return row;
-  });
+  return rows.map((r) => mapFilaDespachoCavaMatrix(r));
 }
 
 /**

@@ -3079,10 +3079,8 @@ function renderPlanilla(res) {
         return (
           '<tr style="border-bottom:1px solid #d1fae5;">' +
           '<td style="padding:6px 10px;font-weight:600;">' +
-          escapeHtml(p.etiqueta || p.puesto) +
-          '<div style="font-size:0.72rem;color:var(--gris);font-weight:400;">' +
-          escapeHtml(p.puesto) +
-          '</div></td>' +
+          escapeHtml(p.sucursal || p.etiqueta || p.puesto) +
+          '</td>' +
           '<td style="padding:6px 10px;font-size:0.78rem;">' +
           escapeHtml(p.zona || '—') +
           '</td>' +
@@ -3096,8 +3094,8 @@ function renderPlanilla(res) {
       '<div style="width:100%;max-width:720px;margin:0 auto;background:white;border-radius:12px;border:1px solid #b7e4c7;overflow:hidden;">' +
       '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">' +
       '<thead><tr style="background:#259c39;color:white;">' +
-      '<th style="padding:8px 10px;text-align:left;">Puesto</th>' +
-      '<th style="padding:8px 10px;text-align:left;">Zona ref.</th>' +
+      '<th style="padding:8px 10px;text-align:left;">Sucursal (puesto)</th>' +
+      '<th style="padding:8px 10px;text-align:left;">Zona (destino)</th>' +
       '<th style="padding:8px 10px;text-align:center;">Juegos VR</th>' +
       '</tr></thead><tbody>' +
       filasP +
@@ -3123,7 +3121,7 @@ function renderPlanilla(res) {
       + z.total + '</span></div>'
       + '<table style="width:100%;border-collapse:collapse;">'
       + '<thead><tr>'
-      + '<th style="background:#e8f5e9;padding:4px 8px;text-align:left;font-size:0.75rem;color:#374151;">Código · zona</th>'
+      + '<th style="background:#e8f5e9;padding:4px 8px;text-align:left;font-size:0.75rem;color:#374151;">Sucursal</th>'
       + '<th style="background:#e8f5e9;padding:4px 8px;text-align:center;font-size:0.75rem;color:#374151;">Cant</th>'
       + '</tr></thead>'
       + '<tbody>' + filas + '</tbody>'
