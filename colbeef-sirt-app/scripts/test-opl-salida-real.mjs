@@ -52,6 +52,16 @@ const pack = construirProgresoOplDesdeDespachos(
     despachosCavas: enCava,
     salidasCavaDia: salidas,
     oplConfig: [{ propietario: prop, opl, total: 0 }],
+    resumenDespachos: {
+      turno,
+      resultado: [
+        {
+          puesto: puesto,
+          Juegos: 1,
+          juegosPorOpl: { [opl]: 1 },
+        },
+      ],
+    },
   },
   turno,
   '11/06/2026 16:00'

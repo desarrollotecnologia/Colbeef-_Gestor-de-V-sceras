@@ -25,7 +25,6 @@ import {
   parsePuestoOperacion,
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
-  despachosProgramadosSinSalidasDelDia,
   filasDespachoTurnoOperacion,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
@@ -583,8 +582,25 @@ function claveOplDesdeFila(fila, mapaOPL) {
 
 /** Salidas físicas del día operación (fecha_salida en SIRT). */
 function filasSalidasCavaDelDia(rows, fechaOpIso) {
-  if (!fechaOpIso) return rows || [];
+  if (!fechaOpIso) return [];
   return (rows || []).filter((fila) => isoDesdeCeldaFecha(fila[0]) === fechaOpIso);
+}
+
+function hoyIsoLocal() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Juegos en cava por OPL (misma base que tablero Despachos). */
+function juegosPorOplDesdeResumenDespachos(resumenDespachos) {
+  const porOpl = {};
+  (resumenDespachos?.resultado || []).forEach((r) => {
+    const jpo = r.juegosPorOpl || {};
+    Object.keys(jpo).forEach((opl) => {
+      const n = Number(jpo[opl] || 0);
+      if (n > 0) porOpl[opl] = (porOpl[opl] || 0) + n;
+    });
+  });
+  return porOpl;
 }
 
 /** Carga salidas con fecha_salida del rango operativo (para marcar despachados). */
@@ -604,16 +620,43 @@ async function sincronizarSalidasCavaDiaEnSesion(s, filtro) {
 /** Refresca programación en cava y salidas físicas antes de calcular OPL (evita caché obsoleta). */
 async function refrescarDatosOplDesdeSirt(s) {
   const filtro = normalizarRangoFechas(s.lastSyncRange || {});
-  if (!filtroSirtValido(filtro)) return;
+  if (!filtroSirtValido(filtro)) return false;
+  let ok = true;
   try {
     const despPack = await fetchDespachosParaConsulta(filtro);
     s.despachosCavas = despPack.desp;
     const turno = resolverTurnoOperacion(filtro, s.despachosCavas || []);
     if (s.resumenDespachos) s.resumenDespachos.turno = turno;
   } catch {
-    /* conservar programación en caché si SIRT falla */
+    ok = false;
   }
-  await sincronizarSalidasCavaDiaEnSesion(s, filtro);
+  try {
+    await sincronizarSalidasCavaDiaEnSesion(s, filtro);
+  } catch {
+    ok = false;
+  }
+  return ok;
+}
+
+/** Reconstruye resumen Despachos (juegos en cava por OPL/puesto) tras refrescar SIRT. */
+function reconstruirResumenDespachosOplSync(s, turno) {
+  const indiceVw =
+    s.decomisosVwFilas?.length > 0 ? construirIndiceDecomisosVw(s.decomisosVwFilas) : null;
+  const rd = construirResumenDespachosDesdeFilas(
+    s.despachosCavas || [],
+    turno,
+    s.reporteDecomisos || [],
+    s.estadoFromRow12 || [],
+    cargarMapaOPL(s),
+    { indiceVw }
+  );
+  const prev = s.resumenDespachos || {};
+  s.resumenDespachos = {
+    ...rd,
+    fechaStr: fmtNow(),
+    historicoGuardadoFlag: prev.historicoGuardadoFlag || '',
+  };
+  return rd;
 }
 
 /** Reinicia totales OPL al cambiar el día o el turno de operación. */
@@ -696,7 +739,8 @@ function actualizarBaselineOplDesdeDespachosSync(s, turno) {
 
 export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const mapaOPL = cargarMapaOPL(s);
-  const fechaOp = String(s.lastSyncRange?.from || '').trim();
+  const fechaOp =
+    String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
   const turnoOp =
     String(turno || '').trim() ||
@@ -707,28 +751,32 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  const programadosTurno = despachosProgramadosSinSalidasDelDia(programadosBruto, salidasTurno);
 
+  const enCavaOpl = juegosPorOplDesdeResumenDespachos(s.resumenDespachos);
+  const progFallback = contarJuegosCompletosPorClave(
+    programadosBruto,
+    COLS_DESPACHO_CAVA,
+    claveOpl,
+    ''
+  );
   const salOpl = contarJuegosCompletosPorClave(
     salidasTurno,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
-  const progOpl = contarJuegosCompletosPorClave(
-    programadosTurno,
-    COLS_DESPACHO_CAVA,
-    claveOpl,
-    ''
-  );
 
-  const opls = new Set([...Object.keys(progOpl), ...Object.keys(salOpl)]);
+  const opls = new Set([
+    ...Object.keys(enCavaOpl),
+    ...Object.keys(progFallback),
+    ...Object.keys(salOpl),
+  ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const pendientes = progOpl[opl] || 0;
-    const despachados = salOpl[opl] || 0;
+    const pendientes = Number(enCavaOpl[opl] ?? progFallback[opl] ?? 0);
+    const despachados = Number(salOpl[opl] || 0);
     const total = pendientes + despachados;
     if (total <= 0) return;
     const pct = Math.min(100, Math.round((despachados / total) * 100));
@@ -1115,7 +1163,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-salida-real-v1';
+export const GESTOR_BUILD = 'opl-salida-real-v2';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1462,7 +1510,7 @@ export async function procesarDespachos(turnoForzado) {
   await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
   await saveState(s);
   try {
-    await calcularProgresoOPL(rd.totalJuegos);
+    await calcularProgresoOPL();
   } catch (_) {}
   return {
     success: true,
@@ -1577,46 +1625,30 @@ export async function limpiarResumen() {
   return { success: true };
 }
 
-export async function calcularProgresoOPL(totalJuegosParam) {
+export async function calcularProgresoOPL(_totalJuegosParam) {
   const s = await loadState();
   const fecha = fmtNow();
-  const rd = s.resumenDespachos;
-  const turno = String(rd.turno || '').trim();
+  const rdPrev = s.resumenDespachos || {};
 
-  if (totalJuegosParam !== undefined && Number(totalJuegosParam) === 0) {
-    const porOPL0 = {};
-    s.oplConfig.forEach((r) => {
-      const opl = String(r.opl || '').trim() || OPL_DEFAULT;
-      const total = Number(r.total || 0);
-      if (total > 0) porOPL0[opl] = (porOPL0[opl] || 0) + total;
-    });
-    s.oplProgreso = Object.keys(porOPL0).map((opl) => ({
-      opl,
-      total: porOPL0[opl],
-      despachados: porOPL0[opl],
-      pendientes: 0,
-      progreso: 100,
-      fecha,
-    }));
-    if (turno && rd.historicoGuardadoFlag !== '1') {
-      await guardarHistoricoOPLInternal(s, ESTADO_COMPLETO);
-      rd.historicoGuardadoFlag = '1';
-    }
-    await saveState(s);
-    return { success: true, turno: turno || '', progreso: [], operacionFinalizada: true, fecha, totalJuegos: 0 };
+  if (!filtroSirtValido(normalizarRangoFechas(s.lastSyncRange || {}))) {
+    s.lastSyncRange = { from: hoyIsoLocal(), to: hoyIsoLocal() };
   }
 
   await refrescarDatosOplDesdeSirt(s);
   const turnoLive =
+    String(rdPrev.turno || '').trim() ||
     String(s.resumenDespachos?.turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
-  if (s.resumenDespachos) s.resumenDespachos.turno = turnoLive;
-  if (!turnoLive) return { success: false, message: 'Sin turno activo. Sincronice despachos desde SIRT.' };
+  if (!turnoLive) {
+    return { success: false, message: 'Sin turno activo. Sincronice despachos desde SIRT.' };
+  }
+
+  reconstruirResumenDespachosOplSync(s, turnoLive);
 
   const desdeDesp = construirProgresoOplDesdeDespachos(s, turnoLive, fecha);
-  let todosOPL = desdeDesp.todosOPL;
-  let progreso = desdeDesp.progreso;
-  let operacionFinalizada = desdeDesp.operacionFinalizada;
+  const todosOPL = desdeDesp.todosOPL;
+  const progreso = desdeDesp.progreso;
+  const operacionFinalizada = desdeDesp.operacionFinalizada;
 
   if (!todosOPL.length) {
     const nJuegos = Number(s.resumenDespachos?.totalJuegos || 0);
@@ -1627,9 +1659,9 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     return { success: false, message: msg };
   }
 
-  if (operacionFinalizada && rd.historicoGuardadoFlag !== '1') {
+  if (operacionFinalizada && rdPrev.historicoGuardadoFlag !== '1') {
     await guardarHistoricoOPLInternal(s, ESTADO_COMPLETO);
-    rd.historicoGuardadoFlag = '1';
+    s.resumenDespachos.historicoGuardadoFlag = '1';
   }
 
   s.oplProgreso = todosOPL.map((p) => ({ ...p, fecha }));
@@ -1643,7 +1675,9 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     fecha,
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
+    totalPendientes: desdeDesp.totalPendientes,
     unidad: desdeDesp.unidad || 'juegos',
+    gestorBuild: GESTOR_BUILD,
   };
 }
 
