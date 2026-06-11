@@ -454,12 +454,6 @@
         <div class="modulo-desc">PDF generados en el servidor: el usuario los descarga desde el navegador (sin subir a Drive).</div>
         <span class="modulo-badge">Activo</span>
       </div>
-      <div class="modulo-card" onclick="showAnalytics()">
-        <div class="modulo-icono">📈</div>
-        <div class="modulo-nombre">Analytics OPL</div>
-        <div class="modulo-desc">KPIs y gráficos por OPL: histórico de cierres + operación de hoy con datos SIRT (despachados / en cava).</div>
-        <span class="modulo-badge">Activo</span>
-      </div>
       <div class="modulo-card" onclick="showCrudas()">
         <div class="modulo-icono">🟡</div>
         <div class="modulo-nombre">Crudas</div>
@@ -618,6 +612,7 @@
     <!-- Checkboxes incluir -->
     <div class="incluir-bar">
       <strong>Incluir en el informe:</strong>
+      <label class="check-label"><input type="checkbox" id="inclBeneficio" checked> 🐄 Beneficio</label>
       <label class="check-label"><input type="checkbox" id="inclInv" checked> 📦 Inventario</label>
       <label class="check-label"><input type="checkbox" id="inclCavas" checked> 🏠 Cavas</label>
       <label class="check-label"><input type="checkbox" id="inclPerch" checked> 🛒 Percheros</label>
@@ -745,98 +740,6 @@
     <div class="btn-row" style="justify-content:center;margin-top:1.5rem;">
       <button class="btn btn-danger" onclick="confirmarLimpiarInforme()">🗑 Limpiar Todo</button>
       <button class="btn btn-primary" onclick="generarInforme()" style="font-size:1rem;padding:1rem 2.5rem;">📊 GENERAR INFORME OFICIAL</button>
-    </div>
-  </div>
-
-  <!-- ═══ ANALYTICS OPL ═══ -->
-  <div id="viewAnalytics" class="view-detail">
-    <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
-    <h2 style="color:var(--vp);margin-bottom:0.3rem;">📈 Analytics OPL</h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Métricas por operador logístico con los <strong>mismos valores</strong> que el programa (total turno, despachados que salieron de cava, pendientes en cava).
-      Incluye la <strong>operación de hoy</strong> si hay datos SIRT cargados; el histórico se consolida al <strong>cerrar operación</strong> en Despachos.
-    </p>
-    <p id="anlFuenteVivo" style="display:none;font-size:0.78rem;color:#92400e;background:#fffbeb;border:1px solid #fcd34d;border-radius:8px;padding:0.5rem 0.75rem;margin-bottom:1rem;"></p>
-
-    <!-- Fila 1: OPL + botones -->
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:1rem;flex-wrap:wrap;">
-      <div style="display:flex;align-items:center;gap:0.5rem;">
-        <label style="font-size:0.85rem;color:var(--gris);font-weight:600;">OPL:</label>
-        <select id="anlOplSelect" class="opl-select" style="min-width:160px;" onchange="cargarAnalytics()">
-          <option>Todos los OPLs</option>
-        </select>
-      </div>
-      <button class="btn btn-secondary" onclick="cargarAnalytics()" style="padding:0.5rem 1.2rem;font-size:0.85rem;">🔄 Actualizar</button>
-      <button class="btn btn-primary" onclick="exportarReporteOPL()" style="padding:0.5rem 1.2rem;font-size:0.85rem;">📄 Exportar PDF</button>
-    </div>
-
-    <!-- Fila 2: Selector año + meses -->
-    <div style="background:var(--blanco);border-radius:var(--radio);padding:1rem 1.2rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);margin-bottom:1.5rem;">
-      <div style="display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:0.5rem;">
-          <label style="font-size:0.8rem;color:var(--gris);font-weight:600;">AÑO:</label>
-          <select id="anlAnioSelect" style="font-size:0.85rem;padding:4px 10px;border-radius:6px;border:1px solid var(--vc);" onchange="onAnioChange()">
-            <option>2026</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:0.3rem;flex-wrap:wrap;" id="anlMesesRow">
-          <!-- Se llena dinámicamente -->
-        </div>
-        <div style="font-size:0.75rem;color:var(--gris);margin-left:auto;">
-          Clic para seleccionar · <span id="anlMesesSelLabel" style="color:var(--vp);font-weight:600;">Sin selección</span>
-        </div>
-      </div>
-    </div>
-
-    <!-- KPIs -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:1rem;margin-bottom:2rem;" id="anlKpis">
-      <div class="stat-card"><div class="stat-label">Cargando...</div><div class="stat-valor" style="font-size:1.5rem;">⏳</div></div>
-    </div>
-
-    <div class="alert" id="anlAlert"></div>
-
-    <!-- Gráficos -->
-    <div style="display:grid;grid-template-columns:1fr;gap:1.5rem;margin-bottom:1.5rem;">
-
-      <!-- Evolución 14 días -->
-      <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-        <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;" id="anlChart1Title">Evolución diaria — últimos 14 días</div>
-        <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;" id="anlChart1Sub">Despachados (salieron de cava) y pendientes (en cava)</div>
-        <div style="position:relative;height:220px;"><canvas id="anlChart1"></canvas></div>
-      </div>
-
-      <!-- Ranking + Días semana -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
-        <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-          <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Ranking por OPL</div>
-          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Total despachado mes actual</div>
-          <div style="position:relative;height:220px;"><canvas id="anlChart2"></canvas></div>
-        </div>
-        <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-          <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Días con más movimiento</div>
-          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;" id="anlChart3Sub">Promedio histórico por día de semana</div>
-          <div style="position:relative;height:220px;"><canvas id="anlChart3"></canvas></div>
-        </div>
-      </div>
-
-      <!-- Eficiencia + Backlog -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;">
-        <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-          <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Eficiencia operacional</div>
-          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Completas vs con pendientes</div>
-          <div style="position:relative;height:200px;"><canvas id="anlChart4"></canvas></div>
-        </div>
-        <div style="background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);">
-          <div style="font-size:0.9rem;font-weight:700;color:var(--vp);margin-bottom:0.3rem;">Backlog por OPL</div>
-          <div style="font-size:0.78rem;color:var(--gris);margin-bottom:1rem;">Pendientes acumulados históricos</div>
-          <div class="table-wrap" style="margin-top:0;max-height:220px;overflow-y:auto;">
-            <table style="font-size:0.82rem;">
-              <thead><tr><th>OPL</th><th class="num">Ops c/pend</th><th class="num">Total pend</th><th class="num">Eficiencia</th></tr></thead>
-              <tbody id="anlBacklogBody"><tr><td colspan="4" class="empty-state">Sin datos</td></tr></tbody>
-            </table>
-          </div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -1005,7 +908,8 @@
       <div id="oplModalProgreso">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
           <span style="font-size:0.82rem;color:var(--gris);" id="oplModalFecha"></span>
-          <button class="btn btn-primary" style="padding:0.5rem 1.2rem;font-size:0.85rem;" onclick="recalcularOPLModal()">🔄 Recalcular</button>
+          <span style="font-size:0.72rem;color:var(--gris);" id="oplModalAutoHint">Actualización automática cada 30 s</span>
+          <button class="btn btn-primary" style="padding:0.5rem 1.2rem;font-size:0.85rem;" onclick="recalcularOPLModal()">🔄 Recalcular ahora</button>
         </div>
         <div class="alert" id="oplModalAlert"></div>
         <div id="oplModalProgresoContainer">
@@ -1017,9 +921,9 @@
       <div id="oplModalConfig" style="display:none;">
         <div class="alert" id="oplModalConfigAlert"></div>
         <!-- Propietarios del archivo actual -->
-        <div id="oplModalPropSection" style="display:none;">
-          <p style="font-size:0.82rem;color:var(--gris);margin-bottom:0.8rem;">
-            📋 Propietarios detectados en el archivo — ajusta el OPL si es necesario:
+        <div id="oplModalPropSection">
+          <p style="font-size:0.82rem;color:var(--gris);margin-bottom:0.8rem;" id="oplModalPropIntro">
+            📋 Propietarios detectados en despachos del turno — ajusta el OPL si es necesario:
           </p>
           <div class="table-wrap" style="margin-top:0;max-height:280px;overflow-y:auto;">
             <table style="font-size:0.85rem;">
@@ -1029,7 +933,9 @@
                 <th>OPL actual</th>
                 <th>Cambiar a</th>
               </tr></thead>
-              <tbody id="oplModalPropBody"></tbody>
+              <tbody id="oplModalPropBody">
+                <tr><td colspan="4" class="empty-state">Abra esta pestaña para cargar propietarios…</td></tr>
+              </tbody>
             </table>
           </div>
         </div>
@@ -1038,7 +944,8 @@
           <p style="font-size:0.82rem;font-weight:600;color:var(--vp);margin-bottom:0.6rem;">➕ Agregar / actualizar asignación manual</p>
           <div style="display:flex;gap:0.6rem;flex-wrap:wrap;">
             <input type="text" id="oplModalNewProp" class="inf-input" placeholder="Propietario" style="flex:2;min-width:180px;">
-            <input type="text" id="oplModalNewOpl" class="inf-input" placeholder="OPL (ej: DRA CAVA)" style="flex:1;min-width:130px;">
+            <input type="text" id="oplModalNewOpl" class="inf-input" placeholder="OPL (ej: DRA CAVA)" list="oplModalOplList" style="flex:1;min-width:130px;">
+            <datalist id="oplModalOplList"></datalist>
             <button class="btn btn-primary" onclick="guardarOPLModal()" style="white-space:nowrap;">💾 Guardar</button>
           </div>
           <p style="font-size:0.75rem;color:var(--gris);margin-top:0.4rem;">
@@ -1168,7 +1075,9 @@ window.onload = function() {
 };
 
 var operacionRefreshTimer = null;
+var oplModalRefreshTimer = null;
 var OPERACION_REFRESH_MS = 45000;
+var OPL_MODAL_REFRESH_MS = 30000;
 
 function iniciarRefrescoOperacion() {
   clearInterval(dashboardRefreshTimer);
@@ -1180,6 +1089,9 @@ function iniciarRefrescoOperacion() {
     if (document.getElementById('viewDespachos').classList.contains('active')) {
       cargarDespachosDesdeSirt({ silent: true });
     }
+    if (document.getElementById('modalOPL').classList.contains('show')) {
+      refrescarProgresoModalOPL({ silent: true, auto: true });
+    }
   }, OPERACION_REFRESH_MS);
 }
 
@@ -1188,7 +1100,7 @@ function iniciarRefrescoOperacion() {
 // ══════════════════════════════════════════════════════
 function showDashboard() {
   document.getElementById('viewDashboard').style.display='block';
-  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewAnalytics','viewCrudas','viewPlanilla'].forEach(function(id){
+  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla'].forEach(function(id){
     document.getElementById(id).classList.remove('active');
   });
   loadDashboardData();
@@ -1283,7 +1195,7 @@ function showHistorial() {
 }
 function _hideAll() {
   document.getElementById('viewDashboard').style.display='none';
-  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewAnalytics','viewCrudas','viewPlanilla'].forEach(function(id){
+  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla'].forEach(function(id){
     document.getElementById(id).classList.remove('active');
   });
 }
@@ -2539,15 +2451,27 @@ function confirmarLimpiarInforme(){
 }
 
 // ── Generar informe ──
+function syncInformeStateFromForm() {
+  infState.fecha        = document.getElementById('infFecha').value;
+  infState.completos    = Number(document.getElementById('infCompletos').value) || 0;
+  infState.incompletos  = Number(document.getElementById('infIncompletos').value) || 0;
+  infState.beneficioDia = Number(document.getElementById('infBeneficio').value) || 0;
+  infState.stockTotal   = Number(document.getElementById('percStock').value) || 100;
+  infState.danados      = Number(document.getElementById('percDanados').value) || 2;
+}
+
 function generarInforme(){
+  syncInformeStateFromForm();
   showSpinner('Construyendo informe...');
   var opciones = {
-    inv:         document.getElementById('inclInv').checked,
-    cavas:       document.getElementById('inclCavas').checked,
-    percheros:   document.getElementById('inclPerch').checked,
-    distribucion:document.getElementById('inclDist').checked
+    inclBeneficio: document.getElementById('inclBeneficio').checked,
+    inclInv:       document.getElementById('inclInv').checked,
+    inclCavas:     document.getElementById('inclCavas').checked,
+    inclPerch:     document.getElementById('inclPerch').checked,
+    inclDist:      document.getElementById('inclDist').checked,
+    origin:        window.location.origin,
+    datos:         JSON.parse(JSON.stringify(infState))
   };
-  // Guardar primero, luego generar
   google.script.run
     .withSuccessHandler(function(){
       google.script.run
@@ -2555,8 +2479,13 @@ function generarInforme(){
           hideSpinner();
           if(!res||!res.success){showAlert('infAlert','error','Error generando informe: '+(res?res.message:''));return;}
           var win = window.open('','_blank');
-          if(win){win.document.write(res.html);win.document.close();}
-          else{showAlert('infAlert','warn','El navegador bloqueó la ventana emergente. Permite popups para este sitio.');}
+          if(win){
+            win.document.open();
+            win.document.write(res.html);
+            win.document.close();
+          } else {
+            showAlert('infAlert','warn','El navegador bloqueó la ventana emergente. Permite popups para este sitio.');
+          }
         })
         .withFailureHandler(function(e){hideSpinner();showAlert('infAlert','error',e.message);})
         .generarInformeHTML(JSON.stringify(opciones));
@@ -2643,9 +2572,8 @@ function renderDashOplMini(progreso) {
   document.getElementById('dashOplMini').innerHTML = html;
 }
 
-// Cargar OPL en el dashboard (llamado desde loadDashboardData)
+// Cargar OPL en el dashboard (consulta SIRT en vivo)
 function loadDashOPL() {
-  // Leer desde sheet (ya actualizado al procesar)
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) return;
@@ -2656,10 +2584,9 @@ function loadDashOPL() {
       } else if (res.todosOPL && res.todosOPL.length > 0) {
         renderDashOplMini(res.todosOPL);
       }
-      // Si progreso vacío y no finalizada = sin datos aún
     })
     .withFailureHandler(function(){})
-    .getProgresoOPL();
+    .calcularProgresoOPL();
 }
 
 function renderDashOplFinalizada(fecha) {
@@ -2697,12 +2624,19 @@ function estiloSeccionManualOpl(mostrarTablaProp) {
 // ── MODAL OPL ──
 function abrirModalOPL() {
   document.getElementById('modalOPL').classList.add('show');
-  // Resetear tabs
   switchOplTab('oplModalProgreso', document.getElementById('oplModalTab1'));
-  cargarProgresoModalOPL();
+  refrescarProgresoModalOPL({ loading: true });
+  clearInterval(oplModalRefreshTimer);
+  oplModalRefreshTimer = setInterval(function () {
+    if (document.getElementById('modalOPL').classList.contains('show')) {
+      refrescarProgresoModalOPL({ silent: true, auto: true });
+    }
+  }, OPL_MODAL_REFRESH_MS);
 }
 function cerrarModalOPL() {
   document.getElementById('modalOPL').classList.remove('show');
+  clearInterval(oplModalRefreshTimer);
+  oplModalRefreshTimer = null;
 }
 function switchOplTab(panelId, btn) {
   ['oplModalProgreso','oplModalConfig'].forEach(function(id){
@@ -2715,52 +2649,73 @@ function switchOplTab(panelId, btn) {
   if (btn) btn.classList.add('active');
 }
 
-// Cargar progreso en el modal
-function cargarProgresoModalOPL() {
-  document.getElementById('oplModalProgresoContainer').innerHTML =
-    '<p class="empty-state" style="padding:1.5rem;">Cargando...</p>';
+function etiquetaUnidadOpl(res) {
+  return (res && res.unidad === 'subproductos') ? 'subproductos' : 'juegos';
+}
+
+function aplicarProgresoModalOPL(res, opts) {
+  opts = opts || {};
+  if (!res || !res.success) {
+    if (!opts.silent) {
+      document.getElementById('oplModalProgresoContainer').innerHTML =
+        '<p class="empty-state">' + escapeHtml(res && res.message ? res.message : 'Sin datos. Procesa un despacho primero.') + '</p>';
+    }
+    return;
+  }
+  var unidad = etiquetaUnidadOpl(res);
+  if (res.fecha) {
+    document.getElementById('oplModalFecha').textContent =
+      '📅 ' + res.fecha + (opts.auto ? ' · actualizado' : '');
+  }
+  var listaOpl = listaOplParaModal(res);
+  renderModalOplProgreso(listaOpl, unidad);
+  renderDashOplMini((res.progreso && res.progreso.length) ? res.progreso : listaOpl);
+}
+
+function refrescarProgresoModalOPL(opts) {
+  opts = opts || {};
+  if (opts.loading) {
+    document.getElementById('oplModalProgresoContainer').innerHTML =
+      '<p class="empty-state" style="padding:1.5rem;">Consultando SIRT…</p>';
+  }
   google.script.run
     .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        document.getElementById('oplModalProgresoContainer').innerHTML =
-          '<p class="empty-state">Sin datos. Procesa un despacho primero.</p>';
-        return;
-      }
-      if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
-      var listaOpl = listaOplParaModal(res);
-      renderModalOplProgreso(listaOpl);
-      renderDashOplMini((res.progreso && res.progreso.length) ? res.progreso : listaOpl);
+      aplicarProgresoModalOPL(res, opts);
     })
     .withFailureHandler(function(e) {
-      document.getElementById('oplModalProgresoContainer').innerHTML =
-        '<p class="empty-state" style="color:#991b1b;">Error: ' + e.message + '</p>';
+      if (!opts.silent) {
+        document.getElementById('oplModalProgresoContainer').innerHTML =
+          '<p class="empty-state" style="color:#991b1b;">Error: ' + escapeHtml(e.message) + '</p>';
+      }
     })
-    .getProgresoOPL();
+    .calcularProgresoOPL();
+}
+
+function cargarProgresoModalOPL() {
+  refrescarProgresoModalOPL({ loading: true });
 }
 
 function recalcularOPLModal() {
   document.getElementById('oplModalProgresoContainer').innerHTML =
-    '<p class="empty-state" style="padding:1rem;">Calculando...</p>';
+    '<p class="empty-state" style="padding:1rem;">Consultando SIRT…</p>';
   google.script.run
     .withSuccessHandler(function(res) {
       if (!res || !res.success) {
         showAlert('oplModalAlert', 'error', 'Error: ' + (res ? res.message : ''));
         return;
       }
-      if (res.fecha) document.getElementById('oplModalFecha').textContent = '📅 ' + res.fecha;
-      showAlert('oplModalAlert', 'success', '✓ Recalculado — Turno: ' + res.turno);
-      var listaOplR = listaOplParaModal(res);
-      renderModalOplProgreso(listaOplR);
-      renderDashOplMini((res.progreso && res.progreso.length) ? res.progreso : listaOplR);
+      showAlert('oplModalAlert', 'success', '✓ Actualizado — Turno: ' + res.turno);
+      aplicarProgresoModalOPL(res, {});
     })
     .withFailureHandler(function(e) { showAlert('oplModalAlert', 'error', e.message); })
     .calcularProgresoOPL();
 }
 
-function renderModalOplProgreso(progreso) {
+function renderModalOplProgreso(progreso, unidad) {
+  unidad = unidad || 'subproductos';
   if (!progreso || progreso.length === 0) {
     document.getElementById('oplModalProgresoContainer').innerHTML =
-      '<p class="empty-state">Sin datos de OPL. Recalcula desde los datos sincronizados de SIRT.</p>';
+      '<p class="empty-state">Sin datos de OPL. Sincronice despachos desde SIRT.</p>';
     return;
   }
   var html = progreso.map(function(p) {
@@ -2788,7 +2743,7 @@ function renderModalOplProgreso(progreso) {
       + '</div>'
       + '<div style="display:flex;justify-content:space-between;align-items:center;gap:0.5rem;">'
       +   '<span style="font-size:0.78rem;color:var(--gris);">'
-      +     (completo ? 'Operación completada ✅' : p.pendientes + ' juegos pendientes por despachar')
+      +     (completo ? 'Operación completada ✅' : p.pendientes + ' ' + unidad + ' pendientes por despachar')
       +   '</span>'
       +   '<span style="font-size:0.88rem;font-weight:800;color:' + pctColor + ';">' + pct + '%</span>'
       + '</div>'
@@ -2798,17 +2753,47 @@ function renderModalOplProgreso(progreso) {
 }
 
 // ── Config OPL dentro del modal ──
+function poblarDatalistOpls(opls) {
+  var dl = document.getElementById('oplModalOplList');
+  if (!dl) return;
+  dl.innerHTML = (opls || ['TRANSCARNES']).map(function(o) {
+    return '<option value="' + escapeHtml(o) + '"></option>';
+  }).join('');
+}
+
 function cargarConfigOPLModal() {
+  document.getElementById('oplModalPropSection').style.display = 'block';
+  document.getElementById('oplModalPropBody').innerHTML =
+    '<tr><td colspan="4" class="empty-state">Consultando SIRT…</td></tr>';
+  estiloSeccionManualOpl(false);
   google.script.run
     .withSuccessHandler(function(res) {
-      if (!res || !res.success || !res.resultado || res.resultado.length === 0) {
-        document.getElementById('oplModalPropSection').style.display = 'none';
+      if (!res || !res.success) {
+        document.getElementById('oplModalPropBody').innerHTML =
+          '<tr><td colspan="4" class="empty-state" style="color:#991b1b;">' +
+          escapeHtml(res && res.message ? res.message : 'Error al cargar propietarios') +
+          '</td></tr>';
+        poblarDatalistOpls(['TRANSCARNES']);
+        return;
+      }
+      var opls = res.opls || ['TRANSCARNES'];
+      poblarDatalistOpls(opls);
+      var intro = document.getElementById('oplModalPropIntro');
+      if (intro) {
+        var extra = res.turno ? ' · Turno ' + res.turno : '';
+        if (res.fechaConsulta) extra += ' · ' + res.fechaConsulta;
+        intro.textContent =
+          '📋 Propietarios detectados en despachos del turno' + extra + ' — ajusta el OPL si es necesario:';
+      }
+      if (!res.resultado || res.resultado.length === 0) {
+        document.getElementById('oplModalPropBody').innerHTML =
+          '<tr><td colspan="4" class="empty-state">' +
+          escapeHtml(res.message || 'Sin propietarios con juegos para esta fecha. Verifique la fecha del tablero.') +
+          '</td></tr>';
         estiloSeccionManualOpl(false);
         return;
       }
-      document.getElementById('oplModalPropSection').style.display = 'block';
       estiloSeccionManualOpl(true);
-      var opls = res.opls || ['TRANSCARNES'];
       var html = res.resultado.map(function(r, i) {
         var opts = opls.map(function(o) {
           return '<option value="' + escapeHtml(o) + '"' + (o === r.opl ? ' selected' : '') + '>' + escapeHtml(o) + '</option>';
@@ -2823,11 +2808,12 @@ function cargarConfigOPLModal() {
       document.getElementById('oplModalPropBody').innerHTML = html;
       window._oplModalPropList = res.resultado;
     })
-    .withFailureHandler(function() {
-      document.getElementById('oplModalPropSection').style.display = 'none';
-      estiloSeccionManualOpl(false);
+    .withFailureHandler(function(e) {
+      document.getElementById('oplModalPropBody').innerHTML =
+        '<tr><td colspan="4" class="empty-state" style="color:#991b1b;">Error: ' + escapeHtml(e.message) + '</td></tr>';
+      poblarDatalistOpls(['TRANSCARNES']);
     })
-    .getOplPorPropietario();
+    .getOplPorPropietario(leerFechaGlobal());
 }
 
 function cambiarOPLModalDesdeSelect(sel) {
@@ -2842,6 +2828,7 @@ function cambiarOPLModal(prop, opl) {
     .withSuccessHandler(function(res) {
       if (!res || !res.success) { showAlert('oplModalConfigAlert','error','Error al guardar'); return; }
       showAlert('oplModalConfigAlert','success','✓ ' + prop + ' → ' + opl);
+      refrescarProgresoModalOPL({ silent: true, auto: true });
     })
     .withFailureHandler(function(e){ showAlert('oplModalConfigAlert','error',e.message); })
     .upsertOpl(prop, opl);
@@ -3301,428 +3288,6 @@ function confirmarCerrarOperacion() {
     .cerrarOperacion();
 }
 
-// ══════════════════════════════════════════════════════
-// ANALYTICS OPL
-// ══════════════════════════════════════════════════════
-var anlCharts = {};
-
-// Estado del selector de tiempo
-var anlEstado = { anio: new Date().getFullYear(), mes: null };
-var MESES_NOMBRES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-
-function showAnalytics() {
-  _hideAll();
-  document.getElementById('viewAnalytics').classList.add('active');
-  cargarListaOPLsAnalytics(function() {
-    cargarAniosDisponibles(function() {
-      renderMeses();
-      cargarAnalytics();
-    });
-  });
-}
-
-function cargarAniosDisponibles(callback) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var sel = document.getElementById('anlAnioSelect');
-      sel.innerHTML = '';
-      var anios = (res && res.anios) ? res.anios : [new Date().getFullYear()];
-      anios.forEach(function(a) {
-        var opt = document.createElement('option');
-        opt.value = a; opt.textContent = a;
-        if (Number(a) === anlEstado.anio) opt.selected = true;
-        sel.appendChild(opt);
-      });
-      if (callback) callback();
-    })
-    .withFailureHandler(function(){ if (callback) callback(); })
-    .getAniosDisponibles();
-}
-
-function onAnioChange() {
-  anlEstado.anio = Number(document.getElementById('anlAnioSelect').value);
-  anlEstado.mes  = null;
-  renderMeses();
-  cargarAnalytics();
-}
-
-function renderMeses() {
-  var row = document.getElementById('anlMesesRow');
-  var mesesActivos = Array.isArray(anlEstado.mes) ? anlEstado.mes : [];
-  row.innerHTML = MESES_NOMBRES.map(function(m, i) {
-    var activo = mesesActivos.indexOf(i) !== -1;
-    var esHoy  = (new Date().getMonth() === i && anlEstado.anio === new Date().getFullYear());
-    var bg     = activo ? 'var(--vp)' : esHoy ? 'rgba(37,156,57,0.12)' : 'transparent';
-    var color  = activo ? 'white' : 'var(--color-text-primary)';
-    var border = activo ? 'var(--vp)' : esHoy ? 'var(--vp)' : 'var(--vc)';
-    var fw     = activo || esHoy ? '700' : '400';
-    return '<button onclick="toggleMes('+i+')" style="'
-      + 'padding:4px 10px;border-radius:6px;border:1px solid '+border+';'
-      + 'background:'+bg+';color:'+color+';font-size:0.8rem;font-weight:'+fw+';cursor:pointer;">'
-      + m + '</button>';
-  }).join('');
-
-  // Label de selección
-  var label = document.getElementById('anlMesesSelLabel');
-  if (!mesesActivos.length) {
-    label.textContent = 'Todo el año ' + anlEstado.anio;
-  } else if (mesesActivos.length === 1) {
-    label.textContent = MESES_NOMBRES[mesesActivos[0]] + ' ' + anlEstado.anio;
-  } else {
-    label.textContent = mesesActivos.map(function(i){ return MESES_NOMBRES[i]; }).join(' · ');
-  }
-}
-
-function toggleMes(idx) {
-  if (!Array.isArray(anlEstado.mes)) anlEstado.mes = [];
-  var pos = anlEstado.mes.indexOf(idx);
-  if (pos === -1) anlEstado.mes.push(idx);
-  else anlEstado.mes.splice(pos, 1);
-  if (anlEstado.mes.length === 0) anlEstado.mes = null;
-  renderMeses();
-  cargarAnalytics();
-}
-
-function cargarListaOPLsAnalytics(callback) {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      var sel = document.getElementById('anlOplSelect');
-      var prevVal = sel.value;
-      sel.innerHTML = '';
-      var opls = (res && res.success && res.opls) ? res.opls : ['Todos los OPLs'];
-      opls.forEach(function(o) {
-        var opt = document.createElement('option');
-        opt.value = o; opt.textContent = o;
-        sel.appendChild(opt);
-      });
-      // Restaurar selección anterior si existe
-      if (prevVal) sel.value = prevVal;
-      if (callback) callback();
-    })
-    .withFailureHandler(function(){
-      if (callback) callback();
-    })
-    .getListaOPLsHistorico();
-}
-
-function cargarAnalytics() {
-  var opl   = document.getElementById('anlOplSelect').value || 'Todos los OPLs';
-  var filtro = {
-    anio:  anlEstado.anio,
-    meses: anlEstado.mes  // null = todo el año, array = meses seleccionados
-  };
-  document.getElementById('anlKpis').innerHTML =
-    '<div class="stat-card"><div class="stat-label">Cargando...</div><div class="stat-valor" style="font-size:1.5rem;">⏳</div></div>';
-
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) {
-        var fuenteEl0 = document.getElementById('anlFuenteVivo');
-        if (fuenteEl0) fuenteEl0.style.display = 'none';
-        showAlert('anlAlert','warn', res && res.message ? res.message : 'Sin datos OPL. Sincronice Despachos desde SIRT.');
-        document.getElementById('anlKpis').innerHTML =
-          '<p style="color:var(--gris);font-size:0.9rem;padding:1rem;">Cargue Despachos (fecha del turno) para ver métricas del día, o cierre operaciones para acumular histórico.</p>';
-        return;
-      }
-      hideAlert('anlAlert');
-      var fuenteEl = document.getElementById('anlFuenteVivo');
-      if (fuenteEl) {
-        if (res.operacionEnCurso) {
-          fuenteEl.style.display = 'block';
-          fuenteEl.innerHTML =
-            '🟢 <strong>Operación en curso</strong> (turno ' +
-            escapeHtml(res.turnoEnCurso || '—') +
-            ') — cifras en vivo desde SIRT. Al cerrar la operación en Despachos quedan fijas en el histórico.';
-        } else {
-          fuenteEl.style.display = 'none';
-        }
-      }
-      renderKPIs(res.kpis, opl, filtro);
-      renderGraficos(res.graficos);
-      renderBacklog(res.backlog);
-    })
-    .withFailureHandler(function(e) { showAlert('anlAlert','error',e.message); })
-    .getKPIs(opl, filtro);
-}
-
-function renderKPIs(k, opl, filtro) {
-  var esIndividual = opl && opl !== 'Todos los OPLs';
-  var labelPeriodo = filtro && filtro.meses && filtro.meses.length
-    ? filtro.meses.map(function(i){return MESES_NOMBRES[i];}).join('+') + ' ' + (filtro.anio||'')
-    : 'Año ' + (filtro ? filtro.anio : new Date().getFullYear());
-
-  function tendenciaFlecha(val, ref) {
-    if (!ref || ref===0) return '';
-    var pct = Math.round(((val-ref)/ref)*100);
-    var color = pct>=0?'#16a34a':'#dc2626';
-    return '<div style="font-size:0.72rem;font-weight:700;color:'+color+';margin-top:4px;">'+(pct>=0?'↑':'↓')+' '+Math.abs(pct)+'% vs período ant.</div>';
-  }
-
-  // Tarjeta 1: Particulares vs TRANSCARNES
-  var pTotal = (k.vs && k.vs.particulares) || 0;
-  var tTotal = (k.vs && k.vs.transcarnes)  || 0;
-  var grand  = pTotal + tTotal;
-  var pPct   = grand > 0 ? Math.round((pTotal/grand)*100) : 0;
-  var tPct   = grand > 0 ? Math.round((tTotal/grand)*100) : 0;
-
-  var kpi1 = esIndividual
-    ? '<div class="stat-card" style="border-top:3px solid #259c39;text-align:center;">'
-      + '<div class="stat-label">' + opl + '</div>'
-      + '<div class="stat-valor">' + (pTotal+tTotal).toLocaleString() + '</div>'
-      + '<div class="stat-sub">' + labelPeriodo + '</div>'
-      + '</div>'
-    : '<div class="stat-card" style="border-top:3px solid #259c39;">'
-      + '<div class="stat-label" style="text-align:center;margin-bottom:0.6rem;">Particulares vs TRANSCARNES</div>'
-      + '<div style="display:flex;justify-content:center;align-items:flex-end;gap:1.2rem;">'
-      + '<div style="text-align:center;">'
-      + '<div style="font-size:1.8rem;font-weight:800;color:#259c39;line-height:1;">'+pTotal.toLocaleString()+'</div>'
-      + '<div style="font-size:0.68rem;color:var(--gris);font-weight:600;margin-top:2px;">PARTICULARES</div>'
-      + '<div style="font-size:1rem;font-weight:700;color:#259c39;">'+pPct+'%</div>'
-      + '</div>'
-      + '<div style="font-size:1rem;color:var(--gris);padding-bottom:0.8rem;">vs</div>'
-      + '<div style="text-align:center;">'
-      + '<div style="font-size:1.8rem;font-weight:800;color:#378ADD;line-height:1;">'+tTotal.toLocaleString()+'</div>'
-      + '<div style="font-size:0.68rem;color:var(--gris);font-weight:600;margin-top:2px;">TRANSCARNES</div>'
-      + '<div style="font-size:1rem;font-weight:700;color:#378ADD;">'+tPct+'%</div>'
-      + '</div>'
-      + '</div>'
-      + '</div>';
-
-  // Tarjeta 2: Esta semana + productividad
-  var prod = k.productividad || { promedioPorOp:0, totalOps:0, pctCompletadas:0 };
-  var kpi2 = '<div class="stat-card" style="border-top:3px solid #378ADD;">'
-    + '<div class="stat-label">Esta semana</div>'
-    + '<div class="stat-valor" style="color:#378ADD;">' + (k.semana.despachados||0).toLocaleString() + '</div>'
-    + '<div class="stat-sub">' + (k.semana.promDiario||0) + ' promedio/día</div>'
-    + (prod.promedioPorOp ? '<div style="font-size:0.7rem;color:var(--gris);margin-top:3px;">' + prod.promedioPorOp + ' desp/operación</div>' : '')
-    + tendenciaFlecha(k.semana.despachados, k.semana.despachados * 0.9)
-    + '</div>';
-
-  // Tarjeta 3: Este mes
-  var kpi3 = '<div class="stat-card" style="border-top:3px solid #7F77DD;">'
-    + '<div class="stat-label">Este mes</div>'
-    + '<div class="stat-valor" style="color:#7F77DD;">' + (k.mes.despachados||0).toLocaleString() + '</div>'
-    + '<div class="stat-sub">tendencia: ' + (k.mes.tendencia||'—') + '</div>'
-    + ((k.periodo && k.periodo.vsMesAnt) ? tendenciaFlecha(k.mes.despachados, k.periodo.vsMesAnt) : '')
-    + '</div>';
-
-  // Tarjeta 4: Año
-  var kpi4 = '<div class="stat-card" style="border-top:3px solid #BA7517;">'
-    + '<div class="stat-label">Año ' + (filtro?filtro.anio:new Date().getFullYear()) + '</div>'
-    + '<div class="stat-valor" style="color:#BA7517;">' + (k.anio.despachados||0).toLocaleString() + '</div>'
-    + '<div class="stat-sub">' + (k.anio.operaciones||0) + ' operaciones</div>'
-    + ((k.anio && k.anio.vsAnioAnt) ? tendenciaFlecha(k.anio.despachados, k.anio.vsAnioAnt) : '')
-    + '</div>';
-
-  document.getElementById('anlKpis').innerHTML = kpi1 + kpi2 + kpi3 + kpi4;
-}
-
-function renderGraficos(g) {
-  // Destruir charts previos
-  Object.keys(anlCharts).forEach(function(id) {
-    try { anlCharts[id].destroy(); } catch(e){}
-  });
-
-  var t1 = document.getElementById('anlChart1Title');
-  var s1 = document.getElementById('anlChart1Sub');
-  if (t1) t1.textContent = g.evolucionEtiqueta || 'Evolución diaria — últimos 14 días';
-  if (s1) {
-    s1.textContent =
-      g.evolucionModo === 'mes' || g.evolucionModo === 'periodo'
-        ? 'Despachados y pendientes por día del mes/período seleccionado (misma fuente que el ranking).'
-        : 'Despachados (salieron de cava) y pendientes (en cava) — ventana móvil de 14 días.';
-  }
-  var s3 = document.getElementById('anlChart3Sub');
-  if (s3) {
-    s3.textContent =
-      g.diasSemanaModo === 'periodo'
-        ? 'Distribución del período seleccionado por día de semana (no hay cierres en los últimos 7 días).'
-        : 'Esta semana vs semana anterior (salidas reales de cava).';
-  }
-
-  // Chart 1 — Evolución diaria
-  var labels1 = g.evolucion.map(function(d){ return d.label; });
-  var desp1   = g.evolucion.map(function(d){ return d.despachados; });
-  var pend1   = g.evolucion.map(function(d){ return d.pendientes; });
-  anlCharts.c1 = new Chart(document.getElementById('anlChart1'), {
-    type:'line',
-    data:{labels:labels1,datasets:[
-      {label:'Despachados',data:desp1,borderColor:'#259c39',backgroundColor:'rgba(37,156,57,0.08)',fill:true,tension:0.4,pointRadius:3},
-      {label:'Pendientes',data:pend1,borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,0.05)',fill:true,tension:0.4,pointRadius:3}
-    ]},
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10},maxRotation:0}},y:{beginAtZero:true,ticks:{font:{size:10}}}}}
-  });
-
-  // Chart 2 — Ranking OPL
-  var labs2 = g.ranking.map(function(r){ return r.opl; });
-  var vals2 = g.ranking.map(function(r){ return r.despachados; });
-  var colors2 = ['#259c39','#378ADD','#7F77DD','#BA7517','#259c39','#378ADD','#7F77DD','#BA7517'];
-  anlCharts.c2 = new Chart(document.getElementById('anlChart2'), {
-    type:'bar',
-    data:{labels:labs2,datasets:[{data:vals2,backgroundColor:colors2.slice(0,labs2.length),borderRadius:4}]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{x:{ticks:{font:{size:10}}},y:{ticks:{font:{size:10}}}}}
-  });
-
-  // Chart 3 — Días semana: semana actual vs anterior
-  var sem = g.porDiaSemana;
-  var dias3    = sem.map(function(d){ return d.dia; });
-  var actual3  = sem.map(function(d){ return d.actual; });
-  var anterior3= sem.map(function(d){ return d.anterior; });
-  var hoyIdx   = sem.findIndex(function(d){ return d.esHoy; });
-  var bgActual = dias3.map(function(_,i){
-    return i===hoyIdx ? '#1a7a2e' : '#259c39';
-  });
-
-  anlCharts.c3 = new Chart(document.getElementById('anlChart3'), {
-    type:'bar',
-    data:{
-      labels: dias3,
-      datasets:[
-        {
-          label:'Esta semana',
-          data: actual3,
-          backgroundColor: bgActual,
-          borderRadius:4,
-          order:1
-        },
-        {
-          label:'Sem. anterior',
-          data: anterior3,
-          backgroundColor:'rgba(37,156,57,0.25)',
-          borderRadius:4,
-          order:2
-        }
-      ]
-    },
-    options:{
-      responsive:true,
-      maintainAspectRatio:false,
-      plugins:{
-        legend:{
-          display:true,
-          position:'bottom',
-          labels:{font:{size:10},padding:10}
-        },
-        tooltip:{
-          callbacks:{
-            afterBody:function(items){
-              var idx = items[0].dataIndex;
-              var d   = sem[idx];
-              var v   = d.variacion;
-              if (v===null) return 'Sin dato anterior';
-              return 'Variación: '+(v>=0?'+':'')+v+'% vs sem. ant.';
-            }
-          }
-        }
-      },
-      scales:{
-        x:{ticks:{font:{size:11}}},
-        y:{beginAtZero:true,ticks:{font:{size:10}}}
-      }
-    }
-  });
-
-  // Mini KPI encima del gráfico — limpiar primero para evitar duplicados
-  var c3box = document.getElementById('anlChart3').closest('.chart-box,.chart-card') ||
-              document.getElementById('anlChart3').parentElement.parentElement;
-  if (c3box) {
-    var oldKpi = c3box.querySelector('.dias-kpi-mini');
-    if (oldKpi) oldKpi.remove();
-  }
-  var diaMasFuerte = sem.reduce(function(a,b){ return a.actual>b.actual?a:b; });
-  var hoyData      = sem[hoyIdx] || {dia:'—',actual:0,anterior:0,variacion:null,pctActual:0};
-  var varHoy       = hoyData.variacion;
-  var varColor     = varHoy===null?'#6b7280':varHoy>=0?'#16a34a':'#dc2626';
-  var varLabel     = varHoy===null?'Sin dato ant.':(varHoy>=0?'↑ +':'↓ ')+Math.abs(varHoy)+'% vs sem. ant.';
-  var kpiHtml = '<div class="dias-kpi-mini" style="display:flex;gap:0.8rem;margin-bottom:0.6rem;flex-wrap:wrap;">'
-    + '<div style="background:#f0fdf4;border-radius:8px;padding:7px 12px;flex:1;min-width:120px;">'
-    + '<div style="font-size:0.68rem;color:var(--gris);font-weight:600;text-transform:uppercase;">Día más fuerte</div>'
-    + '<div style="font-size:1.05rem;font-weight:800;color:#259c39;">'+diaMasFuerte.dia+' — '+diaMasFuerte.actual+'</div>'
-    + '<div style="font-size:0.7rem;color:var(--gris);">'+diaMasFuerte.pctActual+'% del total semanal</div>'
-    + '</div>'
-    + '<div style="background:#f0fdf4;border-radius:8px;padding:7px 12px;flex:1;min-width:120px;">'
-    + '<div style="font-size:0.68rem;color:var(--gris);font-weight:600;text-transform:uppercase;">Hoy ('+hoyData.dia+')</div>'
-    + '<div style="font-size:1.05rem;font-weight:800;color:#259c39;">'+hoyData.actual+'</div>'
-    + '<div style="font-size:0.7rem;font-weight:700;color:'+varColor+';">'+varLabel+'</div>'
-    + '</div>'
-    + '</div>';
-  if (c3box) {
-    var kpiEl = document.createElement('div');
-    kpiEl.innerHTML = kpiHtml;
-    c3box.insertBefore(kpiEl, c3box.querySelector('canvas').parentElement);
-  }
-
-
-  // Mostrar productividad real y anomalías si hay datos
-  if (g.comparacionMeses) {
-    var c5box = document.getElementById('anlChart5');
-    if (!c5box) {
-      // Insertar gráfico mes a mes dinámicamente si no existe
-      var secProd = document.querySelector('#viewAnalytics .body') ||
-                    document.getElementById('anlKpis').parentElement;
-    }
-  }
-
-  // Chart 4 — Eficiencia donut
-  anlCharts.c4 = new Chart(document.getElementById('anlChart4'), {
-    type:'doughnut',
-    data:{
-      labels:['Completas ('+g.eficiencia.pctCompletas+'%)','Con pendientes ('+g.eficiencia.pctPendientes+'%)'],
-      datasets:[{data:[g.eficiencia.completas,g.eficiencia.conPendientes],backgroundColor:['#259c39','#fca5a5'],borderWidth:2}]
-    },
-    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{position:'bottom',labels:{font:{size:11},padding:12}}}}
-  });
-}
-
-function exportarReporteOPL() {
-  var opl    = document.getElementById('anlOplSelect').value || 'Todos los OPLs';
-  var filtro = {
-    anio:  anlEstado ? anlEstado.anio  : new Date().getFullYear(),
-    meses: anlEstado ? anlEstado.mes   : null
-  };
-  showSpinner('Generando reporte PDF...');
-  google.script.run
-    .withSuccessHandler(function(res) {
-      hideSpinner();
-      if (!res || !res.success) {
-        showAlert('anlAlert','error','Error generando reporte: ' + (res ? res.message : ''));
-        return;
-      }
-      var ventana = window.open('', '_blank', 'width=1050,height=900,scrollbars=yes');
-      if (!ventana) {
-        showAlert('anlAlert','warn','El navegador bloqueó la ventana emergente. Permite las ventanas emergentes para este sitio.');
-        return;
-      }
-      ventana.document.open('text/html', 'replace');
-      ventana.document.write(res.html);
-      ventana.document.close();
-    })
-    .withFailureHandler(function(e) {
-      hideSpinner();
-      showAlert('anlAlert','error', e.message || 'Error generando reporte');
-    })
-    .generarReporteOPL(opl, filtro);
-}
-
-function renderBacklog(backlog) {
-  var tbody = document.getElementById('anlBacklogBody');
-  if (!backlog || backlog.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Sin backlog registrado ✅</td></tr>';
-    return;
-  }
-  tbody.innerHTML = backlog.map(function(b) {
-    var color = b.estado==='ok'?'#16a34a':b.estado==='critico'?'#dc2626':'#d97706';
-    var bg    = b.estado==='ok'?'#d1fae5':b.estado==='critico'?'#fee2e2':'#fef3c7';
-    return '<tr>'
-      + '<td style="font-weight:600;">' + b.opl + '</td>'
-      + '<td class="num">' + b.opsPendientes + '</td>'
-      + '<td class="num">' + b.totalPendientes + '</td>'
-      + '<td class="num"><span style="background:'+bg+';color:'+color+';padding:2px 8px;border-radius:12px;font-size:0.75rem;font-weight:700;">' + b.eficiencia + '%</span></td>'
-      + '</tr>';
-  }).join('');
-}
-
-// ══════════════════════════════════════════════════════
 // MOSTRAR RESUMEN GENERAL EN EL MISMO LUGAR QUE LAS TARJETAS
 // ══════════════════════════════════════════════════════
 function mostrarResumenGeneralPlanilla() {
@@ -3801,6 +3366,5 @@ function mostrarResumenGeneralPlanilla() {
   <span id="uxInlineLoader" class="ux-inline-loader" aria-live="polite"></span>
 </div>
 <script src="/gestor-ux.js"></script>
-<script src="/vendor/chart.umd.min.js"></script>
 </body>
 </html>

@@ -81,7 +81,6 @@
         showDespachos: 'despachos',
         showInforme: 'informe',
         showHistorial: 'historial',
-        showAnalytics: 'analytics',
         showCrudas: 'crudas',
         showPlanilla: 'planilla',
         showDashboard: 'dashboard',

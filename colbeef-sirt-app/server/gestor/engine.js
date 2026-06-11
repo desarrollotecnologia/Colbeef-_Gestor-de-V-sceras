@@ -2,6 +2,7 @@ import {
   TIPOS_PRODUCTO,
   PUESTOS_EXCLUIDOS_DESP,
   OPL_DEFAULT,
+  OPL_EXCEPCIONES_DEFAULT,
   ESTADO_COMPLETO,
   ESTADO_PENDIENTE,
 } from './constants.js';
@@ -50,6 +51,27 @@ function cargarMapaOPL(state) {
     if (p) mapa[p] = String(r.opl || '').trim() || OPL_DEFAULT;
   });
   return mapa;
+}
+
+/** Lista de OPL para selects (defaults + config + histórico). */
+function listarOplsConocidos(s) {
+  const set = new Set([OPL_DEFAULT]);
+  OPL_EXCEPCIONES_DEFAULT.forEach(([, opl]) => {
+    if (opl) set.add(String(opl).trim());
+  });
+  (s?.oplConfig || []).forEach((r) => {
+    if (r.opl) set.add(String(r.opl).trim());
+  });
+  (s?.historicoOpl || []).forEach((r) => {
+    if (r.opl) set.add(String(r.opl).trim());
+  });
+  return [...set]
+    .filter(Boolean)
+    .sort((a, b) => {
+      if (a === OPL_DEFAULT) return -1;
+      if (b === OPL_DEFAULT) return 1;
+      return a.localeCompare(b, 'es');
+    });
 }
 
 function tieneJuegoCompleto(tipos) {
@@ -242,6 +264,22 @@ function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
   return conteo;
 }
 
+/** Piezas individuales por clave (OPL): cada subproducto con salida cuenta por separado. */
+export function contarSubproductosPorClave(rows, cols, getClave, turno = '') {
+  const conteo = {};
+  (rows || []).forEach((fila) => {
+    const id = String(fila[cols.id] ?? '').trim();
+    const tipo = String(fila[cols.tipo] ?? '').trim();
+    const puesto = cols.puesto !== undefined ? String(fila[cols.puesto] ?? '').trim() : '';
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    if (turno && puesto && !puesto.includes(turno)) return;
+    const clave = String(getClave(fila) || '').trim();
+    if (!clave) return;
+    conteo[clave] = (conteo[clave] || 0) + 1;
+  });
+  return conteo;
+}
+
 function totalJuegosCompletos(rows, cols, turno = '') {
   const conteo = contarJuegosCompletosPorClave(rows, cols, () => '__TOTAL__', turno);
   return conteo.__TOTAL__ || 0;
@@ -430,6 +468,30 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
 
 const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
 
+/** Propietarios únicos con juegos del turno (desde filas Despachos_Cavas). */
+function propietariosConJuegosDesdeDespachos(despachos, turno) {
+  const conteo = contarJuegosCompletosPorClave(
+    despachos || [],
+    COLS_DESPACHO_CAVA,
+    (fila) => String(fila[4] ?? '').trim().toUpperCase(),
+    turno
+  );
+  const etiqueta = {};
+  (despachos || []).forEach((fila) => {
+    const prop = String(fila[4] ?? '').trim();
+    const upper = prop.toUpperCase();
+    if (prop && !etiqueta[upper]) etiqueta[upper] = prop;
+  });
+  return Object.keys(conteo)
+    .filter((k) => conteo[k] > 0)
+    .sort((a, b) => a.localeCompare(b, 'es'))
+    .map((propUpper) => ({
+      propietario: etiqueta[propUpper] || propUpper,
+      propUpper,
+      juegos: conteo[propUpper],
+    }));
+}
+
 function isoDesdeCeldaFecha(celda) {
   const s = String(celda || '').trim();
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -515,7 +577,7 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const fechaOp = String(s.lastSyncRange?.from || '').trim();
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
 
-  const pendOpl = contarJuegosCompletosPorClave(
+  const pendOpl = contarSubproductosPorClave(
     s.despachosCavas || [],
     COLS_DESPACHO_CAVA,
     claveOpl,
@@ -523,7 +585,7 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   );
 
   const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
-  const salOpl = contarJuegosCompletosPorClave(
+  const salOpl = contarSubproductosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
     claveOpl,
@@ -561,6 +623,7 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
+    unidad: 'subproductos',
   };
 }
 
@@ -921,7 +984,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-por-operador-v1';
+export const GESTOR_BUILD = 'opl-subproducto-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1412,7 +1475,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
   let operacionFinalizada = desdeDesp.operacionFinalizada;
 
   if (!todosOPL.length) {
-    return { success: false, message: 'Sin juegos en cava para este turno. Sincronice despachos desde SIRT.' };
+    return { success: false, message: 'Sin subproductos en cava para este turno. Sincronice despachos desde SIRT.' };
   }
 
   if (operacionFinalizada && rd.historicoGuardadoFlag !== '1') {
@@ -1431,6 +1494,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     fecha,
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
+    unidad: desdeDesp.unidad || 'subproductos',
   };
 }
 
@@ -1497,7 +1561,7 @@ export async function getProgresoOPL() {
     if (pct < 100) progreso.push(item);
   });
   const operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
-  return { success: true, progreso, todosOPL, operacionFinalizada, fecha: ultimaFecha };
+  return { success: true, progreso, todosOPL, operacionFinalizada, fecha: ultimaFecha, unidad: 'subproductos' };
 }
 
 export async function getOplConfig() {
@@ -1536,33 +1600,54 @@ export async function eliminarOpl(rowIdx) {
   return { success: true };
 }
 
-export async function getOplPorPropietario() {
+export async function getOplPorPropietario(range) {
   const s = await loadState();
-  const turno = String(s.resumenDespachos.turno || '').trim();
+  const filtro = normalizarRangoFechas(range || s.lastSyncRange || {});
   const mapa = cargarMapaOPL(s);
-  let datos = [];
-  const cols = { id: 0, tipo: 6, prop: 3, puesto: 8 };
-  if (s.estadoFromRow12.length >= 1) {
-    datos = s.estadoFromRow12.map((row) => row.slice(0, 9));
-  } else {
-    datos = s.despachosCavas.map((f) => [f[3], '', '', f[4], '', '', f[7], '', f[9]]);
+  let despachos = s.despachosCavas || [];
+  let turno = String(s.resumenDespachos?.turno || '').trim();
+  let consultaSirt = false;
+
+  const sesionCoincide =
+    filtro.from &&
+    String(s.lastSyncRange?.from || '') === filtro.from &&
+    despachos.length > 0;
+
+  if (!sesionCoincide && filtroSirtValido(filtro)) {
+    try {
+      const pack = await fetchDespachosParaConsulta(filtro);
+      despachos = pack.desp || [];
+      turno = resolverTurnoOperacion(filtro, despachos);
+      consultaSirt = true;
+    } catch (e) {
+      return { success: false, message: e.message || String(e), resultado: [], opls: listarOplsConocidos(s) };
+    }
+  } else if (!turno && despachos.length) {
+    turno = resolverTurnoOperacion(filtro, despachos);
   }
-  const conteo = contarJuegosCompletosPorClave(
-    datos,
-    cols,
-    (fila) => String(fila[cols.prop] ?? '').trim().toUpperCase(),
-    turno
-  );
-  const opls = [...new Set(s.oplConfig.map((r) => r.opl).filter(Boolean))].sort();
-  if (!opls.includes(OPL_DEFAULT)) opls.unshift(OPL_DEFAULT);
-  const resultado = Object.keys(conteo)
-    .sort()
-    .map((prop) => ({
-      propietario: prop,
-      juegos: conteo[prop],
-      opl: mapa[prop] || OPL_DEFAULT,
-    }));
-  return { success: true, resultado, opls };
+
+  const filas = propietariosConJuegosDesdeDespachos(despachos, turno);
+  const opls = listarOplsConocidos(s);
+  const resultado = filas.map((r) => ({
+    propietario: r.propietario,
+    juegos: r.juegos,
+    opl: mapa[r.propUpper] || OPL_DEFAULT,
+  }));
+
+  return {
+    success: true,
+    resultado,
+    opls,
+    turno,
+    fechaConsulta: filtro.from || '',
+    consultaSirt,
+    message:
+      resultado.length === 0
+        ? turno
+          ? `Sin propietarios con juegos en despachos del turno ${turno}.`
+          : 'Sin turno detectado para la fecha seleccionada.'
+        : '',
+  };
 }
 
 export async function resetearTotalesOPL() {
@@ -2400,51 +2485,6 @@ function readHistorico(state) {
     .filter((r) => r.fecha && r.opl);
 }
 
-/** Snapshot de hoy desde SIRT (misma lógica que Progreso OPL en dashboard). */
-function historicoVivoDesdeSesion(s) {
-  const turno =
-    String(s.resumenDespachos?.turno || '').trim() ||
-    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
-  if (!turno || !(s.despachosCavas || []).length) return [];
-
-  const pack = construirProgresoOplDesdeDespachos(s, turno, fmtNow());
-  if (!pack.todosOPL.length) return [];
-
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const fechaStr = `${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`;
-
-  return pack.todosOPL.map((p) => ({
-    fecha: hoy,
-    fechaStr,
-    turno,
-    opl: p.opl,
-    total: p.total,
-    despachados: p.despachados,
-    pendientes: p.pendientes,
-    progreso: p.progreso,
-    estado: p.progreso >= 100 || p.pendientes === 0 ? ESTADO_COMPLETO : 'EN_CURSO',
-    fechaHora: fmtNow(),
-    enVivo: true,
-  }));
-}
-
-/** Histórico cerrado + operación de hoy en vivo (valores reales del programa). */
-function leerHistoricoConOperacionViva(s) {
-  const cerrado = readHistorico(s);
-  const vivo = historicoVivoDesdeSesion(s);
-  if (!vivo.length) return cerrado;
-
-  const hoyTime = new Date();
-  hoyTime.setHours(0, 0, 0, 0);
-  const turnoVivo = vivo[0].turno;
-
-  const sinHoyTurno = cerrado.filter(
-    (r) => !(r.fecha.getTime() === hoyTime.getTime() && r.turno === turnoVivo)
-  );
-  return [...sinHoyTurno, ...vivo];
-}
-
 async function sincronizarOplProgresoDesdeSirt(s) {
   const turno =
     String(s.resumenDespachos?.turno || '').trim() ||
@@ -2454,148 +2494,6 @@ async function sincronizarOplProgresoDesdeSirt(s) {
   const pack = construirProgresoOplDesdeDespachos(s, turno, fmtNow());
   s.oplProgreso = pack.todosOPL.map((p) => ({ ...p, fecha: fmtNow() }));
   return pack;
-}
-
-function filtrarHistoricoAvanzado(datos, filtro = {}) {
-  const meses = Array.isArray(filtro.meses) ? filtro.meses.map(Number) : null;
-  return datos.filter((r) => {
-    if (filtro.opl && filtro.opl !== 'Todos' && filtro.opl !== 'Todos los OPLs' && r.opl !== filtro.opl) return false;
-    if (filtro.turno && r.turno !== filtro.turno) return false;
-    if (filtro.estado && r.estado !== filtro.estado) return false;
-    if (filtro.minDespachados && r.despachados < Number(filtro.minDespachados)) return false;
-    if (filtro.maxPendientes && r.pendientes > Number(filtro.maxPendientes)) return false;
-    if (filtro.anio && r.fecha.getFullYear() !== Number(filtro.anio)) return false;
-    if (meses && meses.length > 0 && !meses.includes(r.fecha.getMonth())) return false;
-    return true;
-  });
-}
-
-function sumarDespachados(datos) {
-  return datos.reduce((s, r) => s + Number(r.despachados || 0), 0);
-}
-
-function eficienciaOps(datos) {
-  const ops = {};
-  datos.forEach((r) => {
-    const key = `${r.fechaStr}_${r.turno}`;
-    if (!ops[key]) ops[key] = r.estado;
-  });
-  const vals = Object.values(ops);
-  const completas = vals.filter((v) => v === ESTADO_COMPLETO).length;
-  const conPendientes = Math.max(0, vals.length - completas);
-  const total = completas + conPendientes;
-  return {
-    completas,
-    conPendientes,
-    pctCompletas: total > 0 ? Math.round((completas / total) * 100) : 0,
-    pctPendientes: total > 0 ? Math.round((conPendientes / total) * 100) : 0,
-  };
-}
-
-/** Serie diaria para Analytics: mes seleccionado (día a día) o ventana móvil de 14 días. */
-function construirEvolucionOpl(fuente, { anioFiltro, mesesFiltro, hoyBase }) {
-  const mapa = {};
-  (fuente || []).forEach((r) => {
-    const key = String(r.fechaStr || '').trim();
-    if (!key) return;
-    if (!mapa[key]) mapa[key] = { despachados: 0, pendientes: 0 };
-    mapa[key].despachados += Number(r.despachados || 0);
-    mapa[key].pendientes += Number(r.pendientes || 0);
-  });
-
-  const meses = Array.isArray(mesesFiltro) && mesesFiltro.length ? mesesFiltro.map(Number) : null;
-
-  if (meses && meses.length === 1) {
-    const mes = meses[0];
-    const diasMes = new Date(anioFiltro, mes + 1, 0).getDate();
-    const puntos = [];
-    for (let day = 1; day <= diasMes; day++) {
-      const key = `${String(day).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}/${anioFiltro}`;
-      puntos.push({
-        label: `${String(day).padStart(2, '0')}/${String(mes + 1).padStart(2, '0')}`,
-        despachados: mapa[key]?.despachados || 0,
-        pendientes: mapa[key]?.pendientes || 0,
-      });
-    }
-    const MESES = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-    return { puntos, modo: 'mes', etiqueta: `Evolución diaria — ${MESES[mes]} ${anioFiltro}` };
-  }
-
-  if (meses && meses.length > 1) {
-    const keys = Object.keys(mapa)
-      .filter((k) => {
-        const f = parseDateDdMmYyyy(k);
-        return f && f.getFullYear() === anioFiltro && meses.includes(f.getMonth());
-      })
-      .sort((a, b) => parseDateDdMmYyyy(a) - parseDateDdMmYyyy(b));
-    return {
-      puntos: keys.map((k) => ({
-        label: k.slice(0, 5),
-        despachados: mapa[k].despachados,
-        pendientes: mapa[k].pendientes,
-      })),
-      modo: 'periodo',
-      etiqueta: 'Evolución diaria — meses seleccionados',
-    };
-  }
-
-  const hoy = hoyBase || new Date();
-  const puntos = [];
-  for (let i = 13; i >= 0; i--) {
-    const d = new Date(hoy);
-    d.setDate(hoy.getDate() - i);
-    const key = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-    puntos.push({
-      label: key.slice(0, 5),
-      despachados: mapa[key]?.despachados || 0,
-      pendientes: mapa[key]?.pendientes || 0,
-    });
-  }
-  return { puntos, modo: '14dias', etiqueta: 'Evolución diaria — últimos 14 días' };
-}
-
-function porDiaSemana(datos) {
-  const dias = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
-  const hoy = new Date();
-  hoy.setHours(0, 0, 0, 0);
-  const inicioSem = new Date(hoy);
-  inicioSem.setDate(hoy.getDate() - 6);
-  const inicioAnt = new Date(hoy);
-  inicioAnt.setDate(hoy.getDate() - 13);
-  const sumAct = [0, 0, 0, 0, 0, 0, 0];
-  const sumAnt = [0, 0, 0, 0, 0, 0, 0];
-  const sumHis = [0, 0, 0, 0, 0, 0, 0];
-  const cntHis = [0, 0, 0, 0, 0, 0, 0];
-  datos.forEach((r) => {
-    const d = r.fecha.getDay();
-    const fd = new Date(r.fecha.getFullYear(), r.fecha.getMonth(), r.fecha.getDate());
-    if (fd >= inicioSem && fd <= hoy) sumAct[d] += r.despachados;
-    if (fd >= inicioAnt && fd < inicioSem) sumAnt[d] += r.despachados;
-    sumHis[d] += r.despachados;
-    cntHis[d] += 1;
-  });
-  const totalAct = sumAct.reduce((s, v) => s + v, 0);
-  const usarPeriodo = totalAct === 0 && datos.length > 0;
-  const diaHoy = hoy.getDay();
-  return dias.map((nombre, i) => {
-    const promedio = cntHis[i] > 0 ? Math.round(sumHis[i] / cntHis[i]) : 0;
-    const actual = usarPeriodo ? promedio : sumAct[i];
-    const anterior = usarPeriodo ? 0 : sumAnt[i];
-    const variacion = anterior > 0 ? Math.round(((actual - anterior) / anterior) * 100) : null;
-    const totalRef = usarPeriodo ? sumHis.reduce((s, v) => s + v, 0) : totalAct;
-    return {
-      dia: nombre,
-      actual,
-      anterior,
-      variacion,
-      pctActual: totalRef > 0 ? Math.round(((usarPeriodo ? sumHis[i] : actual) / totalRef) * 100) : 0,
-      total: sumHis[i],
-      promedio,
-      esHoy: i === diaHoy,
-      ops: cntHis[i],
-      modoPeriodo: usarPeriodo,
-    };
-  });
 }
 
 export async function importarExcelAdicionales(bytes, nombre) {
@@ -2887,292 +2785,4 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   doc.y = y + 4;
 }
 
-export async function getKPIs(opl, filtro) {
-  const s = await loadState();
-  const vivo = historicoVivoDesdeSesion(s);
-  const todos = leerHistoricoConOperacionViva(s);
-  if (!todos.length) {
-    return {
-      success: false,
-      message: 'Sin datos OPL. Sincronice Despachos desde SIRT o cierre una operación.',
-    };
-  }
-  const anioFiltro = Number(filtro?.anio || new Date().getFullYear());
-  const mesesFiltro = Array.isArray(filtro?.meses) && filtro.meses.length ? filtro.meses : null;
-  const periodo = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro, meses: mesesFiltro });
-  const todosOpl = filtrarHistoricoAvanzado(todos, { opl });
-  const hoyBase = new Date();
-  hoyBase.setHours(0, 0, 0, 0);
-  const inicioSemana = new Date(hoyBase);
-  inicioSemana.setDate(hoyBase.getDate() - 6);
-  const hoy = todosOpl.filter((r) => r.fecha.getTime() === hoyBase.getTime());
-  const semana = todosOpl.filter((r) => r.fecha >= inicioSemana);
-  const anio = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro });
-  const anioAnt = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro - 1 });
-  const periodoAnt = filtrarHistoricoAvanzado(todos, { opl, anio: anioFiltro - 1, meses: mesesFiltro });
-  const despSem = sumarDespachados(semana);
-  const diasConData = [...new Set(semana.map((r) => r.fechaStr))].length || 1;
-  const promSem = Math.round(despSem / diasConData);
-  const sumDia = [0, 0, 0, 0, 0, 0, 0];
-  semana.forEach((r) => (sumDia[r.fecha.getDay()] += r.despachados));
-  const diasNombres = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
-  let maxDia = 0;
-  let diaMayor = '';
-  sumDia.forEach((v, i) => {
-    if (v > maxDia) {
-      maxDia = v;
-      diaMayor = diasNombres[i];
-    }
-  });
-  const despMes = sumarDespachados(periodo);
-  const mitad = Math.floor((new Date().getDate() || 1) / 2);
-  const primera = periodo.filter((r) => r.fecha.getDate() <= mitad);
-  const segunda = periodo.filter((r) => r.fecha.getDate() > mitad);
-  const tendencia = sumarDespachados(segunda) >= sumarDespachados(primera) ? 'subiendo' : 'bajando';
-  const efPeriodo = eficienciaOps(periodo);
-  const efPeriodoAnt = eficienciaOps(periodoAnt);
-  const comparacionOPLsMap = {};
-  (periodo.length ? periodo : anio).forEach((r) => {
-    if (!comparacionOPLsMap[r.opl]) comparacionOPLsMap[r.opl] = { desp: 0, ops: 0, pend: 0, comp: 0 };
-    const x = comparacionOPLsMap[r.opl];
-    x.desp += r.despachados;
-    x.ops += 1;
-    x.pend += r.pendientes;
-    if (r.estado === ESTADO_COMPLETO) x.comp += 1;
-  });
-  const comparacionOPLs = Object.keys(comparacionOPLsMap)
-    .map((k) => ({
-      opl: k,
-      despachados: comparacionOPLsMap[k].desp,
-      operaciones: comparacionOPLsMap[k].ops,
-      pendientes: comparacionOPLsMap[k].pend,
-      promedio: comparacionOPLsMap[k].ops > 0 ? Math.round(comparacionOPLsMap[k].desp / comparacionOPLsMap[k].ops) : 0,
-      eficiencia: comparacionOPLsMap[k].ops > 0 ? Math.round((comparacionOPLsMap[k].comp / comparacionOPLsMap[k].ops) * 100) : 0,
-    }))
-    .sort((a, b) => b.despachados - a.despachados);
-  const anomalias = filtrarHistoricoAvanzado(todos, { anio: anioFiltro })
-    .filter((r) => r.pendientes > 50 || r.progreso < 50)
-    .map((r) => ({ fecha: r.fechaStr, turno: r.turno, opl: r.opl, pendientes: r.pendientes, progreso: r.progreso }))
-    .sort((a, b) => b.pendientes - a.pendientes);
-  const mesVals = new Array(12).fill(0);
-  anio.forEach((r) => (mesVals[r.fecha.getMonth()] += r.despachados));
-  const comparacionMeses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'].map((n, i) => {
-    const anterior = i > 0 ? mesVals[i - 1] : 0;
-    const variacion = anterior > 0 ? Math.round(((mesVals[i] - anterior) / anterior) * 100) : null;
-    return { mes: i, nombre: n, valor: mesVals[i], anterior, variacion, tendencia: variacion === null ? '—' : variacion >= 0 ? '↑' : '↓' };
-  });
-  const hoyDesp = sumarDespachados(hoy);
-  const hoyProg = hoy.length ? Math.round(hoy.reduce((s2, r) => s2 + r.progreso, 0) / hoy.length) : 0;
-  const turnoVivo = vivo[0]?.turno || '';
-  const fuenteEvol = periodo.length ? periodo : todosOpl;
-  const evoPack = construirEvolucionOpl(fuenteEvol, { anioFiltro, mesesFiltro, hoyBase });
-  const diasSemanaPack = porDiaSemana(periodo.length ? periodo : anio.length ? anio : todos);
-  return {
-    success: true,
-    operacionEnCurso: vivo.length > 0,
-    turnoEnCurso: turnoVivo,
-    fuenteHoy: vivo.length ? 'SIRT en vivo (programación turno + baseline OPL)' : 'histórico cerrado',
-    kpis: {
-      hoy: { despachados: hoyDesp, progreso: hoyProg, completas: hoy.filter((r) => r.estado === ESTADO_COMPLETO).length, total: hoy.length, badge: `${hoyProg}% promedio` },
-      semana: { despachados: despSem, promDiario: promSem, diaMayor, maxDia },
-      mes: { despachados: despMes, tendencia },
-      periodo: { despachados: sumarDespachados(periodo), vsMesAnt: sumarDespachados(periodoAnt) },
-      anio: { despachados: sumarDespachados(anio), operaciones: [...new Set(anio.map((r) => `${r.fechaStr}_${r.turno}`))].length, mesMayor: comparacionMeses.reduce((a, b) => (b.valor > a.valor ? b : a), { nombre: '' }).nombre, vsAnioAnt: sumarDespachados(anioAnt) },
-      vs: {
-        particulares: (periodo.length ? periodo : anio).filter((r) => r.opl !== 'TRANSCARNES').reduce((s2, r) => s2 + r.despachados, 0),
-        transcarnes: (periodo.length ? periodo : anio).filter((r) => r.opl === 'TRANSCARNES').reduce((s2, r) => s2 + r.despachados, 0),
-      },
-      eficiencia: efPeriodo.pctCompletas,
-      eficienciaVsAnt: efPeriodoAnt.pctCompletas,
-      productividad: {
-        promedioPorOp: comparacionOPLs.length ? Math.round(comparacionOPLs.reduce((s2, r) => s2 + r.promedio, 0) / comparacionOPLs.length) : 0,
-        totalOps: (periodo.length ? periodo : anio).length,
-        pctCompletadas: efPeriodo.pctCompletas,
-      },
-      anomalias: anomalias.length,
-    },
-    graficos: {
-      evolucion: evoPack.puntos,
-      evolucionModo: evoPack.modo,
-      evolucionEtiqueta: evoPack.etiqueta,
-      diasSemanaModo: diasSemanaPack.some((d) => d.modoPeriodo) ? 'periodo' : 'semana',
-      ranking: comparacionOPLs.map((x) => ({ opl: x.opl, despachados: x.despachados, promedio: x.promedio })),
-      porDiaSemana: diasSemanaPack,
-      eficiencia: efPeriodo,
-      comparacionMeses,
-      comparacionOPLs,
-    },
-    backlog: comparacionOPLs
-      .map((x) => ({ opl: x.opl, opsPendientes: x.operaciones - Math.round((x.eficiencia / 100) * x.operaciones), totalPendientes: x.pendientes, eficiencia: x.eficiencia, estado: x.eficiencia >= 95 ? 'ok' : x.eficiencia >= 80 ? 'revisar' : 'critico' }))
-      .filter((x) => x.totalPendientes > 0)
-      .sort((a, b) => b.totalPendientes - a.totalPendientes),
-    anomalias: anomalias.slice(0, 10),
-  };
-}
 
-export async function getAniosDisponibles() {
-  const s = await loadState();
-  const set = {};
-  leerHistoricoConOperacionViva(s).forEach((r) => {
-    set[r.fecha.getFullYear()] = true;
-  });
-  const anios = Object.keys(set)
-    .map(Number)
-    .sort((a, b) => b - a);
-  return { success: true, anios: anios.length ? anios : [new Date().getFullYear()] };
-}
-
-export async function getListaOPLsHistorico() {
-  const s = await loadState();
-  const set = {};
-  leerHistoricoConOperacionViva(s).forEach((r) => {
-    if (r.opl) set[r.opl] = true;
-  });
-  return { success: true, opls: ['Todos los OPLs'].concat(Object.keys(set).sort()) };
-}
-
-export async function getResumenAdicionales() {
-  const s = await loadState();
-  const resSalidas = contarJuegosVisceralesSync(s);
-  const totalSalidas = resSalidas.total || 0;
-  const metaDec = s.resumenDecomisoMeta || {};
-  const totalDecomisos =
-    Number(metaDec.totalAnimalesConDecomiso) > 0
-      ? Number(metaDec.totalAnimalesConDecomiso)
-      : Number(s.resumenDespachos?.totalConDecomiso) || 0;
-  return { success: true, totalSalidas, totalDecomisos };
-}
-
-export async function generarReporteOPL(opl, filtro) {
-  const res = await getKPIs(opl, filtro);
-  if (!res.success) return res;
-  const k = res.kpis;
-  const g = res.graficos || {};
-  const backlog = res.backlog || [];
-  const anomalias = res.anomalias || [];
-  const compRows = (g.comparacionOPLs || [])
-    .map(
-      (r) =>
-        `<tr><td>${r.opl}</td><td>${r.despachados}</td><td>${r.operaciones}</td><td>${r.pendientes}</td><td>${r.eficiencia}%</td></tr>`
-    )
-    .join('');
-  const backlogRows =
-    backlog.length > 0
-      ? backlog
-          .map(
-            (b) =>
-              `<tr><td>${b.opl}</td><td>${b.opsPendientes}</td><td>${b.totalPendientes}</td><td>${b.eficiencia}%</td><td>${b.estado}</td></tr>`
-          )
-          .join('')
-      : '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Sin backlog registrado</td></tr>';
-  const anomRows =
-    anomalias.length > 0
-      ? anomalias
-          .map(
-            (a) =>
-              `<tr><td>${a.fecha}</td><td>${a.turno}</td><td>${a.opl}</td><td>${a.pendientes}</td><td>${a.progreso}%</td></tr>`
-          )
-          .join('')
-      : '<tr><td colspan="5" style="text-align:center;color:#6b7280;">Sin anomalias</td></tr>';
-  const ev = g.evolucion || [];
-  const sem = g.porDiaSemana || [];
-  const cm = g.comparacionMeses || [];
-  const html = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Reporte OPL</title>
-  <script src="/vendor/chart.umd.min.js"></script>
-  <style>
-    body{font-family:Arial,sans-serif;background:#f3f4f6;margin:0;padding:20px;color:#1f2937}
-    .wrap{max-width:1100px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden}
-    .head{background:#259c39;color:#fff;padding:18px 22px}
-    .head h1{margin:0;font-size:22px}
-    .head p{margin:6px 0 0;font-size:12px;opacity:.9}
-    .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;padding:14px}
-    .kpi{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#fafafa}
-    .kpi .l{font-size:11px;color:#6b7280;text-transform:uppercase}
-    .kpi .v{font-size:23px;font-weight:700;color:#259c39}
-    .sec{padding:0 14px 14px}
-    .sec h2{font-size:14px;color:#259c39;margin:12px 0 8px}
-    .charts{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .card{border:1px solid #e5e7eb;border-radius:8px;padding:10px;background:#fff}
-    .chart{height:220px}
-    table{width:100%;border-collapse:collapse}
-    th,td{border:1px solid #e5e7eb;padding:7px;font-size:12px;text-align:center}
-    th{background:#f9fafb}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="head">
-      <h1>Reporte Operativo OPL: ${opl || 'Todos los OPLs'}</h1>
-      <p>Generado: ${fmtNow()} | Año: ${Number(filtro?.anio || new Date().getFullYear())}</p>
-    </div>
-    <div class="grid">
-      <div class="kpi"><div class="l">Hoy</div><div class="v">${k.hoy.despachados}</div><div>${k.hoy.progreso}%</div></div>
-      <div class="kpi"><div class="l">Semana</div><div class="v">${k.semana.despachados}</div><div>Prom: ${k.semana.promDiario}</div></div>
-      <div class="kpi"><div class="l">Mes</div><div class="v">${k.mes.despachados}</div><div>${k.mes.tendencia}</div></div>
-      <div class="kpi"><div class="l">Año</div><div class="v">${k.anio.despachados}</div><div>Ops: ${k.anio.operaciones}</div></div>
-      <div class="kpi"><div class="l">Eficiencia</div><div class="v">${k.eficiencia}%</div><div>Anomalias: ${k.anomalias}</div></div>
-    </div>
-    <div class="sec">
-      <h2>Graficos</h2>
-      <div class="charts">
-        <div class="card"><canvas id="c1" class="chart"></canvas></div>
-        <div class="card"><canvas id="c2" class="chart"></canvas></div>
-        <div class="card"><canvas id="c3" class="chart"></canvas></div>
-        <div class="card"><canvas id="c4" class="chart"></canvas></div>
-      </div>
-    </div>
-    <div class="sec">
-      <h2>Comparacion entre OPLs</h2>
-      <table><tr><th>OPL</th><th>Despachados</th><th>Operaciones</th><th>Pendientes</th><th>Eficiencia</th></tr>${compRows}</table>
-    </div>
-    <div class="sec">
-      <h2>Backlog por OPL</h2>
-      <table><tr><th>OPL</th><th>Ops c/pend</th><th>Total pendientes</th><th>Eficiencia</th><th>Estado</th></tr>${backlogRows}</table>
-    </div>
-    <div class="sec">
-      <h2>Anomalias</h2>
-      <table><tr><th>Fecha</th><th>Turno</th><th>OPL</th><th>Pendientes</th><th>Progreso</th></tr>${anomRows}</table>
-    </div>
-  </div>
-  <script>
-    new Chart(document.getElementById('c1'),{
-      type:'line',
-      data:{labels:${JSON.stringify(ev.map((x) => x.label))},datasets:[
-        {label:'Despachados',data:${JSON.stringify(ev.map((x) => x.despachados))},borderColor:'#259c39',backgroundColor:'rgba(37,156,57,.08)',fill:true,tension:.3},
-        {label:'Pendientes',data:${JSON.stringify(ev.map((x) => x.pendientes))},borderColor:'#dc2626',backgroundColor:'rgba(220,38,38,.06)',fill:true,tension:.3}
-      ]},
-      options:{responsive:true,maintainAspectRatio:false}
-    });
-    new Chart(document.getElementById('c2'),{
-      type:'bar',
-      data:{labels:${JSON.stringify((g.ranking || []).map((x) => x.opl))},datasets:[{data:${JSON.stringify((g.ranking || []).map((x) => x.despachados))},backgroundColor:'#378ADD'}]},
-      options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}}}
-    });
-    new Chart(document.getElementById('c3'),{
-      type:'bar',
-      data:{labels:${JSON.stringify(sem.map((x) => x.dia))},datasets:[
-        {label:'Esta semana',data:${JSON.stringify(sem.map((x) => x.actual))},backgroundColor:'#259c39'},
-        {label:'Semana anterior',data:${JSON.stringify(sem.map((x) => x.anterior))},backgroundColor:'rgba(37,156,57,.25)'}
-      ]},
-      options:{responsive:true,maintainAspectRatio:false}
-    });
-    new Chart(document.getElementById('c4'),{
-      type:'bar',
-      data:{labels:${JSON.stringify(cm.map((x) => x.nombre))},datasets:[{label:'Mes',data:${JSON.stringify(cm.map((x) => x.valor))},backgroundColor:'#7F77DD'}]},
-      options:{responsive:true,maintainAspectRatio:false}
-    });
-  </script>
-</body></html>`;
-  return { success: true, html };
-}
-
-export async function getHistoricoResumen(limite) {
-  const s = await loadState();
-  const n = Math.min(Number(limite) || 50, 200);
-  const slice = s.historicoOpl.slice(-n).reverse();
-  return { success: true, datos: slice };
-}

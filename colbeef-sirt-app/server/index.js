@@ -423,22 +423,6 @@ app.get('/api/historial/pdf/:id', async (req, res) => {
   }
 });
 
-app.get('/api/historico/opl', async (req, res) => {
-  try {
-    res.json(await gestor.getHistoricoResumen(req.query.limit));
-  } catch (e) {
-    apiError(res, e);
-  }
-});
-
-app.get('/api/analytics', async (req, res) => {
-  try {
-    res.json(await gestor.getKPIs(req.query.opl || 'Todos los OPLs', req.query));
-  } catch (e) {
-    apiError(res, e);
-  }
-});
-
 app.post('/api/limpiar', async (_req, res) => {
   try {
     const resumen = await gestor.limpiarResumen();

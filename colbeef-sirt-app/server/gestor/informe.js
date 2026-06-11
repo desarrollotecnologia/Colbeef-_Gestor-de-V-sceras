@@ -21,6 +21,24 @@ function fmtDateOnly() {
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 }
 
+function escHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function normalizarOpcionesInforme(opts) {
+  return {
+    inclBeneficio: Boolean(opts.inclBeneficio ?? opts.beneficio ?? opts.cavas ?? opts.inclCavas),
+    inclInv: Boolean(opts.inclInv ?? opts.inv),
+    inclCavas: Boolean(opts.inclCavas ?? opts.cavas),
+    inclPerch: Boolean(opts.inclPerch ?? opts.percheros ?? opts.perch),
+    inclDist: Boolean(opts.inclDist ?? opts.distribucion ?? opts.dist),
+  };
+}
+
 export async function getInformeDatos() {
   const s = await loadState();
   if (s.informe) return { success: true, ...s.informe };
@@ -59,88 +77,93 @@ export async function limpiarInformeDatos() {
 }
 
 export async function generarInformeHTML(payload) {
-  const opts = typeof payload === 'string' ? JSON.parse(payload || '{}') : payload || {};
-  const d = await getInformeDatos();
+  const raw = typeof payload === 'string' ? JSON.parse(payload || '{}') : payload || {};
+  const opts = normalizarOpcionesInforme(raw);
+  const origin = String(raw.origin || '').trim() || '';
+
+  let d;
+  if (raw.datos && typeof raw.datos === 'object') {
+    d = { success: true, ...raw.datos };
+  } else {
+    d = await getInformeDatos();
+  }
   if (!d.success) return d;
 
-  const inclBeneficio = Boolean(opts.inclBeneficio);
-  const inclInv = Boolean(opts.inclInv);
-  const inclCavas = Boolean(opts.inclCavas);
-  const inclPerch = Boolean(opts.inclPerch);
-  const inclDist = Boolean(opts.inclDist);
-
+  const fecha = String(d.fecha || fmtDateOnly());
   const total = Number(d.completos || 0) + Number(d.incompletos || 0);
 
-  const beneficioSection = inclBeneficio
+  const beneficioSection = opts.inclBeneficio
     ? `
     <div class="section">
-      <h2>Beneficio del Día</h2>
-      <div class="kpi-row">
-        <div class="kpi-card" style="background:#9b59b6;">
-          <div class="kpi-label">Animales Beneficiados</div>
-          <div class="kpi-value">${d.beneficioDia}</div>
-        </div>
+      <div class="section-title">Beneficio del Día</div>
+      <div class="beneficio-box">
+        <div class="beneficio-label">ANIMALES BENEFICIADOS</div>
+        <div class="beneficio-num">${Number(d.beneficioDia || 0)}</div>
       </div>
     </div>`
     : '';
 
   let invSection = '';
-  if (inclInv) {
+  if (opts.inclInv) {
     const novRows =
       (d.novedades || [])
-        .map((n) => `<tr><td>${n.cod || ''}</td><td>${n.desc || ''}</td></tr>`)
-        .join('') || '<tr><td colspan="2" style="text-align:center;color:#999;">Sin novedades</td></tr>';
+        .map((n) => `<tr><td>${escHtml(n.cod)}</td><td>${escHtml(n.desc)}</td></tr>`)
+        .join('') ||
+      '<tr><td colspan="2" style="text-align:center;color:#888;">Sin novedades registradas</td></tr>';
     invSection = `
     <div class="section">
-      <h2>Inventario Producto Frío</h2>
-      <div class="kpi-row">
-        <div class="kpi-card" style="background:#27ae60;">
-          <div class="kpi-label">Juegos Completos</div>
-          <div class="kpi-value">${d.completos}</div>
-        </div>
-        <div class="kpi-card" style="background:#e74c3c;">
-          <div class="kpi-label">Incompletos</div>
-          <div class="kpi-value">${d.incompletos}</div>
-        </div>
-        <div class="kpi-card" style="background:#3498db;">
-          <div class="kpi-label">Total</div>
-          <div class="kpi-value">${total}</div>
-        </div>
+      <div class="section-title">Inventario Producto Frío en Cava</div>
+      <div class="kpi-row three">
+        <div class="kpi green"><div class="kpi-lbl">Juegos Completos</div><div class="kpi-val">${Number(d.completos || 0)}</div></div>
+        <div class="kpi red"><div class="kpi-lbl">Juegos Incompletos</div><div class="kpi-val">${Number(d.incompletos || 0)}</div></div>
+        <div class="kpi blue"><div class="kpi-lbl">Total Juegos</div><div class="kpi-val">${total}</div></div>
       </div>
-      <h3>Novedades por Código</h3>
+      <div class="sub-title">Novedades por Código</div>
       <table>
-        <thead><tr><th>Código</th><th>Descripción</th></tr></thead>
+        <thead><tr><th>CÓDIGO</th><th>DETALLE</th></tr></thead>
         <tbody>${novRows}</tbody>
       </table>
     </div>`;
   }
 
   let cavasSection = '';
-  if (inclCavas) {
+  if (opts.inclCavas) {
     let totalCarros = 0;
     let totalCap = 0;
     let totalInv = 0;
     const cavasRows = (d.cavas || [])
       .map((c) => {
-        const cap = Number(c.carros || 0) * Number(c.capPorCarro || 0);
+        const carros = Number(c.carros || 0);
+        const capPor = Number(c.capPorCarro || 0);
+        const cap = carros * capPor;
         const inv = Number(c.inventario || 0);
         const pct = cap > 0 ? Math.round((inv / cap) * 100) : 0;
-        totalCarros += Number(c.carros || 0);
+        totalCarros += carros;
         totalCap += cap;
         totalInv += inv;
-        return `<tr><td style="text-align:left;">${c.grupo}</td><td>${c.carros}</td><td>${cap}</td><td>${inv}</td><td>${pct}%</td></tr>`;
+        return `<tr>
+          <td class="left">${escHtml(c.grupo)}</td>
+          <td>x ${carros}</td>
+          <td>${cap}</td>
+          <td>${inv}</td>
+          <td>${pct}%</td>
+        </tr>`;
       })
       .join('');
     const totalPct = totalCap > 0 ? Math.round((totalInv / totalCap) * 100) : 0;
     cavasSection = `
     <div class="section">
-      <h2>Ocupación Cavas</h2>
+      <div class="section-title">Ocupación Cavas Vísceras</div>
       <table>
-        <thead><tr><th>Cava</th><th>Carros</th><th>Capacidad Total</th><th>Inventario Total</th><th>Participación%</th></tr></thead>
+        <thead><tr><th>CAVA</th><th>CARROS</th><th>CAPACIDAD TOTAL</th><th>INVENTARIO TOTAL</th><th>PARTICIPACIÓN TOTAL</th></tr></thead>
         <tbody>
           ${cavasRows}
-          <tr style="background:#27ae60;color:white;font-weight:700;">
-            <td style="text-align:left;">TOTAL</td><td>${totalCarros}</td><td>${totalCap}</td><td>${totalInv}</td><td>${totalPct}%</td>
+          <tr class="total-row">
+            <td class="left">TOTAL GENERAL</td>
+            <td>—</td>
+            <td>${totalCap}</td>
+            <td>${totalInv.toFixed(2)}</td>
+            <td>${totalPct}%</td>
           </tr>
         </tbody>
       </table>
@@ -148,7 +171,7 @@ export async function generarInformeHTML(payload) {
   }
 
   let percherosSection = '';
-  if (inclPerch) {
+  if (opts.inclPerch) {
     const totalEnUso = (d.percheros || []).reduce(
       (sum, p) =>
         sum +
@@ -159,132 +182,146 @@ export async function generarInformeHTML(payload) {
         Number(p.crudas || 0),
       0
     );
-    const disponibles = Number(d.stockTotal || 0) - Number(d.danados || 0) - totalEnUso;
-    const bajoBadge =
-      disponibles < 30
-        ? `<span style="background:#e74c3c;color:white;padding:2px 8px;border-radius:4px;font-size:11px;margin-left:6px;">⚠️ BAJO STOCK</span>`
-        : '';
-    const dispBg = disponibles < 30 ? '#e74c3c' : '#27ae60';
+    const stockTotal = Number(d.stockTotal || 0);
+    const danados = Number(d.danados || 0);
+    const disponibles = stockTotal - danados - totalEnUso;
+    const bajo = disponibles < 30;
 
     const MINIMOS = { blancas: 8, rojas: 8, patasManos: 2, cabezas: 5, crudas: 1 };
     let distSection = '';
-    if (inclDist) {
-      const chk = (val, min) => (Number(val || 0) < min ? ' style="color:#e74c3c;font-weight:700;"' : '');
+    if (opts.inclDist) {
+      const chk = (val, min) => (Number(val || 0) < min ? ' class="bajo-min"' : '');
       const percRows = (d.percheros || [])
         .map(
           (p) => `
         <tr>
-          <td style="text-align:left;">${p.cava}</td>
-          <td${chk(p.blancas, MINIMOS.blancas)}>${p.blancas || 0}</td>
-          <td${chk(p.rojas, MINIMOS.rojas)}>${p.rojas || 0}</td>
-          <td${chk(p.patasManos, MINIMOS.patasManos)}>${p.patasManos || 0}</td>
-          <td${chk(p.cabezas, MINIMOS.cabezas)}>${p.cabezas || 0}</td>
-          <td${chk(p.crudas, MINIMOS.crudas)}>${p.crudas || 0}</td>
+          <td class="left">${escHtml(p.cava)}</td>
+          <td${chk(p.blancas, MINIMOS.blancas)}>${Number(p.blancas || 0) || '—'}</td>
+          <td${chk(p.rojas, MINIMOS.rojas)}>${Number(p.rojas || 0) || '—'}</td>
+          <td${chk(p.patasManos, MINIMOS.patasManos)}>${Number(p.patasManos || 0) || '—'}</td>
+          <td${chk(p.cabezas, MINIMOS.cabezas)}>${Number(p.cabezas || 0) || '—'}</td>
+          <td${chk(p.crudas, MINIMOS.crudas)}>${Number(p.crudas || 0) || '—'}</td>
         </tr>`
         )
         .join('');
       distSection = `
-      <h3>Distribución por Cava</h3>
-      <p style="font-size:11px;color:#888;margin-bottom:6px;">
-        Mínimos — VBlancas: ${MINIMOS.blancas} · VRojas: ${MINIMOS.rojas} · PatasManos: ${MINIMOS.patasManos} · Cabezas: ${MINIMOS.cabezas} · Crudas: ${MINIMOS.crudas}
-        &nbsp;<span style="color:#e74c3c;">Rojo = bajo mínimo</span>
-      </p>
+      <div class="sub-title" style="margin-top:14px;">Distribución por Cavas</div>
       <table>
-        <thead><tr><th>Cava</th><th>Blancas</th><th>Rojas</th><th>Patas/Manos</th><th>Cabezas</th><th>Crudas</th></tr></thead>
-        <tbody>${percRows}</tbody>
+        <thead><tr><th>CAVAS</th><th>V-BLANCAS</th><th>V-ROJAS</th><th>PATAS/MANOS</th><th>CABEZAS</th><th>CRUDAS</th></tr></thead>
+        <tbody>
+          <tr class="min-row">
+            <td class="left">MÍNIMO PARA INICIAR</td>
+            <td>${MINIMOS.blancas}</td><td>${MINIMOS.rojas}</td><td>${MINIMOS.patasManos}</td><td>${MINIMOS.cabezas}</td><td>${MINIMOS.crudas}</td>
+          </tr>
+          ${percRows}
+        </tbody>
       </table>`;
     }
 
     percherosSection = `
     <div class="section">
-      <h2>Disponibilidad Percheros</h2>
-      <div class="kpi-row">
-        <div class="kpi-card" style="background:#3498db;">
-          <div class="kpi-label">Stock Total</div>
-          <div class="kpi-value">${d.stockTotal}</div>
-        </div>
-        <div class="kpi-card" style="background:#e74c3c;">
-          <div class="kpi-label">Dañados</div>
-          <div class="kpi-value">${d.danados}</div>
-        </div>
-        <div class="kpi-card" style="background:#f39c12;">
-          <div class="kpi-label">En Uso</div>
-          <div class="kpi-value">${totalEnUso}</div>
-        </div>
-        <div class="kpi-card" style="background:${dispBg};">
-          <div class="kpi-label">Disponibles${bajoBadge}</div>
-          <div class="kpi-value">${disponibles}</div>
+      <div class="section-title">Disponibilidad de Carros Percheros</div>
+      <div class="kpi-row four">
+        <div class="kpi blue"><div class="kpi-lbl">Stock Total</div><div class="kpi-val">${stockTotal}</div></div>
+        <div class="kpi red"><div class="kpi-lbl">Dañados</div><div class="kpi-val">${danados}</div></div>
+        <div class="kpi orange"><div class="kpi-lbl">En Uso</div><div class="kpi-val">${totalEnUso}</div></div>
+        <div class="kpi ${bajo ? 'red' : 'green'}">
+          <div class="kpi-lbl">Disponibles ${bajo ? '⚠️' : '✅ OK'}</div>
+          <div class="kpi-val">${disponibles}</div>
         </div>
       </div>
       ${distSection}
     </div>`;
   }
 
-  const fechaSlug = d.fecha.replace(/\//g, '-');
+  const sinSecciones =
+    !beneficioSection && !invSection && !cavasSection && !percherosSection;
+  const avisoSinSecciones = sinSecciones
+    ? `<div class="section" style="text-align:center;color:#888;padding:32px;">
+        No hay secciones seleccionadas. Marque al menos una opción en «Incluir en el informe».
+      </div>`
+    : '';
+
+  const fechaSlug = fecha.replace(/\//g, '-');
+  const scriptSrc = origin ? `${origin}/vendor/html2canvas.min.js` : '/vendor/html2canvas.min.js';
+  const logoSrc = origin ? `${origin}/colbeef-icon.png` : '/colbeef-icon.png';
+
   const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Informe Diario Colbeef – ${d.fecha}</title>
-  <script src="/vendor/html2canvas.min.js"></script>
+  <base href="${origin ? `${origin}/` : '/'}">
+  <title>Informe Colbeef – ${escHtml(fecha)}</title>
+  <script src="${scriptSrc}"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:Arial,sans-serif;background:#f0f2f5;padding:20px;color:#222;}
-    #report{max-width:940px;margin:0 auto;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,.13);}
-    .header{background:#1a5c2e;color:#fff;padding:18px 24px;display:flex;align-items:center;justify-content:space-between;gap:16px;}
-    .header .logo{font-size:24px;font-weight:800;letter-spacing:2px;}
-    .header h1{font-size:16px;font-weight:600;margin-top:4px;opacity:.95;}
-    .header .fecha-badge{font-size:12px;opacity:.8;margin-top:3px;}
-    .header .firma{text-align:right;font-size:11px;line-height:1.6;opacity:.85;}
-    .section{padding:16px 24px;border-bottom:1px solid #e8e8e8;}
+    body{font-family:Arial,Helvetica,sans-serif;background:#eceff1;padding:16px;color:#1a1a1a;}
+    #report{max-width:980px;margin:0 auto;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.12);}
+    .top-band{background:#1a5c2e;color:#fff;text-align:center;padding:14px 20px 10px;}
+    .top-band img{height:52px;margin-bottom:6px;}
+    .top-band h1{font-size:15px;font-weight:800;letter-spacing:1px;text-transform:uppercase;}
+    .top-band .sub{font-size:11px;opacity:.9;margin-top:4px;letter-spacing:.3px;}
+    .meta-bar{background:#f4f6f5;border-bottom:2px solid #1a5c2e;padding:8px 20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#444;}
+    .section{padding:14px 20px;border-bottom:1px solid #e5e7eb;}
     .section:last-of-type{border-bottom:none;}
-    .section h2{font-size:14px;font-weight:700;color:#1a5c2e;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;}
-    .section h3{font-size:12px;font-weight:600;color:#555;margin:14px 0 6px;}
-    .kpi-row{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
-    .kpi-card{border-radius:8px;padding:12px 16px;min-width:120px;color:#fff;}
-    .kpi-label{font-size:10px;opacity:.88;margin-bottom:3px;text-transform:uppercase;letter-spacing:.4px;}
-    .kpi-value{font-size:30px;font-weight:800;line-height:1;}
-    table{width:100%;border-collapse:collapse;font-size:12px;}
-    th,td{border:1px solid #ddd;padding:6px 10px;text-align:center;}
-    th{background:#f5f5f5;font-weight:600;font-size:11px;}
+    .section-title{font-size:12px;font-weight:800;color:#1a5c2e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;text-align:center;}
+    .sub-title{font-size:11px;font-weight:700;color:#374151;margin:10px 0 6px;text-transform:uppercase;}
+    .beneficio-box{text-align:center;padding:12px;background:#f8faf8;border:1px solid #d1e7d7;border-radius:6px;}
+    .beneficio-label{font-size:11px;font-weight:700;color:#555;letter-spacing:.5px;}
+    .beneficio-num{font-size:42px;font-weight:900;color:#1a5c2e;line-height:1.1;margin-top:4px;}
+    .kpi-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;}
+    .kpi{border-radius:6px;padding:10px 14px;min-width:110px;text-align:center;color:#fff;flex:1;}
+    .kpi.green{background:#27ae60;}.kpi.red{background:#e74c3c;}.kpi.blue{background:#3498db;}.kpi.orange{background:#f39c12;}
+    .kpi-lbl{font-size:9px;opacity:.92;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
+    .kpi-val{font-size:28px;font-weight:800;line-height:1;}
+    table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;}
+    th,td{border:1px solid #ccc;padding:5px 8px;text-align:center;}
+    th{background:#eef2ef;font-weight:700;font-size:10px;text-transform:uppercase;}
+    td.left{text-align:left;}
     tr:nth-child(even) td{background:#fafafa;}
-    .footer{padding:12px 24px;text-align:center;font-size:10px;color:#aaa;border-top:1px solid #eee;}
-    .export-btn{display:block;margin:14px auto;padding:9px 22px;background:#1a5c2e;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:600;}
+    tr.total-row td{background:#1a5c2e;color:#fff;font-weight:700;}
+    tr.min-row td{background:#f0fdf4;font-weight:600;}
+    td.bajo-min{color:#dc2626;font-weight:700;}
+    .footer{padding:12px 20px;text-align:center;font-size:10px;color:#666;border-top:2px solid #1a5c2e;}
+    .footer strong{color:#1a5c2e;}
+    .export-btn{display:block;margin:14px auto;padding:10px 24px;background:#1a5c2e;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;}
     .export-btn:hover{background:#14451f;}
   </style>
 </head>
 <body>
   <div id="report">
-    <div class="header">
-      <div>
-        <div class="logo">🐄 COLBEEF</div>
-        <h1>Informe Diario de Vísceras</h1>
-        <div class="fecha-badge">📅 ${d.fecha}</div>
-      </div>
-      <div class="firma">
-        <strong>SERGIO ANAYA</strong><br>
-        GESTOR DE VÍSCERAS<br>
-        Colbeef S.A.S
-      </div>
+    <div class="top-band">
+      <img src="${logoSrc}" alt="Colbeef" onerror="this.style.display='none'">
+      <h1>Gestión del Área de Vísceras</h1>
+      <div class="sub">Informe generado el: ${escHtml(fecha)}</div>
+    </div>
+    <div class="meta-bar">
+      <span>📅 ${escHtml(fecha)}</span>
+      <span><strong>SERGIO ANAYA</strong> · Gestor de Vísceras · Colbeef S.A.S</span>
     </div>
     ${beneficioSection}
     ${invSection}
     ${cavasSection}
     ${percherosSection}
+    ${avisoSinSecciones}
     <div class="footer">
-      Documento generado automáticamente · Gestor de Vísceras Colbeef · ${d.fecha}
+      <strong>SERGIO ANAYA</strong> — GESTOR DE VÍSCERAS<br>
+      Documento generado automáticamente · Gestor de Vísceras Colbeef · ${escHtml(fecha)}
     </div>
   </div>
   <button class="export-btn" onclick="exportarPNG()">📥 Exportar como PNG</button>
   <script>
     function exportarPNG() {
-      if (typeof html2canvas === 'undefined') { alert('html2canvas no disponible'); return; }
-      const btn = document.querySelector('.export-btn');
+      if (typeof html2canvas === 'undefined') {
+        alert('html2canvas no disponible. Recargue desde el gestor en el mismo servidor.');
+        return;
+      }
+      var btn = document.querySelector('.export-btn');
       btn.style.display = 'none';
-      html2canvas(document.getElementById('report'), { scale: 2, useCORS: true, backgroundColor: '#fff' })
+      html2canvas(document.getElementById('report'), { scale: 2, useCORS: true, backgroundColor: '#fff', logging: false })
         .then(function(canvas) {
-          const a = document.createElement('a');
+          var a = document.createElement('a');
           a.download = 'informe-colbeef-${fechaSlug}.png';
           a.href = canvas.toDataURL('image/png');
           a.click();

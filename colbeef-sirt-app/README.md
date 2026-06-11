@@ -2,13 +2,13 @@
 
 - **Interfaz completa** del Apps Script (`client/gestor.html`): mismos módulos y flujos, conectada al backend por `POST /api/rpc` (shim `google.script.run`).
 - **Datos operativos**: se **leen directamente desde PostgreSQL/SIRT**. El único upload manual es el `.xlsx` de **Salidas de Cava Adicionales**.
-- **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/planilla`, `/api/adicionales`, `/api/historico`, `/api/analytics`).
+- **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/planilla`, `/api/adicionales`, `/api/historico`).
 
 ## Gestor (interfaz única)
 
 Abra **http://localhost:3001/gestor.html** (o el enlace de red que muestra el servidor, p. ej. `http://192.168.20.205:3001/gestor.html`).
 
-Incluye tablero, decomisos, despachos, OPL, crudas, planilla, informes, PDF, analytics y adicionales. Los enlaces antiguos a `/gestor-v2.html` redirigen automáticamente aquí.
+Incluye tablero, decomisos, despachos, OPL, crudas, planilla, informes, PDF y adicionales. Los enlaces antiguos a `/gestor-v2.html` redirigen automáticamente aquí.
 
 ## Desarrollo con recarga (Vite)
 
@@ -104,8 +104,7 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 - `GET /api/crudas`
 - `GET /api/planilla`
 - `POST /api/adicionales`
-- `GET /api/historico/pdf`, `GET /api/historico/opl`
-- `GET /api/analytics`
+- `GET /api/historico/pdf`
 - `POST /api/limpiar`
 
 ## Lógica de datos

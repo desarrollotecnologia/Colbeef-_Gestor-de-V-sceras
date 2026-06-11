@@ -307,7 +307,6 @@
         despachos: showDespachos,
         informe: showInforme,
         historial: showHistorial,
-        analytics: showAnalytics,
         crudas: showCrudas,
         planilla: showPlanilla,
       };
@@ -321,7 +320,6 @@
       ['showDespachos', 'despachos'],
       ['showInforme', 'informe'],
       ['showHistorial', 'historial'],
-      ['showAnalytics', 'analytics'],
       ['showCrudas', 'crudas'],
       ['showPlanilla', 'planilla'],
       ['showDashboard', 'dashboard'],
