@@ -114,6 +114,7 @@ function construirResumenDespachosDesdeFilas(
       resultado: [],
       historicoGuardadoFlag: '',
       totalConDecomiso: 0,
+      totalCrudas: 0,
       filasEnCava: basesEnCava.size,
       filasSalidasTotales: (despachosCavas || []).length,
       filasSalidasUsadas: 0,
@@ -132,6 +133,7 @@ function construirResumenDespachosDesdeFilas(
 
   const puestoMeta = {};
   const basesDecomisoProgramados = new Set();
+  const basesCrudaProgramados = new Set();
   data.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
@@ -154,6 +156,7 @@ function construirResumenDespachosDesdeFilas(
         decomisoPorTipo: {},
         tieneCruda: false,
         props: {},
+        baseProp: {},
       };
     } else if (puestoTexto.length > puestoMeta[clave].puesto.length) {
       puestoMeta[clave].puesto = puestoTexto;
@@ -163,7 +166,11 @@ function construirResumenDespachosDesdeFilas(
     if (TIPOS_PRODUCTO.includes(tipo)) puestoMeta[clave][tipo]++;
     const base = codigoBase(id);
     if (!base) return;
-    if (tipo === 'Visceras Blancas' && crudaBases.has(base)) puestoMeta[clave].tieneCruda = true;
+    if (prop) puestoMeta[clave].baseProp[base] = prop;
+    if (tipo === 'Visceras Blancas' && (crudaBases.has(base) || esCruda(fila[12]))) {
+      puestoMeta[clave].tieneCruda = true;
+      basesCrudaProgramados.add(base);
+    }
     if (!puestoMeta[clave].animales[base]) puestoMeta[clave].animales[base] = new Set();
     puestoMeta[clave].animales[base].add(tipo);
     const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
@@ -207,9 +214,19 @@ function construirResumenDespachosDesdeFilas(
       r.incompletoCantidades = minVal !== maxVal;
       r.incompleto = r.incompletoCantidades || r.incompletoPorDecomiso;
       r.tieneCruda = Boolean(meta.tieneCruda);
+      const juegosPorOpl = {};
+      Object.keys(meta.animales).forEach((base) => {
+        if (!tieneJuegoCompleto(meta.animales[base])) return;
+        const prop = String(meta.baseProp?.[base] || '').trim().toUpperCase();
+        const oplKey = prop ? mapaOPL[prop] || OPL_DEFAULT : OPL_DEFAULT;
+        juegosPorOpl[oplKey] = (juegosPorOpl[oplKey] || 0) + 1;
+      });
+      r.juegosPorOpl = juegosPorOpl;
       const props = meta.props || {};
       const propTop = Object.keys(props).sort((a, b) => props[b] - props[a])[0] || '';
-      r.opl = propTop ? mapaOPL[propTop] || OPL_DEFAULT : OPL_DEFAULT;
+      r.opl =
+        Object.keys(juegosPorOpl).sort((a, b) => juegosPorOpl[b] - juegosPorOpl[a])[0] ||
+        (propTop ? mapaOPL[propTop] || OPL_DEFAULT : OPL_DEFAULT);
       const po = parsePuestoOperacion(meta.puesto);
       r.etiquetaPuesto = po.etiqueta;
       r.zonaPuesto = po.zona;
@@ -228,6 +245,7 @@ function construirResumenDespachosDesdeFilas(
     totalConDecomiso: basesDecomisoProgramados.size,
     totalConDecomisoVw: basesDecomisoVw.size,
     totalConDecomisoSai: basesDecomisoSai.size,
+    totalCrudas: basesCrudaProgramados.size,
     filasEnCava: basesEnCava.size,
     filasSalidasTotales: (despachosCavas || []).length,
     filasSalidasUsadas: salidasBase.length,
@@ -1079,26 +1097,30 @@ export function contarCrudasSync(s) {
   return { success: true, total };
 }
 
-/** VB crudas en animales programados a despachar hoy (turno LxM, etc.). */
+/** VB crudas en animales programados a despachar del turno (mismo criterio que tablero Despachos). */
 export function contarCrudasProgramadasSync(s, turno = '') {
-  const estadoNeto = s.estadoFromRow12 || [];
+  const estadoNeto = aplicarEstadoEnCavaNeto(
+    s.estadoFromRow12 || [],
+    s.despachosCavas || []
+  );
   const { crudaBases } = construirIndiceEnCava(estadoNeto);
+  const turnoOp =
+    String(turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   const codigosUnicos = {};
-  (s.despachosCavas || []).forEach((fila) => {
+  filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp).forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
-    const puesto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
-    if (tipo !== 'Visceras Blancas' || !id || !puesto) return;
-    if (turno && !puesto.includes(turno)) return;
+    if (tipo !== 'Visceras Blancas' || !id) return;
     const base = codigoBase(id);
-    if (!base || !crudaBases.has(base) || codigosUnicos[base]) return;
-    codigosUnicos[base] = true;
+    if (!base || codigosUnicos[base]) return;
+    if (crudaBases.has(base) || esCruda(fila[12])) codigosUnicos[base] = true;
   });
   return { success: true, total: Object.keys(codigosUnicos).length };
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-juegos-v1';
+export const GESTOR_BUILD = 'planilla-opl-puesto-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1246,7 +1268,10 @@ export async function getDashboardData(range) {
           juegosStockCava +
           ' juegos en stock cava';
       }
-      const cr = contarCrudasProgramadasSync(sWork, turnoOp);
+      const cr =
+        rd.totalCrudas != null && rd.totalCrudas !== ''
+          ? { success: true, total: Number(rd.totalCrudas) }
+          : contarCrudasProgramadasSync(sWork, turnoOp);
       const totalDecomisos = Number(rd.totalConDecomiso || 0);
       const totalDecomisosEnRango =
         Number(decomisoVinculoStats?.decomisosUnicos) ||
@@ -1339,9 +1364,11 @@ export async function getDashboardData(range) {
       ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
       : 0;
   const cr =
-    turnoDespacho && s.despachosCavas?.length
-      ? contarCrudasProgramadasSync(s, turnoDespacho)
-      : contarCrudasSync(s);
+    rd.totalCrudas != null && rd.totalCrudas !== ''
+      ? { success: true, total: Number(rd.totalCrudas) }
+      : turnoDespacho && s.despachosCavas?.length
+        ? contarCrudasProgramadasSync(s, turnoDespacho)
+        : contarCrudasSync(s);
   const juegosEnCava = totalJuegosDespacharLive > 0 ? totalJuegosDespacharLive : totalSalidas;
   const progresoOPL = oplPack
     ? oplPack.operacionFinalizada
@@ -1815,16 +1842,21 @@ export async function getPuestosCrudas() {
   if (Object.keys(puestos).length) {
     return { success: true, puestos, total: Object.keys(puestos).length };
   }
-  const { crudaBases } = construirIndiceEnCava(s.estadoFromRow12 || []);
-  const turno = String(rd?.turno || '').trim();
-  (s.despachosCavas || []).forEach((fila) => {
+  const estadoNeto = aplicarEstadoEnCavaNeto(
+    s.estadoFromRow12 || [],
+    s.despachosCavas || []
+  );
+  const { crudaBases } = construirIndiceEnCava(estadoNeto);
+  const turno =
+    String(rd?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  filasDespachoTurnoOperacion(s.despachosCavas || [], turno).forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
     const puesto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
     if (tipo !== 'Visceras Blancas' || !id || !puesto) return;
-    if (turno && !puesto.includes(turno)) return;
     const base = codigoBase(id);
-    if (base && crudaBases.has(base)) puestos[puesto] = true;
+    if (base && (crudaBases.has(base) || esCruda(fila[12]))) puestos[puesto] = true;
   });
   return { success: true, puestos, total: Object.keys(puestos).length };
 }
@@ -1996,7 +2028,8 @@ function inferirZonaDesdeRuta(puestoFull) {
 }
 
 function resolverZonaPlanilla(puestoFull, mapaPlazas) {
-  const codigo = codigoPuestoPlanilla(puestoFull);
+  const po = parsePuestoOperacion(puestoFull);
+  const codigo = po.codigo || codigoPuestoPlanilla(puestoFull);
   const claves = [codigo, String(puestoFull || '').split('/')[0].trim()].filter(Boolean);
   for (const k of claves) {
     if (mapaPlazas[k]) return mapaPlazas[k];
@@ -2005,21 +2038,26 @@ function resolverZonaPlanilla(puestoFull, mapaPlazas) {
   }
   for (const k of Object.keys(mapaPlazas)) {
     const ku = k.toUpperCase();
-    if (puestoFull.toUpperCase().startsWith(`${ku}/`) || puestoFull.toUpperCase().includes(`/${ku}/`)) {
-      return mapaPlazas[k];
-    }
+    const u = puestoFull.toUpperCase();
+    if (u.startsWith(`${ku}/`) || u.includes(`/${ku}/`)) return mapaPlazas[k];
   }
-  return inferirZonaDesdeRuta(puestoFull) || 'ENTRADA A CAVA';
+  const fromRoute = inferirZonaDesdeRuta(puestoFull);
+  if (fromRoute) return fromRoute;
+  if (po.zona) {
+    for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
+      if (po.zona.includes(needle)) return zona;
+    }
+    return po.zona;
+  }
+  return 'SIN ZONA';
 }
 
 function construirMapaPuestoOpl(despachosCavas, turno, mapaOPL) {
   const mapa = {};
-  (despachosCavas || []).forEach((fila) => {
+  filasDespachoTurnoOperacion(despachosCavas || [], turno).forEach((fila) => {
     const puesto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
     if (!puesto) return;
-    if (turno && !puesto.includes(turno)) return;
-    const prop = String(fila[4] ?? '').trim().toUpperCase();
-    const opl = mapaOPL[prop] || OPL_DEFAULT;
+    const opl = claveOplDesdeFila(fila, mapaOPL);
     const clave = claveAgrupacionPuesto(puesto);
     if (clave) mapa[clave] = opl;
     const cod = codigoPuestoPlanilla(puesto);
@@ -2028,42 +2066,98 @@ function construirMapaPuestoOpl(despachosCavas, turno, mapaOPL) {
   return mapa;
 }
 
-/** Planilla desde resumen de despachos programados (misma base que módulo Despachos). */
-function consolidarDesdeResumenDespachos(s) {
+/** Consolidado planilla: juegos por puesto + OPL (propietario real), alineado con despachos. */
+function construirConsolidadoPlanillaSync(s) {
   const rd = s.resumenDespachos;
-  const resultado = rd?.resultado || [];
-  if (!resultado.length) return null;
+  const turno =
+    String(rd?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  if (!turno) return null;
 
   asegurarPlazasMap(s);
-  const turno = String(rd.turno || '').trim();
+  const mapaOPL = cargarMapaOPL(s);
   const fechaHoy = fmtDateOnly();
   const consolidado = [];
   let totalJuegos = 0;
 
-  resultado.forEach((r) => {
-    const puestoFull = String(r.puesto || '').trim();
-    const juegos = Number(r.Juegos || 0);
-    if (!puestoFull || juegos <= 0) return;
-    const codigo =
-      String(r.codigoPuesto || '').trim() || extraerPuesto(puestoFull) || codigoPuestoPlanilla(puestoFull);
-    const opl = String(r.opl || '').trim() || OPL_DEFAULT;
-    const plaza = resolverZonaPlanilla(puestoFull, s.plazasMap);
+  const resultado = rd?.resultado || [];
+  if (resultado.length) {
+    resultado.forEach((r) => {
+      const puestoFull = String(r.puesto || '').trim();
+      if (!puestoFull) return;
+      const codigo =
+        String(r.codigoPuesto || '').trim() || extraerPuesto(puestoFull) || codigoPuestoPlanilla(puestoFull);
+      const plaza = resolverZonaPlanilla(puestoFull, s.plazasMap);
+      const porOpl =
+        r.juegosPorOpl && Object.keys(r.juegosPorOpl).length
+          ? r.juegosPorOpl
+          : { [String(r.opl || OPL_DEFAULT).trim() || OPL_DEFAULT]: Number(r.Juegos || 0) };
+      Object.keys(porOpl).forEach((opl) => {
+        const juegos = Number(porOpl[opl] || 0);
+        if (juegos <= 0) return;
+        totalJuegos += juegos;
+        consolidado.push([
+          codigo,
+          'Visceras Rojas',
+          '',
+          puestoFull,
+          codigo,
+          plaza,
+          opl,
+          juegos,
+          fechaHoy,
+          turno,
+        ]);
+      });
+    });
+    if (consolidado.length) return { consolidado, totalJuegos, turno, fechaHoy };
+  }
+
+  const grupos = {};
+  filasDespachoTurnoOperacion(s.despachosCavas || [], turno).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puestoFull = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (!id || !tipo || !puestoFull || !TIPOS_PRODUCTO.includes(tipo)) return;
+    const clave = claveAgrupacionPuesto(puestoFull);
+    const opl = claveOplDesdeFila(fila, mapaOPL);
+    const base = codigoBase(id);
+    if (!base) return;
+    const gk = `${clave}|${opl}`;
+    if (!grupos[gk]) grupos[gk] = { puestoFull, opl, animales: {} };
+    if (!grupos[gk].animales[base]) grupos[gk].animales[base] = new Set();
+    grupos[gk].animales[base].add(tipo);
+  });
+
+  Object.values(grupos).forEach((g) => {
+    let juegos = 0;
+    Object.values(g.animales).forEach((tipos) => {
+      if (tieneJuegoCompleto(tipos)) juegos++;
+    });
+    if (juegos <= 0) return;
+    const codigo = codigoPuestoPlanilla(g.puestoFull);
+    const plaza = resolverZonaPlanilla(g.puestoFull, s.plazasMap);
     totalJuegos += juegos;
     consolidado.push([
       codigo,
       'Visceras Rojas',
       '',
-      puestoFull,
+      g.puestoFull,
       codigo,
       plaza,
-      opl,
+      g.opl,
       juegos,
       fechaHoy,
       turno,
     ]);
   });
 
-  return { consolidado, totalJuegos, turno, fechaHoy };
+  return consolidado.length ? { consolidado, totalJuegos, turno, fechaHoy } : null;
+}
+
+/** Planilla desde resumen de despachos programados (misma base que módulo Despachos). */
+function consolidarDesdeResumenDespachos(s) {
+  return construirConsolidadoPlanillaSync(s);
 }
 
 export async function consolidarDatos() {
@@ -2177,8 +2271,10 @@ export async function generarPlanillaPuntos(opl) {
   let fechaPlanilla = fmtDateOnly();
   s.consolidado.forEach((fila) => {
     const oplReg = String(fila[6] ?? '').trim();
-    const zona = String(fila[5] ?? 'ENTRADA A CAVA').trim();
-    const puesto = String(fila[4] ?? '').trim();
+    const zona = String(fila[5] ?? 'SIN ZONA').trim();
+    const puestoFull = String(fila[3] ?? '').trim();
+    const po = parsePuestoOperacion(puestoFull);
+    const puestoLabel = po.etiqueta || String(fila[0] ?? '').trim() || puestoFull;
     let cantidad = Number(fila[7] ?? 0);
     if (Number.isNaN(cantidad)) cantidad = 0;
     if (!turno && fila[9]) turno = String(fila[9]);
@@ -2186,15 +2282,22 @@ export async function generarPlanillaPuntos(opl) {
     totalGlobal += cantidad;
     if (opl !== 'TODOS' && oplReg !== opl) return;
     totalOPL += cantidad;
-    if (!zonasMap[zona]) zonasMap[zona] = { total: 0, puestos: {} };
+    if (!zonasMap[zona]) zonasMap[zona] = { total: 0, puestosMap: {} };
     zonasMap[zona].total += cantidad;
-    zonasMap[zona].puestos[puesto] = (zonasMap[zona].puestos[puesto] || 0) + cantidad;
+    const pk = po.clave || puestoFull;
+    if (!zonasMap[zona].puestosMap[pk]) {
+      zonasMap[zona].puestosMap[pk] = { etiqueta: puestoLabel, cantidad: 0 };
+    }
+    zonasMap[zona].puestosMap[pk].cantidad += cantidad;
   });
   const zonasArray = Object.keys(zonasMap)
     .map((zona) => {
-      const puestosArray = Object.keys(zonasMap[zona].puestos)
-        .map((p) => ({ puesto: p, cantidad: Math.round(zonasMap[zona].puestos[p] * 100) / 100 }))
-        .sort((a, b) => a.puesto.localeCompare(b.puesto));
+      const puestosArray = Object.keys(zonasMap[zona].puestosMap)
+        .map((pk) => ({
+          puesto: zonasMap[zona].puestosMap[pk].etiqueta,
+          cantidad: Math.round(zonasMap[zona].puestosMap[pk].cantidad * 100) / 100,
+        }))
+        .sort((a, b) => a.puesto.localeCompare(b.puesto, 'es'));
       return {
         nombre: zona,
         total: Math.round(zonasMap[zona].total * 100) / 100,
@@ -2253,37 +2356,50 @@ export async function getOperacionEnVivo(range) {
 
 export async function getResumenTodosOPLs() {
   const s = await loadState();
-  if (!s.consolidado?.length) {
-    const pack = consolidarDesdeResumenDespachos(s);
-    if (pack) {
-      s.consolidado = pack.consolidado;
-      await saveState(s);
-    }
+  const pack = construirConsolidadoPlanillaSync(s);
+  if (pack) {
+    s.consolidado = pack.consolidado;
+    await saveState(s);
   }
   if (!s.consolidado?.length) {
-    const turno = String(s.resumenDespachos?.turno || '').trim();
+    const turno =
+      String(s.resumenDespachos?.turno || '').trim() ||
+      resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
     if (s.despachosCavas?.length && turno) {
-      const oplPack = construirProgresoOplDesdeDespachos(s, turno, fmtNow());
-      const totalGeneral = oplPack.totalJuegos;
-      const resumen = oplPack.todosOPL.map((p) => ({
-        opl: p.opl,
-        totalJuegos: p.total,
-        porcentaje: totalGeneral > 0 ? ((p.total / totalGeneral) * 100).toFixed(1) : '0.0',
-      }));
+      const mapaOPL = cargarMapaOPL(s);
+      const porOpl = contarJuegosCompletosPorClave(
+        filasDespachoTurnoOperacion(s.despachosCavas, turno),
+        COLS_DESPACHO_CAVA,
+        (fila) => claveOplDesdeFila(fila, mapaOPL),
+        ''
+      );
+      const totalGeneral =
+        Number(s.resumenDespachos?.totalJuegos || 0) ||
+        Object.values(porOpl).reduce((sum, n) => sum + n, 0);
+      const resumen = Object.keys(porOpl)
+        .filter((k) => porOpl[k] > 0)
+        .map((op) => ({
+          opl: op,
+          totalJuegos: porOpl[op],
+          porcentaje: totalGeneral > 0 ? ((porOpl[op] / totalGeneral) * 100).toFixed(1) : '0.0',
+        }))
+        .sort((a, b) => b.totalJuegos - a.totalJuegos);
       return { success: true, resumen, totalGeneral };
     }
     return { success: true, resumen: [] };
   }
   const totalPorOPL = {};
-  let totalGeneral = 0;
+  let sumConsolidado = 0;
   s.consolidado.forEach((fila) => {
     const o = String(fila[6] ?? '').trim();
     const cantidad = Number(fila[7] || 0);
     if (o && cantidad > 0) {
       totalPorOPL[o] = (totalPorOPL[o] || 0) + cantidad;
-      totalGeneral += cantidad;
+      sumConsolidado += cantidad;
     }
   });
+  const totalGeneral =
+    Number(s.resumenDespachos?.totalJuegos || 0) || sumConsolidado;
   const resumen = Object.keys(totalPorOPL)
     .map((op) => ({
       opl: op,
