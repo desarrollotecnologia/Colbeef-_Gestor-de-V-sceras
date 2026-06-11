@@ -2675,7 +2675,9 @@ function aplicarProgresoModalOPL(res, opts) {
   var unidad = etiquetaUnidadOpl(res);
   if (res.fecha) {
     document.getElementById('oplModalFecha').textContent =
-      '📅 ' + res.fecha + (opts.auto ? ' · actualizado' : '');
+      '📅 ' + res.fecha +
+      (res.turno ? ' · turno ' + res.turno : '') +
+      (opts.auto ? ' · actualizado' : '');
   }
   var listaOpl = listaOplParaModal(res);
   renderModalOplProgreso(listaOpl, unidad);

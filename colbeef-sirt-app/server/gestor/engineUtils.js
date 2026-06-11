@@ -322,9 +322,9 @@ export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
   turnos.forEach((t) => {
     conteo[t] = 0;
   });
-  const muestra = (rows || []).slice(0, 500);
+  const muestra = (rows || []).slice(0, 300);
   muestra.forEach((fila) => {
-    const puesto = String(fila[9] ?? '').trim();
+    const puesto = String(fila[9] ?? fila[8] ?? '').trim();
     turnos.forEach((t) => {
       if (puesto.includes(t)) conteo[t]++;
     });
@@ -342,14 +342,27 @@ export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
   return ganador;
 }
 
+/** Solo filas cuyo puesto/destino contiene el sufijo del turno (JxV, LxM, …). */
+export function filtrarFilasPorTurnoOperacion(filas, turno, colPuesto = 9, colDestino = 8) {
+  const t = String(turno || '').trim();
+  if (!t) return filas || [];
+  return (filas || []).filter((fila) => {
+    const puesto = String(fila[colPuesto] ?? '').trim();
+    const destino = String(fila[colDestino] ?? '').trim();
+    return puesto.includes(t) || destino.includes(t);
+  });
+}
+
 /**
- * Turno operativo: prioriza fecha del encabezado (calendario planta), luego datos SIRT.
+ * Turno operativo: detectar desde Despachos_Cavas (como Apps Script), luego calendario.
  */
 export function resolverTurnoOperacion(range = {}, despachosFilas = [], turnoForzado = '') {
   const t = String(turnoForzado || '').trim();
   if (t) return t;
   const iso = String(range?.from || range?.date || range?.to || '').trim();
-  const porFecha = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? detectarTurnoPorFechaISO(iso) : '';
-  if (porFecha) return porFecha;
-  return detectarTurnoDesdeDatos(despachosFilas, iso);
+  if ((despachosFilas || []).length) {
+    return detectarTurnoDesdeDatos(despachosFilas, iso);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return detectarTurnoPorFechaISO(iso);
+  return detectarTurnoPorDia();
 }

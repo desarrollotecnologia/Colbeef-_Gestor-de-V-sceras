@@ -36,6 +36,7 @@ export function defaultState() {
     },
     oplConfig: defaultOplConfig(),
     oplBaselineFecha: '',
+    oplBaselineTurno: '',
     /** Total fijo de subproductos a despachar por OPL (baseline del día). */
     oplTotalsSubproducto: {},
     oplProgreso: [],

@@ -25,6 +25,7 @@ import {
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
   despachosProgramadosSinSalidasDelDia,
+  filtrarFilasPorTurnoOperacion,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -550,35 +551,39 @@ async function refrescarDatosOplDesdeSirt(s) {
   try {
     const despPack = await fetchDespachosParaConsulta(filtro);
     s.despachosCavas = despPack.desp;
+    const turno = resolverTurnoOperacion(filtro, s.despachosCavas || []);
+    if (s.resumenDespachos) s.resumenDespachos.turno = turno;
   } catch {
     /* conservar programación en caché si SIRT falla */
   }
   await sincronizarSalidasCavaDiaEnSesion(s, filtro);
 }
 
-/** Reinicia totales OPL al cambiar el día de operación (baseline del turno). */
-function asegurarBaselineOplDelDia(s, fechaIso) {
+/** Reinicia totales OPL al cambiar el día o el turno de operación. */
+function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
+  const t = String(turno || s.resumenDespachos?.turno || '').trim();
   if (!dia) return;
-  if (String(s.oplBaselineFecha || '') !== dia) {
+  if (String(s.oplBaselineFecha || '') !== dia || String(s.oplBaselineTurno || '') !== t) {
     (s.oplConfig || []).forEach((r) => {
       r.total = 0;
     });
     s.oplTotalsSubproducto = {};
     s.oplBaselineFecha = dia;
+    s.oplBaselineTurno = t;
   }
 }
 
 /** Congela el total a despachar por OPL (crece si entra más programación, no baja). */
 function actualizarBaselineOplSubproductosSync(s, turno, programadosNeto, salidasDelDia) {
-  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from);
+  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
   if (!s.oplTotalsSubproducto || typeof s.oplTotalsSubproducto !== 'object') {
     s.oplTotalsSubproducto = {};
   }
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
   const pendSet = agruparSubproductosPorClave(programadosNeto, COLS_DESPACHO_CAVA, claveOpl, turno);
-  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, turno);
 
   const opls = new Set([...Object.keys(pendSet), ...Object.keys(salSet)]);
   opls.forEach((opl) => {
@@ -626,25 +631,32 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const mapaOPL = cargarMapaOPL(s);
   const fechaOp = String(s.lastSyncRange?.from || '').trim();
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
+  const turnoOp =
+    String(turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
 
-  const salidasDelDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
-  const programadosNeto = despachosProgramadosSinSalidasDelDia(s.despachosCavas || [], salidasDelDia);
+  const salidasDelDia = filtrarFilasPorTurnoOperacion(
+    filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
+    turnoOp
+  );
+  const programadosTurno = filtrarFilasPorTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const programadosNeto = despachosProgramadosSinSalidasDelDia(programadosTurno, salidasDelDia);
 
   const pendOpl = contarSubproductosPorClave(
     programadosNeto,
     COLS_DESPACHO_CAVA,
     claveOpl,
-    turno
+    turnoOp
   );
 
   const salOpl = contarSubproductosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
     claveOpl,
-    ''
+    turnoOp
   );
 
-  actualizarBaselineOplSubproductosSync(s, turno, programadosNeto, salidasDelDia);
+  actualizarBaselineOplSubproductosSync(s, turnoOp, programadosNeto, salidasDelDia);
 
   const opls = new Set([
     ...Object.keys(pendOpl),
@@ -686,6 +698,7 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
     unidad: 'subproductos',
+    turno: turnoOp,
   };
 }
 
@@ -1046,7 +1059,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-total-fijo-beneficio-sirt-v1';
+export const GESTOR_BUILD = 'opl-turno-jxv-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1477,6 +1490,7 @@ export async function limpiarDespachos() {
     r.total = 0;
   });
   s.oplBaselineFecha = '';
+  s.oplBaselineTurno = '';
   s.oplTotalsSubproducto = {};
   s.oplProgreso = [];
   s.fechaInicioOperacion = null;
@@ -1530,10 +1544,14 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     return { success: true, turno: turno || '', progreso: [], operacionFinalizada: true, fecha, totalJuegos: 0 };
   }
 
-  if (!turno) return { success: false, message: 'Sin turno activo.' };
-
   await refrescarDatosOplDesdeSirt(s);
-  const desdeDesp = construirProgresoOplDesdeDespachos(s, turno, fecha);
+  const turnoLive =
+    String(s.resumenDespachos?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  if (s.resumenDespachos) s.resumenDespachos.turno = turnoLive;
+  if (!turnoLive) return { success: false, message: 'Sin turno activo. Sincronice despachos desde SIRT.' };
+
+  const desdeDesp = construirProgresoOplDesdeDespachos(s, turnoLive, fecha);
   let todosOPL = desdeDesp.todosOPL;
   let progreso = desdeDesp.progreso;
   let operacionFinalizada = desdeDesp.operacionFinalizada;
@@ -1551,7 +1569,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
   await saveState(s);
   return {
     success: true,
-    turno,
+    turno: turnoLive,
     progreso: operacionFinalizada ? [] : progreso,
     todosOPL,
     operacionFinalizada,

@@ -29,6 +29,11 @@ const DECOMISO_LOOKBACK_DAYS = Math.max(
 
 const TIPOS_SUBPRODUCTO = `('Visceras Rojas', 'Visceras Blancas', 'Cabeza', 'Patas y Manos')`;
 
+/** Puesto SIRT con sufijo de turno real (de.nombre), sin inyectar turno del calendario. */
+const SQL_PUESTO_TURNO_REAL = `
+  (LPAD(COALESCE(s.id::text, '0'), 5, '0') || '/' ||
+   TRIM(BOTH '/' FROM COALESCE(NULLIF(TRIM(de.nombre), ''), NULLIF(TRIM(s.nombre), ''), 'SIN CIUDAD')) || '/')`;
+
 /** Joins comunes a consultas de cava (en stock y salidas). */
 const SQL_CAVA_FROM = `
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
@@ -433,7 +438,8 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       split_part(COALESCE(de.nombre, ''), '/', 1) AS codigo_nueva_sucursal,
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
-      COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre
+      COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
+      ${SQL_PUESTO_TURNO_REAL} AS puesto_turno
     ${SQL_CAVA_FROM}
     LEFT JOIN trazabilidad_proceso.cava c
       ON c.id = ppcr.id_cava
@@ -458,7 +464,7 @@ export async function fetchDespachosCavaRielRows(range = {}) {
     row[6] = r.cava_nombre || '';
     row[7] = r.descripcion || '';
     row[8] = r.destino || '';
-    row[9] = buildPuestoDespacho(r);
+    row[9] = r.puesto_turno || buildPuestoDespacho(r);
     row[10] = String(r.codigo_nueva_sucursal || '').trim();
     row[12] = r.observaciones || '';
     return row;
@@ -473,7 +479,6 @@ export async function fetchDespachosCavaRielRows(range = {}) {
 async function fetchDespachosProgramadosCavaRows(range = {}) {
   const fechaOp =
     normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
-  const turnoOp = detectarTurnoPorFechaISO(fechaOp);
   const sql = `
     SELECT
       ppel.fecha_programacion_despacho AS fecha_programada,
@@ -487,10 +492,7 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
-      LPAD(COALESCE(s.id::text, '0'), 5, '0') || '/' ||
-        UPPER(COALESCE(de.nombre, s.nombre, 'SIN CIUDAD')) || '/' ||
-        UPPER(COALESCE(NULLIF(TRIM(s.direccion), ''), 'SIN DIRECCION')) || '/' ||
-        $3::text || '/' AS puesto_turno
+      ${SQL_PUESTO_TURNO_REAL} AS puesto_turno
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
     JOIN trazabilidad_proceso.parte_producto pp
       ON pp.id = ppcr.id_parte_producto
@@ -524,7 +526,7 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
     ORDER BY ppel.fecha_programacion_despacho DESC, ppcr.fecha_ingreso DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [PROGRAMACION_REZAGO_DAYS, fechaOp, turnoOp]);
+  const { rows } = await query(sql, [PROGRAMACION_REZAGO_DAYS, fechaOp]);
   return rows.map((r) => {
     const row = new Array(13).fill('');
     row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
