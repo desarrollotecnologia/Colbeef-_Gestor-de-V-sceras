@@ -37,8 +37,8 @@ export function defaultState() {
     oplConfig: defaultOplConfig(),
     oplBaselineFecha: '',
     oplBaselineTurno: '',
-    /** Total fijo de subproductos a despachar por OPL (baseline del día). */
-    oplTotalsSubproducto: {},
+    /** Total fijo de juegos a despachar por OPL (baseline del día). */
+    oplTotalsJuego: {},
     oplProgreso: [],
     historicoOpl: [],
     consolidado: [],
@@ -57,6 +57,8 @@ export async function loadState() {
     const raw = await fs.readFile(STATE_PATH, 'utf8');
     cache = { ...defaultState(), ...JSON.parse(raw) };
     if (!cache.oplConfig || !cache.oplConfig.length) cache.oplConfig = defaultOplConfig();
+    if (!cache.oplTotalsJuego) cache.oplTotalsJuego = {};
+    delete cache.oplTotalsSubproducto;
     return cache;
   } catch {
     cache = defaultState();

@@ -260,6 +260,34 @@ function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
   return conteo;
 }
 
+/** Bases de animal con juego completo por clave OPL (para baseline congelado). */
+function agruparJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
+  const grupos = {};
+  (rows || []).forEach((fila) => {
+    const id = String(fila[cols.id] ?? '').trim();
+    const tipo = String(fila[cols.tipo] ?? '').trim();
+    const puesto = cols.puesto !== undefined ? String(fila[cols.puesto] ?? '').trim() : '';
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    if (turno && puesto && !puesto.includes(turno)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    const clave = String(getClave(fila) || '').trim();
+    if (!clave) return;
+    if (!grupos[clave]) grupos[clave] = {};
+    if (!grupos[clave][base]) grupos[clave][base] = new Set();
+    grupos[clave][base].add(tipo);
+  });
+  const sets = {};
+  Object.keys(grupos).forEach((clave) => {
+    sets[clave] = new Set(
+      Object.keys(grupos[clave]).filter((base) => tieneJuegoCompleto(grupos[clave][base]))
+    );
+  });
+  return sets;
+}
+
+export { contarJuegosCompletosPorClave };
+
 /** Agrupa subproductos únicos (animal+tipo) por clave OPL / propietario. */
 function agruparSubproductosPorClave(rows, cols, getClave, turno = '') {
   const grupos = {};
@@ -563,30 +591,40 @@ function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
     (s.oplConfig || []).forEach((r) => {
       r.total = 0;
     });
-    s.oplTotalsSubproducto = {};
+    limpiarOplTotalsJuego(s);
     s.oplBaselineFecha = dia;
     s.oplBaselineTurno = t;
   }
 }
 
-/** Congela el total a despachar por OPL (crece si entra más programación, no baja). */
-function actualizarBaselineOplSubproductosSync(s, turno, programadosTurno, salidasDelDia) {
-  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
-  if (!s.oplTotalsSubproducto || typeof s.oplTotalsSubproducto !== 'object') {
-    s.oplTotalsSubproducto = {};
+function obtenerOplTotalsJuego(s) {
+  if (!s.oplTotalsJuego || typeof s.oplTotalsJuego !== 'object') {
+    s.oplTotalsJuego = {};
   }
+  delete s.oplTotalsSubproducto;
+  return s.oplTotalsJuego;
+}
+
+function limpiarOplTotalsJuego(s) {
+  s.oplTotalsJuego = {};
+  delete s.oplTotalsSubproducto;
+}
+
+/** Congela el total de juegos a despachar por OPL (crece si entra más programación, no baja). */
+function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelDia) {
+  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
+  const totals = obtenerOplTotalsJuego(s);
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  // TOTAL = programación completa del turno (+ salidas ya registradas), no solo neto en cava
-  const progSet = agruparSubproductosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
-  const salSet = agruparSubproductosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
+  const progSet = agruparJuegosCompletosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salSet = agruparJuegosCompletosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
 
   const opls = new Set([...Object.keys(progSet), ...Object.keys(salSet)]);
   opls.forEach((opl) => {
     const union = new Set([...(progSet[opl] || []), ...(salSet[opl] || [])]);
     const n = union.size;
     if (n > 0) {
-      s.oplTotalsSubproducto[opl] = Math.max(Number(s.oplTotalsSubproducto[opl] || 0), n);
+      totals[opl] = Math.max(Number(totals[opl] || 0), n);
     }
   });
 }
@@ -635,41 +673,38 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  const programadosNeto = despachosProgramadosSinSalidasDelDia(programadosTurno, salidasDelDia);
 
-  const pendOpl = contarSubproductosPorClave(
-    programadosNeto,
-    COLS_DESPACHO_CAVA,
-    claveOpl,
-    ''
-  );
-
-  const salOpl = contarSubproductosPorClave(
+  const salOpl = contarJuegosCompletosPorClave(
     salidasDelDia,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
 
-  actualizarBaselineOplSubproductosSync(s, turnoOp, programadosTurno, salidasDelDia);
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosTurno, salidasDelDia);
+  const totals = obtenerOplTotalsJuego(s);
+
+  const progOpl = contarJuegosCompletosPorClave(
+    programadosTurno,
+    COLS_DESPACHO_CAVA,
+    claveOpl,
+    ''
+  );
 
   const opls = new Set([
-    ...Object.keys(
-      contarSubproductosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '')
-    ),
-    ...Object.keys(pendOpl),
+    ...Object.keys(progOpl),
     ...Object.keys(salOpl),
-    ...Object.keys(s.oplTotalsSubproducto || {}),
+    ...Object.keys(totals),
   ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
     const despachados = salOpl[opl] || 0;
-    let total = Number(s.oplTotalsSubproducto?.[opl] || 0);
+    let total = Number(totals[opl] || 0);
     if (despachados > total) {
       total = despachados;
-      s.oplTotalsSubproducto[opl] = total;
+      totals[opl] = total;
     }
     if (total <= 0) return;
     const pendientes = Math.max(0, total - despachados);
@@ -695,7 +730,7 @@ function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
-    unidad: 'subproductos',
+    unidad: 'juegos',
     turno: turnoOp,
   };
 }
@@ -1063,7 +1098,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-turno-alineado-v3';
+export const GESTOR_BUILD = 'opl-juegos-v1';
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1495,7 +1530,7 @@ export async function limpiarDespachos() {
   });
   s.oplBaselineFecha = '';
   s.oplBaselineTurno = '';
-  s.oplTotalsSubproducto = {};
+  limpiarOplTotalsJuego(s);
   s.oplProgreso = [];
   s.fechaInicioOperacion = null;
   await saveState(s);
@@ -1513,7 +1548,7 @@ export async function limpiarResumen() {
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
-  s.oplTotalsSubproducto = {};
+  limpiarOplTotalsJuego(s);
   s.oplProgreso = [];
   await saveState(s);
   return { success: true };
@@ -1565,7 +1600,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     const msg =
       nJuegos > 0
         ? `${nJuegos} juegos programados del turno ${turnoLive}; sincronice despachos y recalcule OPL.`
-        : 'Sin subproductos en cava para este turno. Sincronice despachos desde SIRT.';
+        : 'Sin juegos en cava para este turno. Sincronice despachos desde SIRT.';
     return { success: false, message: msg };
   }
 
@@ -1585,7 +1620,7 @@ export async function calcularProgresoOPL(totalJuegosParam) {
     fecha,
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
-    unidad: desdeDesp.unidad || 'subproductos',
+    unidad: desdeDesp.unidad || 'juegos',
   };
 }
 
@@ -1652,7 +1687,7 @@ export async function getProgresoOPL() {
     if (pct < 100) progreso.push(item);
   });
   const operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
-  return { success: true, progreso, todosOPL, operacionFinalizada, fecha: ultimaFecha, unidad: 'subproductos' };
+  return { success: true, progreso, todosOPL, operacionFinalizada, fecha: ultimaFecha, unidad: 'juegos' };
 }
 
 export async function getOplConfig() {
@@ -1746,6 +1781,7 @@ export async function resetearTotalesOPL() {
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
+  limpiarOplTotalsJuego(s);
   s.oplProgreso = [];
   await saveState(s);
   return { success: true };
@@ -1762,6 +1798,7 @@ export async function cerrarOperacion() {
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
+  limpiarOplTotalsJuego(s);
   s.oplProgreso = [];
   s.fechaInicioOperacion = null;
   await saveState(s);

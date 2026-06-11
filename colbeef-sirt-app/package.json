@@ -8,7 +8,7 @@
     "search-tables": "node scripts/search-tables.mjs",
     "view-def": "node scripts/print-view-definition.mjs",
     "test:decomiso-cruce": "node scripts/test-decomiso-cruce.mjs",
-    "test:opl-subproducto": "node scripts/test-opl-subproducto.mjs",
+    "test:opl-juego": "node scripts/test-opl-juego.mjs",
     "analyze:data-excel": "node scripts/analyze-data-excel.mjs",
     "probe:decomiso-dates": "node scripts/probe-decomiso-dates.mjs",
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

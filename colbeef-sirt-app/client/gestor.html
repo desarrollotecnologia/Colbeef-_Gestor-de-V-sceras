@@ -2559,7 +2559,7 @@ function renderDashOplMini(progreso) {
     var tienePend  = p.pendientes > 0;
     var barColor   = pct >= 100 ? '#16a34a' : (pct < 30 ? '#dc2626' : 'var(--vp)');
     var pendTxt    = tienePend
-      ? '<span style="color:#dc2626;font-weight:700;font-size:0.72rem;">' + p.pendientes + ' pend.</span>'
+      ? '<span style="color:#dc2626;font-weight:700;font-size:0.72rem;">' + p.pendientes + ' j. pend.</span>'
       : '<span style="color:#16a34a;font-size:0.72rem;">✅</span>';
     return '<div style="margin-bottom:0.45rem;">'
       // Fila nombre + pendientes
@@ -2724,7 +2724,7 @@ function recalcularOPLModal() {
 }
 
 function renderModalOplProgreso(progreso, unidad) {
-  unidad = unidad || 'subproductos';
+  unidad = unidad || 'juegos';
   if (!progreso || progreso.length === 0) {
     document.getElementById('oplModalProgresoContainer').innerHTML =
       '<p class="empty-state">Sin datos de OPL. Sincronice despachos desde SIRT.</p>';
@@ -2745,7 +2745,7 @@ function renderModalOplProgreso(progreso, unidad) {
       + '<div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem;">'
       +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;line-height:1.3;">🚚 ' + escapeHtml(p.opl) + '</div>'
       +   '<div style="display:flex;gap:1.1rem;font-size:0.82rem;flex-shrink:0;">'
-      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">TOTAL</span><strong style="font-size:1.05rem;">' + p.total + '</strong></div>'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">TOTAL</span><strong style="font-size:1.05rem;">' + p.total + '</strong><span style="display:block;font-size:0.62rem;color:var(--gris);">juegos</span></div>'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">DESPACHADOS</span><strong style="color:#16a34a;font-size:1.05rem;">' + p.despachados + '</strong></div>'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">PENDIENTES</span><strong style="color:#dc2626;font-size:1.05rem;">' + p.pendientes + '</strong></div>'
       +   '</div>'

@@ -27,17 +27,23 @@ assert.strictEqual(
   'turno desde datos Despachos_Cavas'
 );
 
-// Puesto SIRT sin sufijo de turno (SQL_PUESTO_TURNO_REAL) → OPL debe contar tras normalizar
-import { contarSubproductosPorClave } from '../server/gestor/engine.js';
+// Puesto SIRT sin sufijo de turno → juegos OPL tras normalizar (4 piezas = 1 juego)
+import { contarJuegosCompletosPorClave } from '../server/gestor/engine.js';
 const cols = { id: 3, tipo: 7, prop: 4, puesto: 9 };
+const animal = '2606-12001';
 const sinSufijo = filasDespachoTurnoOperacion(
-  [['', '', '', '2606-12001-1', 'PROP A', '', '', 'Visceras Rojas', '', '01028/BUCA/CALLE/']],
+  [
+    ['', '', '', `${animal}-1`, 'PROP A', '', '', 'Visceras Rojas', '', '01028/BUCA/CALLE/'],
+    ['', '', '', `${animal}-2`, 'PROP A', '', '', 'Cabeza', '', '01028/BUCA/CALLE/'],
+    ['', '', '', `${animal}-3`, 'PROP A', '', '', 'Visceras Blancas', '', '01028/BUCA/CALLE/'],
+    ['', '', '', `${animal}-4`, 'PROP A', '', '', 'Patas y Manos', '', '01028/BUCA/CALLE/'],
+  ],
   'JxV'
 );
 assert.strictEqual(
-  contarSubproductosPorClave(sinSufijo, cols, () => 'OPL-X', '')[ 'OPL-X'],
+  contarJuegosCompletosPorClave(sinSufijo, cols, () => 'OPL-X', '')[ 'OPL-X'],
   1,
-  'OPL cuenta subproductos aunque puesto no traiga JxV en SIRT'
+  'OPL cuenta juegos aunque puesto no traiga JxV en SIRT'
 );
 
 console.log('test-turno-opl: ok');
