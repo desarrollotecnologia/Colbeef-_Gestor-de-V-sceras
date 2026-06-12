@@ -907,6 +907,10 @@
 
       <!-- TAB PROGRESO -->
       <div id="oplModalProgreso">
+        <p style="font-size:0.78rem;color:var(--gris);margin:0 0 0.75rem;line-height:1.45;" id="oplModalFlujoHint">
+          Flujo: <strong>1. Sincronizar SIRT</strong> → <strong>2. Procesar Despachos</strong> → <strong>3. Recalcular OPL</strong>.
+          Los % usan juegos completos y <code>fecha_salida</code> en SIRT (no el Excel histórico).
+        </p>
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:0.5rem;">
           <span style="font-size:0.82rem;color:var(--gris);" id="oplModalFecha"></span>
           <span style="font-size:0.72rem;color:var(--gris);" id="oplModalAutoHint">Actualización automática cada 30 s</span>
@@ -924,7 +928,7 @@
         <!-- Propietarios del archivo actual -->
         <div id="oplModalPropSection">
           <p style="font-size:0.82rem;color:var(--gris);margin-bottom:0.8rem;" id="oplModalPropIntro">
-            📋 Propietarios detectados en despachos del turno — ajusta el OPL si es necesario:
+            📋 Propietarios con juegos completos (4 subproductos) en despachos del turno — ajusta el OPL si es necesario:
           </p>
           <div class="table-wrap" style="margin-top:0;max-height:280px;overflow-y:auto;">
             <table style="font-size:0.85rem;">
@@ -2665,8 +2669,22 @@ function etiquetaUnidadOpl(res) {
   return (res && res.unidad === 'subproductos') ? 'subproductos' : 'juegos';
 }
 
+function actualizarHintModeloOpl(res) {
+  var hint = document.getElementById('oplModalFlujoHint');
+  if (!hint || !res) return;
+  var flujo = res.flujoOPL && res.flujoOPL.length
+    ? res.flujoOPL.map(function(p, i) { return (i + 1) + '. ' + p; }).join(' → ')
+    : '1. Sincronizar SIRT → 2. Procesar Despachos → 3. Recalcular OPL';
+  var val = res.validacionOPL || 'Los % usan juegos completos y fecha_salida en SIRT (no el Excel histórico).';
+  var build = res.gestorBuild ? ' · build ' + res.gestorBuild : '';
+  hint.innerHTML =
+    'Flujo: <strong>' + escapeHtml(flujo) + '</strong>. ' +
+    escapeHtml(val) + build;
+}
+
 function aplicarProgresoModalOPL(res, opts) {
   opts = opts || {};
+  actualizarHintModeloOpl(res);
   if (!res || !res.success) {
     if (!opts.silent) {
       document.getElementById('oplModalProgresoContainer').innerHTML =
@@ -2796,8 +2814,9 @@ function cargarConfigOPLModal() {
       if (intro) {
         var extra = res.turno ? ' · Turno ' + res.turno : '';
         if (res.fechaConsulta) extra += ' · ' + res.fechaConsulta;
+        if (res.consultaSirt) extra += ' · SIRT en vivo';
         intro.textContent =
-          '📋 Propietarios detectados en despachos del turno' + extra + ' — ajusta el OPL si es necesario:';
+          '📋 Propietarios con juegos completos en despachos del turno' + extra + ' — ajusta el OPL si es necesario:';
       }
       if (!res.resultado || res.resultado.length === 0) {
         document.getElementById('oplModalPropBody').innerHTML =

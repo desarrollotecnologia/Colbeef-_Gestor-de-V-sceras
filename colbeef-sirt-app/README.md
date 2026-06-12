@@ -111,6 +111,23 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 
 La lectura de SIRT está en `server/gestor/sirtSync.js`; allí se convierten consultas SQL a las matrices que espera el motor del gestor. La lógica del Apps Script adaptada está en `server/gestor/engine.js` y `server/gestor/engineUtils.js`.
 
+### Progreso OPL (modelo SIRT)
+
+El gestor calcula el avance por operador logístico con **juegos completos** (4 subproductos por animal), no por pieza suelta ni solo Vísceras Rojas.
+
+| Concepto | Fuente |
+|----------|--------|
+| Pendientes | Juegos completos aún en cava del turno |
+| Despachados | Juegos completos con `fecha_salida` real en SIRT (mismo turno / ISODOW) |
+| Total | Pendientes + despachados |
+| Propietario → OPL | Excepciones en `constants.js` + default `TRANSCARNES` |
+
+**Flujo en planta:** **Sincronizar SIRT** → **Procesar Despachos** → **Recalcular OPL** (modal OPL o tablero).
+
+Los porcentajes **no coinciden con el Excel/App Script histórico** (ese modelo usaba solo VR y `despachados = total − pendientes`). Para validar en planta, compare contra lo que muestra SIRT en despachos y salidas de cava, no contra planillas viejas.
+
+Excepciones OPL incluyen, entre otras: `VARGAS BLANCO REINALDO` → CAVA CAMILO, `VARGAS NIÑO YERSON REYNALDO` → CAVA YERSON.
+
 ## Scripts de inspección
 
 - `npm run probe` — lista tablas

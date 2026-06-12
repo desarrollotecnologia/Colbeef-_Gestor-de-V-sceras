@@ -13,8 +13,19 @@ export const OPL_EXCEPCIONES_DEFAULT = [
   ['SUPERMERCADOS MAS POR MENOS S.A.S.', 'MLT. GUARIN'],
   ['TECNOLOGÍAS AGROPECUARIAS DE COLOMBIA S.A.S.', 'CAVA T.A'],
   ['ROMERO OSORIO JOHN IGNACIO', 'SMOYA'],
+  ['VARGAS BLANCO REINALDO', 'CAVA CAMILO'],
+  ['VARGAS NIÑO YERSON REYNALDO', 'CAVA YERSON'],
   ['COLBEEF S.A.S', 'MLT. GUARIN'],
 ];
+
+/** Modelo de progreso OPL en el gestor (SIRT en vivo, no Excel/App Script). */
+export const OPL_MODELO = {
+  id: 'sirt-juego-completo',
+  unidad: 'juegos-completos',
+  flujo: ['Sincronizar SIRT', 'Procesar Despachos', 'Recalcular OPL'],
+  validacion:
+    'Los porcentajes usan juegos completos (4 subproductos) y fecha_salida real en SIRT. No coinciden con el Excel histórico.',
+};
 
 export const PUESTOS_EXCLUIDOS_DESP = [
   '01305/TEMP1 /DxL///CALLE 23# 6-52 PLACITA GIRARDOT',

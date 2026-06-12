@@ -3,6 +3,7 @@ import {
   PUESTOS_EXCLUIDOS_DESP,
   OPL_DEFAULT,
   OPL_EXCEPCIONES_DEFAULT,
+  OPL_MODELO,
   ESTADO_COMPLETO,
   ESTADO_PENDIENTE,
 } from './constants.js';
@@ -555,7 +556,7 @@ function propietariosConJuegosDesdeDespachos(despachos, turno) {
   });
   return Object.keys(conteo)
     .filter((k) => conteo[k] > 0)
-    .sort((a, b) => a.localeCompare(b, 'es'))
+    .sort((a, b) => conteo[b] - conteo[a] || a.localeCompare(b, 'es'))
     .map((propUpper) => ({
       propietario: etiqueta[propUpper] || propUpper,
       propUpper,
@@ -1163,7 +1164,18 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-salida-real-v3';
+export const GESTOR_BUILD = 'opl-sirt-juego-v1';
+
+function metaRespuestaOpl(extra = {}) {
+  return {
+    modeloOPL: OPL_MODELO.id,
+    unidad: OPL_MODELO.unidad,
+    flujoOPL: OPL_MODELO.flujo,
+    validacionOPL: OPL_MODELO.validacion,
+    gestorBuild: GESTOR_BUILD,
+    ...extra,
+  };
+}
 
 function isoToDdMmYyyy(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1364,7 +1376,7 @@ export async function getDashboardData(range) {
         filasReporteDecomisos: totalDecomisosEnRango,
         filasReporteDecomisosRaw: reporte.length,
         filasDespachosCavas: desp.length,
-        gestorBuild: GESTOR_BUILD,
+        ...metaRespuestaOpl(),
         despachosFuente: String(process.env.SIRT_DESPACHOS_FUENTE || 'programado'),
         decomisoVinculoStats,
         progresoOPL,
@@ -1612,7 +1624,7 @@ export async function calcularProgresoOPL(_totalJuegosParam) {
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: desdeDesp.totalPendientes,
     unidad: desdeDesp.unidad || 'juegos',
-    gestorBuild: GESTOR_BUILD,
+    ...metaRespuestaOpl(),
   };
 }
 
@@ -1726,19 +1738,20 @@ export async function getOplPorPropietario(range) {
   let turno = String(s.resumenDespachos?.turno || '').trim();
   let consultaSirt = false;
 
-  const sesionCoincide =
-    filtro.from &&
-    String(s.lastSyncRange?.from || '') === filtro.from &&
-    despachos.length > 0;
-
-  if (!sesionCoincide && filtroSirtValido(filtro)) {
+  if (filtroSirtValido(filtro)) {
     try {
       const pack = await fetchDespachosParaConsulta(filtro);
       despachos = pack.desp || [];
       turno = resolverTurnoOperacion(filtro, despachos);
       consultaSirt = true;
     } catch (e) {
-      return { success: false, message: e.message || String(e), resultado: [], opls: listarOplsConocidos(s) };
+      return {
+        success: false,
+        message: e.message || String(e),
+        resultado: [],
+        opls: listarOplsConocidos(s),
+        ...metaRespuestaOpl(),
+      };
     }
   } else if (!turno && despachos.length) {
     turno = resolverTurnoOperacion(filtro, despachos);
@@ -1759,10 +1772,11 @@ export async function getOplPorPropietario(range) {
     turno,
     fechaConsulta: filtro.from || '',
     consultaSirt,
+    ...metaRespuestaOpl(),
     message:
       resultado.length === 0
         ? turno
-          ? `Sin propietarios con juegos en despachos del turno ${turno}.`
+          ? `Sin propietarios con juegos completos en despachos del turno ${turno}. Sincronice SIRT y procese despachos.`
           : 'Sin turno detectado para la fecha seleccionada.'
         : '',
   };

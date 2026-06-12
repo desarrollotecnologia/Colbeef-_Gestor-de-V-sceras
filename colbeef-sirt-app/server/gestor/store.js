@@ -14,6 +14,18 @@ function defaultOplConfig() {
   }));
 }
 
+/** Incorpora excepciones nuevas del código sin borrar totales ya guardados. */
+function asegurarOplExcepcionesEnConfig(s) {
+  if (!s.oplConfig) s.oplConfig = defaultOplConfig();
+  const known = new Set(s.oplConfig.map((r) => String(r.propietario || '').trim().toUpperCase()));
+  OPL_EXCEPCIONES_DEFAULT.forEach(([propietario, opl]) => {
+    const upper = propietario.toUpperCase();
+    if (known.has(upper)) return;
+    s.oplConfig.push({ propietario: upper, opl, total: 0 });
+    known.add(upper);
+  });
+}
+
 export function defaultState() {
   return {
     estadoFromRow12: [],
@@ -57,6 +69,7 @@ export async function loadState() {
     const raw = await fs.readFile(STATE_PATH, 'utf8');
     cache = { ...defaultState(), ...JSON.parse(raw) };
     if (!cache.oplConfig || !cache.oplConfig.length) cache.oplConfig = defaultOplConfig();
+    else asegurarOplExcepcionesEnConfig(cache);
     if (!cache.oplTotalsJuego) cache.oplTotalsJuego = {};
     delete cache.oplTotalsSubproducto;
     return cache;
