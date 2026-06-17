@@ -159,13 +159,10 @@ export async function generarInformeHTML(payload) {
 
   const beneficioSection = opts.inclBeneficio
     ? `
-    <div class="section">
-      <div class="section-title">Beneficio del Día</div>
-      <div class="beneficio-box">
-        <div class="beneficio-label">ANIMALES BENEFICIADOS</div>
-        <div class="beneficio-num">${Number(d.beneficioDia || 0)}</div>
-        <div style="font-size:10px;color:#666;margin-top:6px;">Fuente: SIRT · plan de faena (fecha_plan)</div>
-      </div>
+    <div class="beneficio-block">
+      <div class="beneficio-accent"></div>
+      <div class="beneficio-lbl">ANIMALES BENEFICIADOS</div>
+      <div class="beneficio-num">${Number(d.beneficioDia || 0)}</div>
     </div>`
     : '';
 
@@ -173,23 +170,33 @@ export async function generarInformeHTML(payload) {
   if (opts.inclInv) {
     const novRows =
       (d.novedades || [])
-        .map((n) => `<tr><td>${escHtml(n.cod)}</td><td>${escHtml(n.desc)}</td></tr>`)
+        .map((n) => `<tr><td class="left">${escHtml(n.cod)}</td><td class="left">${escHtml(n.desc)}</td></tr>`)
         .join('') ||
-      '<tr><td colspan="2" style="text-align:center;color:#888;">Sin novedades registradas</td></tr>';
+      '<tr><td colspan="2" class="empty-cell">Sin novedades registradas</td></tr>';
     invSection = `
-    <div class="section">
-      <div class="section-title">Inventario Producto Frío en Cava</div>
-      <div class="kpi-row three">
-        <div class="kpi green"><div class="kpi-lbl">Juegos Completos</div><div class="kpi-val">${Number(d.completos || 0)}</div></div>
-        <div class="kpi red"><div class="kpi-lbl">Juegos Incompletos</div><div class="kpi-val">${Number(d.incompletos || 0)}</div></div>
-        <div class="kpi blue"><div class="kpi-lbl">Total Juegos</div><div class="kpi-val">${total}</div></div>
+    <h2 class="sec-title">INVENTARIO PRODUCTO FRÍO EN CAVA</h2>
+    <div class="metric-row three">
+      <div class="metric">
+        <div class="metric-bar green"></div>
+        <div class="metric-lbl">JUEGOS COMPLETOS</div>
+        <div class="metric-val green">${Number(d.completos || 0)}</div>
       </div>
-      <div class="sub-title">Novedades por Código</div>
-      <table>
-        <thead><tr><th>CÓDIGO</th><th>DETALLE</th></tr></thead>
-        <tbody>${novRows}</tbody>
-      </table>
-    </div>`;
+      <div class="metric">
+        <div class="metric-bar red"></div>
+        <div class="metric-lbl">JUEGOS INCOMPLETOS</div>
+        <div class="metric-val red">${Number(d.incompletos || 0)}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-bar blue"></div>
+        <div class="metric-lbl">TOTAL JUEGOS</div>
+        <div class="metric-val blue">${total}</div>
+      </div>
+    </div>
+    <h3 class="sub-sec">NOVEDADES POR CÓDIGO</h3>
+    <table class="tbl">
+      <thead><tr><th>CÓDIGO</th><th>DETALLE</th></tr></thead>
+      <tbody>${novRows}</tbody>
+    </table>`;
   }
 
   let cavasSection = '';
@@ -207,27 +214,23 @@ export async function generarInformeHTML(payload) {
           <td>x ${carros}</td>
           <td>${cap}</td>
           <td>${inv}</td>
-          <td>${pct}%</td>
+          <td class="col-pct">${pct}%</td>
         </tr>`;
       })
       .join('');
     cavasSection = `
-    <div class="section">
-      <div class="section-title">Ocupación Cavas Vísceras</div>
-      <table>
-        <thead><tr><th>CAVA</th><th>CARROS</th><th>CAPACIDAD TOTAL</th><th>INVENTARIO TOTAL</th><th>PARTICIPACIÓN TOTAL</th></tr></thead>
-        <tbody>
-          ${cavasRows}
-          <tr class="total-row">
-            <td class="left">TOTAL GENERAL</td>
-            <td>—</td>
-            <td>${tot.capacidadTotal}</td>
-            <td>${tot.juegosEquivalentes.toFixed(2)}</td>
-            <td>${tot.ocupacionPct}%</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>`;
+    <h2 class="sec-title">OCUPACIÓN CAVAS VÍSCERAS</h2>
+    <table class="tbl cavas">
+      <thead><tr><th>CAVA</th><th>CARROS</th><th>CAPACIDAD TOTAL</th><th>INVENTARIO TOTAL</th><th>PARTICIPACIÓN</th></tr></thead>
+      <tbody>
+        ${cavasRows}
+        <tr class="total-row">
+          <td class="left" colspan="3">TOTAL GENERAL</td>
+          <td>${tot.juegosEquivalentes.toFixed(2)}</td>
+          <td class="col-pct">${tot.ocupacionPct}%</td>
+        </tr>
+      </tbody>
+    </table>`;
   }
 
   let percherosSection = '';
@@ -265,8 +268,8 @@ export async function generarInformeHTML(payload) {
         )
         .join('');
       distSection = `
-      <div class="sub-title" style="margin-top:14px;">Distribución por Cavas</div>
-      <table>
+      <h3 class="sub-sec">DISTRIBUCIÓN POR CAVAS</h3>
+      <table class="tbl">
         <thead><tr><th>CAVAS</th><th>V-BLANCAS</th><th>V-ROJAS</th><th>PATAS/MANOS</th><th>CABEZAS</th><th>CRUDAS</th></tr></thead>
         <tbody>
           <tr class="min-row">
@@ -279,32 +282,37 @@ export async function generarInformeHTML(payload) {
     }
 
     percherosSection = `
-    <div class="section">
-      <div class="section-title">Disponibilidad de Carros Percheros</div>
-      <div class="kpi-row four">
-        <div class="kpi blue"><div class="kpi-lbl">Stock Total</div><div class="kpi-val">${stockTotal}</div></div>
-        <div class="kpi red"><div class="kpi-lbl">Dañados</div><div class="kpi-val">${danados}</div></div>
-        <div class="kpi orange"><div class="kpi-lbl">En Uso</div><div class="kpi-val">${totalEnUso}</div></div>
-        <div class="kpi ${bajo ? 'red' : 'green'}">
-          <div class="kpi-lbl">Disponibles ${bajo ? '⚠️' : '✅ OK'}</div>
-          <div class="kpi-val">${disponibles}</div>
-        </div>
+    <h2 class="sec-title">DISPONIBILIDAD DE CARROS PERCHEROS</h2>
+    <div class="metric-row four">
+      <div class="metric">
+        <div class="metric-bar blue"></div>
+        <div class="metric-lbl">STOCK TOTAL</div>
+        <div class="metric-val blue">${stockTotal}</div>
       </div>
-      ${distSection}
-    </div>`;
+      <div class="metric">
+        <div class="metric-bar red"></div>
+        <div class="metric-lbl">DAÑADOS</div>
+        <div class="metric-val red">${danados}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-bar orange"></div>
+        <div class="metric-lbl">EN USO</div>
+        <div class="metric-val orange">${totalEnUso}</div>
+      </div>
+      <div class="metric">
+        <div class="metric-bar ${bajo ? 'red' : 'green'}"></div>
+        <div class="metric-lbl">DISPONIBLES${bajo ? ' ⚠' : ''}</div>
+        <div class="metric-val ${bajo ? 'red' : 'green'}">${disponibles}</div>
+      </div>
+    </div>
+    ${distSection}`;
   }
 
   const sinSecciones =
     !beneficioSection && !invSection && !cavasSection && !percherosSection;
-  const avisoSinSecciones = sinSecciones
-    ? `<div class="section" style="text-align:center;color:#888;padding:32px;">
-        No hay secciones seleccionadas. Marque al menos una opción en «Incluir en el informe».
-      </div>`
-    : '';
 
   const fechaSlug = fecha.replace(/\//g, '-');
   const scriptSrc = origin ? `${origin}/vendor/html2canvas.min.js` : '/vendor/html2canvas.min.js';
-  const logoSrc = origin ? `${origin}/colbeef-icon.png` : '/colbeef-icon.png';
 
   const html = `<!DOCTYPE html>
 <html lang="es">
@@ -316,56 +324,62 @@ export async function generarInformeHTML(payload) {
   <script src="${scriptSrc}"></script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;}
-    body{font-family:Arial,Helvetica,sans-serif;background:#eceff1;padding:16px;color:#1a1a1a;}
-    #report{max-width:980px;margin:0 auto;background:#fff;border-radius:4px;overflow:hidden;box-shadow:0 2px 16px rgba(0,0,0,.12);}
-    .top-band{background:#1a5c2e;color:#fff;text-align:center;padding:14px 20px 10px;}
-    .top-band img{height:52px;margin-bottom:6px;}
-    .top-band h1{font-size:15px;font-weight:800;letter-spacing:1px;text-transform:uppercase;}
-    .top-band .sub{font-size:11px;opacity:.9;margin-top:4px;letter-spacing:.3px;}
-    .meta-bar{background:#f4f6f5;border-bottom:2px solid #1a5c2e;padding:8px 20px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#444;}
-    .section{padding:14px 20px;border-bottom:1px solid #e5e7eb;}
-    .section:last-of-type{border-bottom:none;}
-    .section-title{font-size:12px;font-weight:800;color:#1a5c2e;text-transform:uppercase;letter-spacing:.6px;margin-bottom:10px;text-align:center;}
-    .sub-title{font-size:11px;font-weight:700;color:#374151;margin:10px 0 6px;text-transform:uppercase;}
-    .beneficio-box{text-align:center;padding:12px;background:#f8faf8;border:1px solid #d1e7d7;border-radius:6px;}
-    .beneficio-label{font-size:11px;font-weight:700;color:#555;letter-spacing:.5px;}
-    .beneficio-num{font-size:42px;font-weight:900;color:#1a5c2e;line-height:1.1;margin-top:4px;}
-    .kpi-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-bottom:8px;}
-    .kpi{border-radius:6px;padding:10px 14px;min-width:110px;text-align:center;color:#fff;flex:1;}
-    .kpi.green{background:#27ae60;}.kpi.red{background:#e74c3c;}.kpi.blue{background:#3498db;}.kpi.orange{background:#f39c12;}
-    .kpi-lbl{font-size:9px;opacity:.92;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
-    .kpi-val{font-size:28px;font-weight:800;line-height:1;}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin-top:4px;}
-    th,td{border:1px solid #ccc;padding:5px 8px;text-align:center;}
-    th{background:#eef2ef;font-weight:700;font-size:10px;text-transform:uppercase;}
-    td.left{text-align:left;}
-    tr:nth-child(even) td{background:#fafafa;}
-    tr.total-row td{background:#1a5c2e;color:#fff;font-weight:700;}
-    tr.min-row td{background:#f0fdf4;font-weight:600;}
-    td.bajo-min{color:#dc2626;font-weight:700;}
-    .footer{padding:12px 20px;text-align:center;font-size:10px;color:#666;border-top:2px solid #1a5c2e;}
-    .footer strong{color:#1a5c2e;}
-    .export-btn{display:block;margin:14px auto;padding:10px 24px;background:#1a5c2e;color:#fff;border:none;border-radius:6px;font-size:13px;cursor:pointer;font-weight:700;}
-    .export-btn:hover{background:#14451f;}
+    body{font-family:Arial,Helvetica,sans-serif;background:#e8ecef;padding:20px 16px;color:#1a1a1a;}
+    #report{max-width:920px;margin:0 auto;background:#fff;padding:28px 32px 24px;}
+    .doc-title{font-size:20px;font-weight:800;color:#1e3a5f;text-align:center;text-transform:uppercase;letter-spacing:.5px;line-height:1.25;}
+    .doc-sub{font-size:11px;color:#6b7280;text-align:center;margin-top:8px;text-transform:uppercase;letter-spacing:.4px;}
+    .doc-rule{border:none;border-top:3px solid #2d8a4e;margin:14px 0 22px;}
+    .beneficio-block{text-align:center;margin-bottom:28px;padding-bottom:8px;}
+    .beneficio-accent{width:56px;height:4px;background:#7c3aed;margin:0 auto 12px;border-radius:2px;}
+    .beneficio-lbl{font-size:11px;font-weight:600;color:#6b7280;letter-spacing:.6px;text-transform:uppercase;}
+    .beneficio-lbl::before{content:'🐄 ';font-size:12px;}
+    .beneficio-num{font-size:52px;font-weight:800;color:#7c3aed;line-height:1.05;margin-top:6px;}
+    .sec-title{font-size:13px;font-weight:800;color:#2d8a4e;text-transform:uppercase;letter-spacing:.5px;text-align:center;margin:26px 0 14px;}
+    .sub-sec{font-size:11px;font-weight:800;color:#2d8a4e;text-transform:uppercase;letter-spacing:.4px;margin:18px 0 8px;}
+    .metric-row{display:flex;gap:0;justify-content:center;margin-bottom:6px;border:1px solid #e5e7eb;}
+    .metric-row.three .metric{flex:1;max-width:33.33%;}
+    .metric-row.four .metric{flex:1;max-width:25%;}
+    .metric{padding:12px 10px 14px;text-align:center;border-right:1px solid #e5e7eb;background:#fff;}
+    .metric:last-child{border-right:none;}
+    .metric-bar{height:4px;width:100%;margin-bottom:10px;border-radius:1px;}
+    .metric-bar.green{background:#27ae60;}.metric-bar.red{background:#e74c3c;}.metric-bar.blue{background:#3498db;}.metric-bar.orange{background:#f39c12;}
+    .metric-lbl{font-size:9px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.35px;margin-bottom:4px;}
+    .metric-val{font-size:36px;font-weight:800;line-height:1;}
+    .metric-val.green{color:#27ae60;}.metric-val.red{color:#e74c3c;}.metric-val.blue{color:#3498db;}.metric-val.orange{color:#f39c12;}
+    .tbl{width:100%;border-collapse:collapse;font-size:11px;margin-bottom:4px;}
+    .tbl th,.tbl td{border:1px solid #d1d5db;padding:6px 8px;text-align:center;}
+    .tbl th{background:#2d8a4e;color:#fff;font-weight:700;font-size:10px;text-transform:uppercase;letter-spacing:.3px;}
+    .tbl td.left{text-align:left;}
+    .tbl.cavas tbody td{background:#fff5f5;}
+    .tbl.cavas tbody td.col-pct{background:#fef9c3;}
+    .tbl .empty-cell{text-align:center;color:#9ca3af;font-style:italic;padding:10px;}
+    .tbl tr.total-row td{background:#2d8a4e;color:#fff;font-weight:700;border-color:#2d8a4e;}
+    .tbl tr.total-row td.col-pct{background:#2d8a4e;color:#fff;}
+    .tbl tr.min-row td{background:#f0fdf4;font-weight:600;}
+    .tbl td.bajo-min{color:#dc2626;font-weight:700;}
+    .doc-footer{margin-top:28px;padding-top:12px;border-top:2px solid #2d8a4e;text-align:center;font-size:10px;color:#6b7280;line-height:1.5;}
+    .doc-footer strong{color:#2d8a4e;}
+    .aviso-vacio{text-align:center;color:#9ca3af;padding:32px 16px;font-size:12px;}
+    .export-btn{display:block;margin:16px auto 0;padding:10px 24px;background:#2d8a4e;color:#fff;border:none;border-radius:4px;font-size:13px;cursor:pointer;font-weight:700;}
+    .export-btn:hover{background:#236b3d;}
+    @media print{
+      body{background:#fff;padding:0;}
+      #report{max-width:none;padding:16px;}
+      .export-btn{display:none;}
+    }
   </style>
 </head>
 <body>
   <div id="report">
-    <div class="top-band">
-      <img src="${logoSrc}" alt="Colbeef" onerror="this.style.display='none'">
-      <h1>Gestión del Área de Vísceras</h1>
-      <div class="sub">Informe generado el: ${escHtml(fecha)}</div>
-    </div>
-    <div class="meta-bar">
-      <span>📅 ${escHtml(fecha)}</span>
-      <span><strong>SERGIO ANAYA</strong> · Gestor de Vísceras · Colbeef S.A.S</span>
-    </div>
+    <h1 class="doc-title">Gestión del Área de Vísceras</h1>
+    <p class="doc-sub">Informe generado el: ${escHtml(fecha)}</p>
+    <hr class="doc-rule">
     ${beneficioSection}
     ${invSection}
     ${cavasSection}
     ${percherosSection}
-    ${avisoSinSecciones}
-    <div class="footer">
+    ${sinSecciones ? '<div class="aviso-vacio">No hay secciones seleccionadas. Marque al menos una opción en «Incluir en el informe».</div>' : ''}
+    <div class="doc-footer">
       <strong>SERGIO ANAYA</strong> — GESTOR DE VÍSCERAS<br>
       Documento generado automáticamente · Gestor de Vísceras Colbeef · ${escHtml(fecha)}
     </div>
