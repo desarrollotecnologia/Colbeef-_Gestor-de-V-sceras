@@ -86,6 +86,7 @@
     /* ── PROGRESO ── */
     .progreso-card{background:var(--blanco);border-radius:var(--radio);padding:1.8rem;box-shadow:var(--sombra);margin-bottom:2.5rem;border:1px solid rgba(116,198,157,0.2);}
     .progreso-header{display:flex;justify-content:space-between;margin-bottom:0.8rem;font-weight:600;color:var(--vp);}
+    #progresoMeta{display:none;}
     .barra-exterior{background:#e9f3ee;height:14px;border-radius:30px;overflow:hidden;}
     .barra-interior{height:100%;background:linear-gradient(90deg,var(--vp),var(--vs));border-radius:30px;transition:width 0.7s ease;}
 
@@ -488,10 +489,6 @@
   <div id="viewDecomisos" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:1rem;">Módulo de Decomisos</h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:0.75rem;line-height:1.45;">
-      Cruce <strong>pieza programada a despacho</strong> (fecha en SIRT) con <strong>decomiso SAI</strong> (ventana 7 días).
-      El tablero muestra <strong>animales</strong> con decomiso en el turno; esta tabla lista cada <strong>pieza</strong> vinculada.
-    </p>
     <div class="stats-grid" style="margin-bottom:1rem;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">
       <div class="stat-card">
         <div class="stat-label">Animales (turno)</div>
@@ -513,7 +510,6 @@
       </div>
     </div>
     <div class="btn-row" style="margin-bottom:1rem;">
-      <button class="btn btn-secondary" onclick="limpiarDecomisos()">✕ Limpiar</button>
       <button class="btn btn-primary" id="btnPDF" onclick="generarPDF()" disabled>📄 Generar PDF</button>
     </div>
     <div class="alert" id="decAlert"></div>
@@ -551,15 +547,10 @@
   <!-- ═══ DESPACHOS ═══ -->
   <div id="viewDespachos" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
-    <h2 style="color:var(--vp);margin-bottom:0.4rem;">
+    <h2 style="color:var(--vp);margin-bottom:1rem;">
       Módulo de Despachos
       <span class="turno-badge" id="despTurnoBadge">—</span>
     </h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1rem;line-height:1.45;">
-      Piezas <strong>en cava ahora</strong> (sin salida física) con programación del <strong>turno del día</strong>
-      (LxM, MxM, MxJ… según la fecha operación). Incluye <strong>rezago</strong> del mismo día de semana aún en frío.
-      Agrupa por <strong>puesto</strong> (código · ciudad). Doble clic en una fila para el detalle por pieza.
-    </p>
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Juegos a Despachar</div>
@@ -573,8 +564,6 @@
       </div>
     </div>
     <div class="btn-row" style="align-items:center;flex-wrap:wrap;">
-      <button class="btn btn-secondary" onclick="confirmarLimpiar()">🗑 Limpiar</button>
-      <button class="btn btn-danger" onclick="confirmarCerrarOperacion()" style="background:#fef3c7;color:#92400e;border:1px solid #fcd34d;">🔒 Cerrar operación</button>
       <button class="btn btn-primary" id="btnProcesarDesp" onclick="procesarDespachos()">⚙️ Cargar y procesar desde SIRT</button>
       <div class="search-desp">
         <span class="s-icon">🔍</span>
@@ -602,12 +591,6 @@
       </div>
     </details>
     <div class="alert" id="despAlert"></div>
-    <p class="desp-leyenda">
-      <strong>Rojo</strong> = subproducto con cantidad menor ·
-      <strong style="color:#9a3412;">Marrón</strong> = decomiso (número en marrón en esa columna) ·
-      <strong style="color:#d97706;">Naranja en VB</strong> = cruda ·
-      <strong>Doble clic</strong> en la fila = detalle y causa del decomiso
-    </p>
     <div class="table-wrap">
       <table>
         <thead id="despThead"></thead>
@@ -619,10 +602,7 @@
   <!-- ═══ INFORME LABORAL ═══ -->
   <div id="viewInforme" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
-    <h2 style="color:var(--vp);margin-bottom:0.3rem;">📊 Informe Laboral</h2>
-    <p style="color:var(--gris);font-size:0.84rem;margin-bottom:1.5rem;">
-      Los datos se guardan en el servidor y persisten entre sesiones. La <strong>fecha del informe</strong> sigue la misma del encabezado (SIRT).
-    </p>
+    <h2 style="color:var(--vp);margin-bottom:1.5rem;">📊 Informe Laboral</h2>
 
     <!-- Checkboxes incluir -->
     <div class="incluir-bar">
@@ -754,7 +734,6 @@
     <!-- Botones acción -->
     <div class="alert" id="infAlert"></div>
     <div class="btn-row" style="justify-content:center;margin-top:1.5rem;">
-      <button class="btn btn-danger" onclick="confirmarLimpiarInforme()">🗑 Limpiar Todo</button>
       <button class="btn btn-primary" onclick="generarInforme()" style="font-size:1rem;padding:1rem 2.5rem;">📊 GENERAR INFORME OFICIAL</button>
     </div>
   </div>
@@ -1890,26 +1869,6 @@ function cargarCruceDecomisos(opts) {
     })
     .prepararModuloDecomisosDesdeSIRT(filtro);
 }
-function limpiarDecomisos() {
-  if (!confirm('¿Limpiar la lista de decomisos cruzados?')) return;
-  state.hayResultados = false;
-  document.getElementById('btnPDF').disabled = true;
-  document.getElementById('tablaDecomisos').innerHTML =
-    "<tr><td colspan='5' class='empty-state'>No hay datos.</td></tr>";
-  hideAlert('decAlert');
-  showSpinner('Limpiando…');
-  google.script.run
-    .withSuccessHandler(function (res) {
-      hideSpinner();
-      showAlert('decAlert', res && res.success ? 'success' : 'warn', res && res.success ? 'Lista limpiada.' : 'Error: ' + (res ? res.message : ''));
-      loadDashboardData();
-    })
-    .withFailureHandler(function (e) {
-      hideSpinner();
-      showAlert('decAlert', 'warn', e.message);
-    })
-    .limpiarResumen();
-}
 function generarPDF() {
   showSpinner('Generando PDF...');
   google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}showAlert('decAlert','success','✓ PDF generado: <a href="'+res.url+'" target="_blank" style="color:#065f46;font-weight:bold;">Abrir PDF</a>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
@@ -2253,23 +2212,6 @@ function abrirDetalle(elOrStr) {
 }
 function cerrarModal(){document.getElementById('modalDetalle').classList.remove('show');}
 document.addEventListener('keydown',function(e){if(e.key==='Escape')cerrarModal();});
-function confirmarLimpiar() {
-  if(!confirm('¿Limpiar la operación actual?\n\nSe borrarán todos los datos de despachos del turno.'))return;
-  showSpinner('Limpiando operación...');
-  google.script.run.withSuccessHandler(function(res){
-    hideSpinner();
-    if(!res||!res.success){showAlert('despAlert','error','Error: '+(res?res.message:''));return;}
-    state.fileDesp=null;
-    document.getElementById('fileInputDesp').value='';document.getElementById('fileDespName').textContent='No requerido (SIRT)';
-    document.getElementById('uploadBoxDesp').classList.remove('has-file');document.getElementById('btnProcesarDesp').disabled=false;
-    actualizarStatsDespacho(null);
-    document.getElementById('despThead').innerHTML='';
-    document.getElementById('despTbody').innerHTML='<tr><td colspan="5" class="empty-state">No hay datos. Presione "Procesar desde SIRT".</td></tr>';
-    seleccionarTurno(null);
-    hideAlert('despAlert');
-    showAlert('despAlert','success','✓ Operación limpiada. Lista para el próximo turno.');loadDashboardData();
-  }).withFailureHandler(function(e){hideSpinner();showAlert('despAlert','error',e.message);}).limpiarDespachos();
-}
 
 // ══════════════════════════════════════════════════════
 // BUSCADOR DESPACHOS
@@ -2507,21 +2449,6 @@ function autoGuardar(){
       .withFailureHandler(function(e){console.warn('autoGuardar:',e);})
       .guardarInformeDatos(JSON.stringify(infState));
   }, 900);
-}
-
-// ── Limpiar informe ──
-function confirmarLimpiarInforme(){
-  if(!confirm('¿Limpiar todos los datos del informe?\nEsto restaurará los valores por defecto.'))return;
-  showSpinner('Limpiando...');
-  google.script.run
-    .withSuccessHandler(function(res){
-      hideSpinner();
-      if(!res||!res.success){showAlert('infAlert','error','Error: '+(res?res.message:''));return;}
-      showAlert('infAlert','success','✓ Datos del informe limpiados.');
-      cargarDatosInforme();
-    })
-    .withFailureHandler(function(e){hideSpinner();showAlert('infAlert','error',e.message);})
-    .limpiarInformeDatos();
 }
 
 // ── Generar informe ──
@@ -3349,34 +3276,6 @@ function eliminarPlazaModal(idx) {
 document.addEventListener('keydown', function(e) {
   if (e.key === 'Escape') { cerrarModal(); cerrarModalOPL(); cerrarModalPlazas(); }
 });
-
-// ══════════════════════════════════════════════════════
-// CERRAR OPERACIÓN CON PENDIENTES
-// ══════════════════════════════════════════════════════
-function confirmarCerrarOperacion() {
-  if (!confirm('¿Cerrar la operación con los pendientes actuales?\n\nEsto guardará el estado actual en el histórico y limpiará la operación.')) return;
-  showSpinner('Guardando histórico y cerrando operación...');
-  google.script.run
-    .withSuccessHandler(function(res) {
-      hideSpinner();
-      if (!res || !res.success) { showAlert('despAlert','error','Error: '+(res?res.message:'')); return; }
-      showAlert('despAlert','warn','⚠️ Operación cerrada con ' + (res.insertados||0) + ' registros guardados en histórico.');
-      // Limpiar UI igual que limpiarDespachos
-      state.fileDesp = null;
-      document.getElementById('fileInputDesp').value = '';
-      document.getElementById('fileDespName').textContent = 'Sin archivo';
-      document.getElementById('uploadBoxDesp').classList.remove('has-file');
-      document.getElementById('btnProcesarDesp').disabled = true;
-      document.getElementById('statJuegos').textContent = '—';
-      document.getElementById('statPuestos').textContent = '—';
-      document.getElementById('despThead').innerHTML = '';
-      document.getElementById('despTbody').innerHTML = '<tr><td colspan="5" class="empty-state">Operación cerrada. Lista para el próximo turno.</td></tr>';
-      seleccionarTurno(null);
-      loadDashboardData();
-    })
-    .withFailureHandler(function(e) { hideSpinner(); showAlert('despAlert','error',e.message); })
-    .cerrarOperacion();
-}
 
 // MOSTRAR RESUMEN GENERAL EN EL MISMO LUGAR QUE LAS TARJETAS
 // ══════════════════════════════════════════════════════
