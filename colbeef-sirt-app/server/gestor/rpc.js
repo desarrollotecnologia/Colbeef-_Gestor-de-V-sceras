@@ -16,6 +16,7 @@ const handlers = {
   limpiarDespachos: engine.limpiarDespachos,
   getPuestosCrudas: engine.getPuestosCrudas,
   getInformeDatos: informe.getInformeDatos,
+  calcularTotalesInformeCavas: informe.calcularTotalesInformeCavas,
   guardarInformeDatos: informe.guardarInformeDatos,
   limpiarInformeDatos: informe.limpiarInformeDatos,
   generarInformeHTML: informe.generarInformeHTML,

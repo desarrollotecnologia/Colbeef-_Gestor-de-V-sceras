@@ -681,7 +681,11 @@
         </div>
         <!-- Totales cavas -->
         <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-top:1.2rem;">
-          <div class="stat-card"><div class="stat-label">Total Juegos</div><div class="stat-valor" id="cavasTotalJuegos">—</div></div>
+          <div class="stat-card">
+            <div class="stat-label">Total juegos equiv.</div>
+            <div class="stat-valor" id="cavasTotalJuegos">—</div>
+            <div class="stat-sub" id="cavasInvPiezas">—</div>
+          </div>
           <div class="stat-card"><div class="stat-label">Ocupación</div><div class="stat-valor" id="cavasOcupacion">—</div></div>
         </div>
       </div>
@@ -2275,6 +2279,7 @@ function cargarDatosInforme() {
       if(res.percheros&&res.percheros.length>0) infState.percheros = res.percheros;
       infState.fecha = fechaISOaTexto(getFechaGlobalISO());
       _renderInforme();
+      if (res.cavasTotales) aplicarTotalesCavas(res.cavasTotales);
     })
     .withFailureHandler(function(){hideSpinner();_renderInformeDefault();})
     .getInformeDatos(leerFechaGlobal());
@@ -2366,24 +2371,61 @@ function updateCava(i, campo, val) {
   recalcCavas();
   autoGuardar();
 }
+function aplicarTotalesCavas(t) {
+  if (!t) return;
+  var jEl = document.getElementById('cavasTotalJuegos');
+  var oEl = document.getElementById('cavasOcupacion');
+  var pEl = document.getElementById('cavasInvPiezas');
+  if (jEl && t.juegosEquivalentes != null) jEl.textContent = Number(t.juegosEquivalentes).toFixed(2);
+  if (oEl && t.ocupacionPct != null) oEl.textContent = t.ocupacionPct + '%';
+  if (pEl && t.inventarioPiezas != null) pEl.textContent = t.inventarioPiezas + ' piezas en cava';
+}
+
+var recalcCavasTimer = null;
 function recalcCavas() {
-  var totalBlancas = infState.cavas.reduce(function(s,c){
-    return (c.grupo==="V. Rojas & Blancas (V.Blancas)"||c.grupo==="V. Acondicionamiento")?s+c.inventario:s;
-  },0);
-  var vRojas    = (infState.cavas.filter(function(c){return c.grupo==="V. Rojas & Blancas (V.Rojas)";})[0]||{inventario:0}).inventario;
-  var patasManos= (infState.cavas.filter(function(c){return c.grupo==="Patas & Manos";})[0]||{inventario:0}).inventario;
-  var cabezas   = (infState.cavas.filter(function(c){return c.grupo==="Cabezas";})[0]||{inventario:0}).inventario;
-  var partes    = [vRojas,totalBlancas,patasManos,cabezas];
-  var minJ      = Math.min.apply(null,partes);
-  var totalJ    = minJ;
-  partes.forEach(function(p){if(p>minJ)totalJ+=(p-minJ)*0.25;});
-  var totalCap  = infState.cavas.reduce(function(s,c){return s+(c.carros*c.capPorCarro);},0);
-  var totalInv  = infState.cavas.reduce(function(s,c){return s+c.inventario;},0);
-  var ocup      = totalCap>0?Math.round((totalInv/totalCap)*100):0;
-  // Redondear a múltiplo de 0.25
-  var totalJRed = Math.round(totalJ * 4) / 4;
-  document.getElementById('cavasTotalJuegos').textContent = totalJRed.toFixed(2);
-  document.getElementById('cavasOcupacion').textContent   = ocup+'%';
+  clearTimeout(recalcCavasTimer);
+  recalcCavasTimer = setTimeout(function () {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (res && res.success) aplicarTotalesCavas(res);
+        else recalcCavasLocal();
+      })
+      .withFailureHandler(recalcCavasLocal)
+      .calcularTotalesInformeCavas(JSON.stringify(infState.cavas));
+  }, 60);
+}
+
+function recalcCavasLocal() {
+  var cavas = infState.cavas || [];
+  var totalBlancas = 0;
+  var vRojas = 0;
+  var patasManos = 0;
+  var cabezas = 0;
+  cavas.forEach(function (c) {
+    var g = String(c.grupo || '');
+    var inv = Number(c.inventario || 0);
+    if (g === 'V. Rojas & Blancas (V.Rojas)') vRojas = inv;
+    else if (g === 'V. Rojas & Blancas (V.Blancas)' || g === 'V. Acondicionamiento') totalBlancas += inv;
+    else if (g === 'Patas & Manos') patasManos = inv;
+    else if (g === 'Cabezas') cabezas = inv;
+  });
+  var partes = [vRojas, totalBlancas, patasManos, cabezas];
+  var minJ = Math.min.apply(null, partes);
+  var totalJ = minJ;
+  partes.forEach(function (p) {
+    if (p > minJ) totalJ += (p - minJ) * 0.25;
+  });
+  var totalCap = 0;
+  var totalInv = 0;
+  cavas.forEach(function (c) {
+    totalCap += Number(c.carros || 0) * Number(c.capPorCarro || 0);
+    totalInv += Number(c.inventario || 0);
+  });
+  aplicarTotalesCavas({
+    juegosEquivalentes: Math.round(totalJ * 4) / 4,
+    ocupacionPct: totalCap > 0 ? Math.round((totalInv / totalCap) * 100) : 0,
+    inventarioPiezas: totalInv,
+  });
 }
 
 // ── Tabla Percheros ──

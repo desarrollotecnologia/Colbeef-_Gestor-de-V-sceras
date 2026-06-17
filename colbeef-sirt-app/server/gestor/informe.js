@@ -1,13 +1,11 @@
 import { loadState, saveState } from './store.js';
 import { fetchAnimalesBeneficiadosDia } from './sirtSync.js';
-
-const CAVAS_DEFAULT = [
-  { grupo: 'V. Rojas & Blancas (V.Rojas)', carros: 40, capPorCarro: 20, inventario: 0 },
-  { grupo: 'V. Rojas & Blancas (V.Blancas)', carros: 22, capPorCarro: 25, inventario: 0 },
-  { grupo: 'V. Acondicionamiento', carros: 22, capPorCarro: 25, inventario: 0 },
-  { grupo: 'Patas & Manos', carros: 80, capPorCarro: 9, inventario: 0 },
-  { grupo: 'Cabezas', carros: 80, capPorCarro: 9, inventario: 0 },
-];
+import {
+  CAVAS_DEFAULT,
+  calcularTotalesCavas,
+  participacionFila,
+  fusionarInventarioSirtEnCavas,
+} from './informeCavasUtils.js';
 
 const PERCHEROS_DEFAULT = [
   { cava: 'V. Rojas & Blancas', blancas: 0, rojas: 0, patasManos: 0, cabezas: 0, crudas: 0 },
@@ -97,7 +95,17 @@ export async function getInformeDatos(opts = {}) {
   const fechaIso = resolverFechaInformeIso(opts, s, base);
   base.fecha = isoAFechaTexto(fechaIso);
   await enriquecerBeneficioDesdeSirt(base, fechaIso);
-  return { success: true, ...base, fechaConsulta: fechaIso };
+
+  const inventarioVacio = !(base.cavas || []).some((c) => Number(c.inventario || 0) > 0);
+  if (inventarioVacio && s.estadoFromRow12?.length) {
+    const fusion = fusionarInventarioSirtEnCavas(base.cavas, s.estadoFromRow12, {
+      beneficioDia: base.beneficioDia,
+    });
+    if (fusion.desdeSirt) base.cavas = fusion.cavas;
+  }
+
+  const cavasTotales = calcularTotalesCavas(base.cavas || []);
+  return { success: true, ...base, fechaConsulta: fechaIso, cavasTotales };
 }
 
 export async function guardarInformeDatos(payload) {
@@ -111,6 +119,15 @@ export async function guardarInformeDatos(payload) {
   s.informe = data;
   await saveState(s);
   return { success: true };
+}
+
+export async function calcularTotalesInformeCavas(payload) {
+  const data = typeof payload === 'string' ? JSON.parse(payload || '[]') : payload;
+  const cavas = Array.isArray(data) ? data : data?.cavas;
+  if (!Array.isArray(cavas) || cavas.length !== 5) {
+    return { success: false, message: 'cavas debe tener exactamente 5 elementos.' };
+  }
+  return { success: true, ...calcularTotalesCavas(cavas) };
 }
 
 export async function limpiarInformeDatos() {
@@ -177,19 +194,14 @@ export async function generarInformeHTML(payload) {
 
   let cavasSection = '';
   if (opts.inclCavas) {
-    let totalCarros = 0;
-    let totalCap = 0;
-    let totalInv = 0;
+    const tot = calcularTotalesCavas(d.cavas || []);
     const cavasRows = (d.cavas || [])
       .map((c) => {
         const carros = Number(c.carros || 0);
         const capPor = Number(c.capPorCarro || 0);
         const cap = carros * capPor;
         const inv = Number(c.inventario || 0);
-        const pct = cap > 0 ? Math.round((inv / cap) * 100) : 0;
-        totalCarros += carros;
-        totalCap += cap;
-        totalInv += inv;
+        const pct = participacionFila(c);
         return `<tr>
           <td class="left">${escHtml(c.grupo)}</td>
           <td>x ${carros}</td>
@@ -199,7 +211,6 @@ export async function generarInformeHTML(payload) {
         </tr>`;
       })
       .join('');
-    const totalPct = totalCap > 0 ? Math.round((totalInv / totalCap) * 100) : 0;
     cavasSection = `
     <div class="section">
       <div class="section-title">Ocupación Cavas Vísceras</div>
@@ -210,9 +221,9 @@ export async function generarInformeHTML(payload) {
           <tr class="total-row">
             <td class="left">TOTAL GENERAL</td>
             <td>—</td>
-            <td>${totalCap}</td>
-            <td>${totalInv.toFixed(2)}</td>
-            <td>${totalPct}%</td>
+            <td>${tot.capacidadTotal}</td>
+            <td>${tot.juegosEquivalentes.toFixed(2)}</td>
+            <td>${tot.ocupacionPct}%</td>
           </tr>
         </tbody>
       </table>
