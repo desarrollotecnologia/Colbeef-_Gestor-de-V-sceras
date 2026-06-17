@@ -8,6 +8,7 @@ import {
   productoDecomisoDesdeMapa,
   parsePuestoOperacion,
   claveAgrupacionPuesto,
+  filasDespachoTurnoOperacion,
   isodowDesdeFechaISO,
   detectarTurnoPorFechaISO,
   construirIndiceDecomisosVw,
@@ -33,4 +34,15 @@ assert.strictEqual(isodowDesdeFechaISO('2026-06-02'), 2);
 assert.strictEqual(detectarTurnoPorFechaISO('2026-06-02'), 'MxM');
 const idx = construirIndiceDecomisosVw([{ codigo_animal: '2605-12622', tipo_parte: 'Hígado' }]);
 assert.ok(decomisoInfoDesdeVw(idx, '2605-12622-60'));
+const filasSinTurno = [
+  ['', '', '', '2602-06503-1', 'PROP', '', '', 'Cabeza', 'Bucaramanga', '01009/Bucaramanga/'],
+];
+const turnoMxJ = 'MxJ';
+const neto = filasDespachoTurnoOperacion(filasSinTurno, turnoMxJ);
+assert.ok(String(neto[0][9]).includes('MxJ'), 'turno debe normalizarse en la ruta');
+assert.strictEqual(
+  claveAgrupacionPuesto('01009/Bucaramanga/MxJ/'),
+  claveAgrupacionPuesto(neto[0][9])
+);
+assert.ok(!String(filasSinTurno[0][9]).includes('MxJ'), 'SIRT puede traer ruta sin sufijo de turno');
 console.log('test-decomiso-cruce: ok');

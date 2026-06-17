@@ -1495,20 +1495,25 @@ export async function getResumenDespachoActual() {
 
 export async function getDetallesPuesto(puesto) {
   const s = await loadState();
-  const turno = String(s.resumenDespachos?.turno || '').trim();
+  const turno =
+    String(s.resumenDespachos?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
   const indiceVw = construirIndiceDecomisosVw(s.decomisosVwFilas || []);
   const estadoNeto = aplicarEstadoEnCavaNeto(s.estadoFromRow12 || [], s.despachosCavas || []);
   const { basesEnCava, crudaBases } = construirIndiceEnCava(estadoNeto);
   const clavePuesto = claveAgrupacionPuesto(puesto);
+  const salidasTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turno);
   const filas = [];
-  s.despachosCavas.forEach((fila) => {
+  salidasTurno.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const prop = String(fila[4] ?? '').trim();
     const tipo = String(fila[7] ?? '').trim();
     const pFila = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
-    if (!id || claveAgrupacionPuesto(pFila) !== clavePuesto) return;
-    if (turno && pFila && !pFila.includes(turno)) return;
+    if (!id || !tipo || !pFila) return;
+    if (turno && !pFila.includes(turno)) return;
+    if (PUESTOS_EXCLUIDOS_DESP.includes(pFila)) return;
+    if (claveAgrupacionPuesto(pFila) !== clavePuesto) return;
     const base = codigoBase(id);
     const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
     filas.push({
