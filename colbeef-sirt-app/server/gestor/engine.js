@@ -431,7 +431,7 @@ async function fetchDespachosParaConsulta(filtro) {
 function filaSalidaCavaIdDestino(fila) {
   return {
     id: String(fila[3] ?? '').trim(),
-    destino: String(fila[8] ?? fila[9] ?? '').trim(),
+    destino: String(fila[9] ?? fila[8] ?? '').trim(),
   };
 }
 
@@ -475,12 +475,13 @@ function contarAnimalesDecomisoEnSalidasProgramadas(
 
 function decomisoCruceDtoDesdeReporte(filaReporte, destino = '') {
   const subproducto = String(filaReporte[2] ?? '').trim();
-  const puesto = String(filaReporte[6] ?? '').trim();
+  const parteDecomisada = String(filaReporte[6] ?? '').trim();
   return {
     id: String(filaReporte[0] ?? '').trim(),
     destino: String(destino || '').trim(),
     subproducto,
-    puesto,
+    puesto: parteDecomisada,
+    parteDecomisada,
     causa: String(filaReporte[4] ?? '').trim(),
     fecha: String(filaReporte[1] ?? '').trim(),
     hora: String(filaReporte[7] ?? '').trim(),
@@ -657,6 +658,7 @@ function reconstruirResumenDespachosOplSync(s, turno) {
     fechaStr: fmtNow(),
     historicoGuardadoFlag: prev.historicoGuardadoFlag || '',
   };
+  actualizarBaselineDespachoKpisSync(s, turno, { indiceVw });
   return rd;
 }
 
@@ -736,6 +738,141 @@ function actualizarBaselineOplDesdeDespachosSync(s, turno) {
       propToIdx[propUpper] = s.oplConfig.length - 1;
     }
   });
+}
+
+function asegurarBaselineDespachoKpis(s, fechaIso, turno) {
+  const dia = String(fechaIso || '').trim();
+  const t = String(turno || '').trim();
+  if (!s.despachoKpiBaseline || typeof s.despachoKpiBaseline !== 'object') {
+    s.despachoKpiBaseline = {
+      fecha: '',
+      turno: '',
+      juegosBases: [],
+      decomisoBases: [],
+      crudasBases: [],
+    };
+  }
+  if (s.despachoKpiBaseline.fecha !== dia || s.despachoKpiBaseline.turno !== t) {
+    s.despachoKpiBaseline = {
+      fecha: dia,
+      turno: t,
+      juegosBases: [],
+      decomisoBases: [],
+      crudasBases: [],
+    };
+  }
+}
+
+function basesDecomisoEnFilasDespacho(filas, reporte, indiceVw) {
+  const mapaDec = construirMapaDecomisosPorAnimal(reporte || []);
+  const bases = new Set();
+  (filas || []).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const base = codigoBase(id);
+    if (!base) return;
+    const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
+    if (dec) bases.add(base);
+  });
+  return bases;
+}
+
+function basesCrudasEnFilasDespacho(filas, crudaBasesIdx) {
+  const bases = new Set();
+  (filas || []).forEach((fila) => {
+    const tipo = String(fila[7] ?? '').trim();
+    if (tipo !== 'Visceras Blancas') return;
+    const id = String(fila[3] ?? '').trim();
+    const base = codigoBase(id);
+    if (!base) return;
+    if (crudaBasesIdx.has(base) || esCruda(fila[12])) bases.add(base);
+  });
+  return bases;
+}
+
+/** Snapshot actual: programación del turno + salidas físicas del día (despachados siguen contando). */
+function extraerKpisProgramacionActuales(s, turno, opts = {}) {
+  const fechaOp =
+    String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
+  const turnoOp =
+    String(turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const salidasTurno = filasDespachoTurnoOperacion(
+    filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
+    turnoOp
+  );
+  const todasFilas = [...programadosTurno, ...salidasTurno];
+  const activas = new Set();
+  todasFilas.forEach((fila) => {
+    const base = codigoBase(String(fila[3] ?? '').trim());
+    if (base) activas.add(base);
+  });
+  const juegosPorClave = agruparJuegosCompletosPorClave(
+    todasFilas,
+    COLS_DESPACHO_CAVA,
+    () => '_',
+    ''
+  );
+  const juegosBases = new Set();
+  Object.values(juegosPorClave).forEach((set) => set.forEach((b) => juegosBases.add(b)));
+  const estadoNeto = aplicarEstadoEnCavaNeto(
+    s.estadoFromRow12 || [],
+    s.despachosCavas || []
+  );
+  const { crudaBases } = construirIndiceEnCava(estadoNeto);
+  return {
+    activas,
+    juegosBases,
+    decomisoBases: basesDecomisoEnFilasDespacho(
+      todasFilas,
+      s.reporteDecomisos || [],
+      opts.indiceVw
+    ),
+    crudasBases: basesCrudasEnFilasDespacho(todasFilas, crudaBases),
+  };
+}
+
+function fusionarBaselineKpi(stored, current, activas) {
+  const set = new Set(stored || []);
+  (current || []).forEach((b) => set.add(b));
+  return [...set].filter((b) => activas.has(b));
+}
+
+/**
+ * Congela totales del tablero (En cava / Decomisos / Crudas):
+ * suben si entra más programación; solo bajan si el animal ya no está en salida del día.
+ */
+export function actualizarBaselineDespachoKpisSync(s, turno, opts = {}) {
+  const fechaOp = String(s.lastSyncRange?.from || '').trim() || hoyIsoLocal();
+  const turnoOp =
+    String(turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  asegurarBaselineDespachoKpis(s, fechaOp, turnoOp);
+  const cur = extraerKpisProgramacionActuales(s, turnoOp, opts);
+  const bl = s.despachoKpiBaseline;
+  const toArr = (set) => [...set];
+  bl.juegosBases = fusionarBaselineKpi(bl.juegosBases, toArr(cur.juegosBases), cur.activas);
+  bl.decomisoBases = fusionarBaselineKpi(
+    bl.decomisoBases,
+    toArr(cur.decomisoBases),
+    cur.activas
+  );
+  bl.crudasBases = fusionarBaselineKpi(bl.crudasBases, toArr(cur.crudasBases), cur.activas);
+  return {
+    totalJuegos: bl.juegosBases.length,
+    totalConDecomiso: bl.decomisoBases.length,
+    totalCrudas: bl.crudasBases.length,
+  };
+}
+
+function limpiarBaselineDespachoKpis(s) {
+  s.despachoKpiBaseline = {
+    fecha: '',
+    turno: '',
+    juegosBases: [],
+    decomisoBases: [],
+    crudasBases: [],
+  };
 }
 
 export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
@@ -1107,6 +1244,7 @@ export async function getResumenDecomisos() {
           destino: r[1],
           subproducto: r[2],
           puesto: r[3],
+          parteDecomisada: r[3],
           causa: r[4],
           fecha: r[5],
           hora: r[6],
@@ -1164,7 +1302,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Identificador de versión del motor (comprobar en /api/dashboard que el servidor desplegó el build nuevo). */
-export const GESTOR_BUILD = 'opl-sirt-juego-v1';
+export const GESTOR_BUILD = 'despacho-kpi-freeze-v1';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1265,12 +1403,17 @@ export async function getDashboardData(range) {
       rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} · turno ${turnoOp} (consulta SIRT)`;
       sWork.resumenDespachos = rd;
       sWork.lastSyncRange = filtro;
-      const preview = computeProgresoOPLPreview(sWork, rd.totalJuegos, { consultaSirt: true });
+      sWork.salidasCavaDia = salidasDia;
+      sWork.despachoKpiBaseline = persisted.despachoKpiBaseline;
+      const kpiFrozen = actualizarBaselineDespachoKpisSync(sWork, turnoOp, { indiceVw });
+      persisted.despachoKpiBaseline = sWork.despachoKpiBaseline;
+      await saveState(persisted);
+      const preview = computeProgresoOPLPreview(sWork, kpiFrozen.totalJuegos, { consultaSirt: true });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      const totalJuegosDespachar = Number(rd.totalJuegos || 0);
+      const totalJuegosDespachar = Number(kpiFrozen.totalJuegos || 0);
       const juegosEnCava = totalJuegosDespachar > 0 ? totalJuegosDespachar : juegosStockCava;
       const filasSalidasDia = desp.length;
       const turnoDespacho = String(rd.turno || '');
@@ -1331,11 +1474,8 @@ export async function getDashboardData(range) {
           juegosStockCava +
           ' juegos en stock cava';
       }
-      const cr =
-        rd.totalCrudas != null && rd.totalCrudas !== ''
-          ? { success: true, total: Number(rd.totalCrudas) }
-          : contarCrudasProgramadasSync(sWork, turnoOp);
-      const totalDecomisos = Number(rd.totalConDecomiso || 0);
+      const cr = { success: true, total: Number(kpiFrozen.totalCrudas || 0) };
+      const totalDecomisos = Number(kpiFrozen.totalConDecomiso || 0);
       const totalDecomisosEnRango =
         Number(decomisoVinculoStats?.decomisosUnicos) ||
         Number(decomisoVinculoStats?.filasEnRango) ||
@@ -1449,12 +1589,16 @@ export async function procesarDespachos(turnoForzado) {
       ...rd,
     };
   }
+  if (!s.fechaInicioOperacion) s.fechaInicioOperacion = new Date().toISOString();
+  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
+  const frozen = actualizarBaselineDespachoKpisSync(s, turno, { indiceVw });
   s.resumenDespachos = {
     ...rd,
     fechaStr: fmtNow(),
+    totalJuegos: frozen.totalJuegos,
+    totalConDecomiso: frozen.totalConDecomiso,
+    totalCrudas: frozen.totalCrudas,
   };
-  if (!s.fechaInicioOperacion) s.fechaInicioOperacion = new Date().toISOString();
-  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || {});
   await saveState(s);
   try {
     await calcularProgresoOPL();
@@ -1463,8 +1607,8 @@ export async function procesarDespachos(turnoForzado) {
     success: true,
     turno: rd.turno,
     totalPuestos: rd.resultado.length,
-    totalJuegos: rd.totalJuegos,
-    totalConDecomiso: rd.totalConDecomiso || 0,
+    totalJuegos: frozen.totalJuegos,
+    totalConDecomiso: frozen.totalConDecomiso || 0,
     totalConDecomisoVw: rd.totalConDecomisoVw || 0,
     totalConDecomisoSai: rd.totalConDecomisoSai || 0,
     filasEnCava: rd.filasEnCava,
@@ -1548,6 +1692,7 @@ export async function limpiarDespachos() {
   s.despachosCavas = [];
   s.salidasCavaDia = [];
   s.resumenDespachos = { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
+  limpiarBaselineDespachoKpis(s);
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
@@ -1806,6 +1951,7 @@ export async function cerrarOperacion() {
   s.despachosCavas = [];
   s.salidasCavaDia = [];
   s.resumenDespachos = { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
+  limpiarBaselineDespachoKpis(s);
   s.oplConfig.forEach((r) => {
     r.total = 0;
   });
@@ -1845,19 +1991,60 @@ export async function getPuestosCrudas() {
   return { success: true, puestos, total: Object.keys(puestos).length };
 }
 
+/** Puesto logístico completo (código/zona/turno) para una VB cruda en cava. */
+function construirMapaPuestoCrudaPorBase(despachos, turno) {
+  const map = {};
+  filasDespachoTurnoOperacion(despachos || [], turno).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const pFila = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (tipo !== 'Visceras Blancas' || !id || !pFila) return;
+    const base = codigoBase(id);
+    if (base && !map[base]) map[base] = pFila;
+  });
+  return map;
+}
+
+function resolverPuestoFilaCruda(fila, puestoPorBase, turno) {
+  const codigo = String(fila[0] ?? '').trim();
+  const base = codigoBase(codigo);
+  if (base && puestoPorBase[base]) return puestoPorBase[base];
+  const suc = String(fila[5] ?? '').trim();
+  const zona = String(fila[8] ?? '').trim();
+  const t = String(turno || '').trim();
+  if (suc && zona) {
+    const pref = suc.endsWith('/') ? `${suc}${zona}/` : `${suc}/${zona}/`;
+    return t && !pref.includes(t) ? `${pref}${t}/` : pref;
+  }
+  return zona || suc || 'SIN PUESTO';
+}
+
+/** Solo código de puesto para Crudas (sucursal o primer segmento de ruta SIRT). */
+function codigoPuestoCrudas(puestoResuelto, sucursalFila) {
+  const suc = String(sucursalFila ?? '').trim();
+  if (suc) return suc;
+  const first = String(puestoResuelto || '').split('/')[0].trim();
+  return first || String(puestoResuelto || '').trim() || 'SIN PUESTO';
+}
+
 export async function getCrudasDetalle() {
   const s = await loadState();
   const mapaOPL = cargarMapaOPL(s);
+  const turno = resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  const puestoPorBase = construirMapaPuestoCrudaPorBase(s.despachosCavas, turno);
   const crudas = {};
   s.estadoFromRow12.forEach((fila) => {
     const codigo = String(fila[0] ?? '').trim();
     const desc = String(fila[1] ?? '').trim();
     const cliente = String(fila[3] ?? '').trim();
-    const puesto = String(fila[8] ?? '').trim();
     const colO = fila[13];
     if (!codigo || desc !== 'Visceras Blancas') return;
     if (!esCruda(colO)) return;
     const base = codigoBase(codigo);
+    const puesto = codigoPuestoCrudas(
+      resolverPuestoFilaCruda(fila, puestoPorBase, turno),
+      fila[5]
+    );
     const key = `${base}||${puesto}`;
     if (!crudas[key]) {
       crudas[key] = {
@@ -1875,7 +2062,7 @@ export async function getCrudasDetalle() {
     crudas[key].cantidad++;
   });
   const filas = Object.values(crudas).sort((a, b) => a.puesto.localeCompare(b.puesto));
-  return { success: true, filas };
+  return { success: true, filas, turno };
 }
 
 const PLAZAS_DEFAULT = [
@@ -2833,52 +3020,51 @@ export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual
   };
 }
 
+/** Agrupa crudas para PDF (puesto completo / zona, no solo código sucursal). */
+function construirResumenCrudasPdfSync(s) {
+  const mapaOPL = cargarMapaOPL(s);
+  const turno = resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  const puestoPorBase = construirMapaPuestoCrudaPorBase(s.despachosCavas, turno);
+  const map = {};
+  (s.estadoFromRow12 || []).forEach((fila) => {
+    const codigo = String(fila[0] ?? '').trim();
+    const desc = String(fila[1] ?? '').trim();
+    const cliente = String(fila[3] ?? '').trim();
+    const colO = fila[13];
+    if (!codigo || desc !== 'Visceras Blancas' || !esCruda(colO)) return;
+    const puestoFull = resolverPuestoFilaCruda(fila, puestoPorBase, turno);
+    const opl = mapaOPL[cliente.toUpperCase()] || OPL_DEFAULT;
+    const key = `${puestoFull}||${opl}`;
+    if (!map[key]) map[key] = { puesto: puestoFull, opl, cantidad: 0, codigos: [] };
+    map[key].cantidad++;
+    if (codigo) map[key].codigos.push(codigo);
+  });
+  return Object.values(map)
+    .sort((a, b) => String(a.puesto).localeCompare(String(b.puesto), 'es'))
+    .map((f) => ({
+      puesto: f.puesto,
+      cantidad: f.cantidad,
+      opl: f.opl || '—',
+      codigos: [...new Set(f.codigos)].join(', '),
+    }));
+}
+
 export async function generarPDFDecomisos() {
   const res = await getResumenDecomisos();
   if (!res.resultados?.length) return { success: false, message: 'No hay datos en Resumen.' };
   const fecha = fmtNow();
-  const rows = res.resultados.map((r, i) => ({
-    n: i + 1,
+  const rows = res.resultados.map((r) => ({
     id: r.id || '',
     destino: r.destino || '',
-    subproducto: r.subproducto || r.producto || '',
-    puesto: r.puesto || '',
-    causa: r.causa || '',
-    fecha: r.fecha || '',
-    producto: r.subproducto || r.producto || '',
+    decomiso: String(r.parteDecomisada || r.puesto || '').trim(),
   }));
-  const porProducto = {};
-  rows.forEach((r) => {
-    const key = r.puesto ? `${r.subproducto} — ${r.puesto}` : r.subproducto;
-    porProducto[key] = (porProducto[key] || 0) + 1;
-  });
 
-  const cr = await getCrudasDetalle();
-  const resumenCrudas = [];
-  if (cr?.success && Array.isArray(cr.filas) && cr.filas.length > 0) {
-    const map = {};
-    cr.filas.forEach((f) => {
-      const key = `${f.puesto || ''}||${f.opl || ''}`;
-      if (!map[key]) map[key] = { puesto: f.puesto || '', opl: f.opl || '', cantidad: 0, codigos: [] };
-      map[key].cantidad += Number(f.cantidad || 0);
-      if (f.codigo) map[key].codigos.push(String(f.codigo));
-    });
-    Object.values(map)
-      .sort((a, b) => String(a.puesto).localeCompare(String(b.puesto)))
-      .forEach((f) => {
-        resumenCrudas.push({
-          puesto: f.puesto,
-          cantidad: f.cantidad,
-          opl: f.opl || '—',
-          codigos: f.codigos.slice(0, 8).join(', '),
-        });
-      });
-  }
-  const pdfBuffer = await generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha);
+  const s = await loadState();
+  const resumenCrudas = construirResumenCrudasPdfSync(s);
+  const pdfBuffer = await generarPdfDecomisosBuffer(rows, resumenCrudas, fecha);
   const nombre = `Listado_Decomisos_${fmtDateOnly().replace(/\//g, '-')}.pdf`;
   const { id, fileName } = await guardarPdfHistorial(pdfBuffer, { nombre });
   const openUrl = urlAbrirPdfHistorial(id);
-  const s = await loadState();
   s.historialPdf = s.historialPdf || [];
   s.historialPdf.push({
     id,
@@ -2898,7 +3084,7 @@ export async function generarPDFDecomisos() {
   };
 }
 
-async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha) {
+async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
   return await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: 'LETTER' });
     const chunks = [];
@@ -2910,31 +3096,13 @@ async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha
     doc.moveDown(0.35);
     doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Fecha de generación: ${fecha}`, { align: 'center' });
     doc.moveDown(0.9);
-    doc.fillColor('#111827').fontSize(10).text(`Total registros: ${rows.length}    Productos distintos: ${Object.keys(porProducto).length}`);
-    doc.moveDown(0.75);
 
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#14532d').text('DETALLE DE DECOMISOS');
-    doc.moveDown(0.35);
     drawThemedPdfTable(
       doc,
-      ['#', 'Fecha', 'Código', 'Subproducto', 'Puesto', 'Causa'],
-      rows.map((r) => [r.n, r.fecha, r.id, r.subproducto, r.puesto, r.causa]),
-      [24, 58, 108, 108, 108, 92],
-      {
-      theme: 'decomisos',
-    });
-
-    doc.moveDown(0.85);
-    doc.font('Helvetica-Bold').fontSize(11).fillColor('#14532d').text('RESUMEN POR PRODUCTO');
-    doc.moveDown(0.35);
-    drawThemedPdfTable(
-      doc,
-      ['Producto', 'Cantidad'],
-      Object.keys(porProducto)
-        .sort()
-        .map((p) => [p, porProducto[p]]),
-      [420, 80],
-      { theme: 'producto' }
+      ['Código', 'Destino', 'Decomisos'],
+      rows.map((r) => [r.id, r.destino, r.decomiso]),
+      [98, 312, 130],
+      { theme: 'decomisos', wrapRows: true }
     );
 
     if (resumenCrudas.length) {
@@ -2943,10 +3111,10 @@ async function generarPdfDecomisosBuffer(rows, porProducto, resumenCrudas, fecha
       doc.moveDown(0.35);
       drawThemedPdfTable(
         doc,
-        ['Puesto', 'Cantidad', 'OPL', 'Códigos'],
+        ['PUESTO', 'CANTIDAD', 'OPL', 'CÓDIGOS'],
         resumenCrudas.map((x) => [x.puesto, x.cantidad, x.opl, x.codigos]),
-        [118, 62, 88, 222],
-        { theme: 'crudas' }
+        [198, 52, 72, 218],
+        { theme: 'crudas', wrapRows: true }
       );
     }
 
@@ -2988,42 +3156,66 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   const themeKey = opts.theme === 'crudas' ? 'crudas' : opts.theme === 'producto' ? 'producto' : 'decomisos';
   const t = PDF_TABLE_THEMES[themeKey];
   const startX = doc.x;
-  const rowH = 18;
+  const minRowH = Number(opts.minRowH || 18);
+  const wrapRows = Boolean(opts.wrapRows);
+  const fontSize = Number(opts.fontSize || 9);
   const pageBottom = doc.page.height - (doc.page.margins?.bottom ?? 50);
   const leftPad = 5;
 
-  const paintHeader = (y0) => {
-    doc.font('Helvetica-Bold').fontSize(9);
-    headers.forEach((h, i) => {
+  const textBlockHeight = (text, colW) => {
+    doc.font('Helvetica').fontSize(fontSize);
+    const inner = Math.max(8, colW - leftPad * 2);
+    return doc.heightOfString(String(text ?? ''), { width: inner, align: 'left' });
+  };
+
+  const rowHeightFor = (cells) => {
+    if (!wrapRows) return minRowH;
+    const contentH = cells.reduce((max, v, i) => Math.max(max, textBlockHeight(v, widths[i])), 0);
+    return Math.max(minRowH, contentH + leftPad * 2);
+  };
+
+  const paintHeader = (y0, h) => {
+    doc.font('Helvetica-Bold').fontSize(fontSize);
+    headers.forEach((hText, i) => {
       const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
       doc.save();
-      doc.fillColor(t.headerBg).rect(x, y0, widths[i], rowH).fill();
-      doc.strokeColor(t.border).lineWidth(0.35).rect(x, y0, widths[i], rowH).stroke();
+      doc.fillColor(t.headerBg).rect(x, y0, widths[i], h).fill();
+      doc.strokeColor(t.border).lineWidth(0.35).rect(x, y0, widths[i], h).stroke();
       doc.restore();
-      doc.fillColor(t.headerFg).text(String(h), x + leftPad, y0 + 5, { width: widths[i] - leftPad * 2, ellipsis: true });
+      doc.fillColor(t.headerFg).text(String(hText), x + leftPad, y0 + 5, {
+        width: widths[i] - leftPad * 2,
+        ellipsis: !wrapRows,
+      });
     });
   };
 
   let y = doc.y;
-  paintHeader(y);
-  y += rowH;
+  const headerH = minRowH;
+  paintHeader(y, headerH);
+  y += headerH;
 
   rows.forEach((r, rowIdx) => {
+    const rowH = rowHeightFor(r);
     if (y + rowH > pageBottom) {
       doc.addPage();
       y = doc.page.margins.top;
-      paintHeader(y);
-      y += rowH;
+      paintHeader(y, headerH);
+      y += headerH;
     }
     const fill = rowIdx % 2 === 0 ? t.stripeA : t.stripeB;
-    doc.font('Helvetica').fontSize(9);
+    doc.font('Helvetica').fontSize(fontSize);
     r.forEach((v, i) => {
       const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
       doc.save();
       doc.fillColor(fill).rect(x, y, widths[i], rowH).fill();
       doc.strokeColor(t.border).lineWidth(0.25).rect(x, y, widths[i], rowH).stroke();
       doc.restore();
-      doc.fillColor(t.bodyFg).text(String(v ?? ''), x + leftPad, y + 5, { width: widths[i] - leftPad * 2, ellipsis: true });
+      doc.fillColor(t.bodyFg).text(String(v ?? ''), x + leftPad, y + 5, {
+        width: widths[i] - leftPad * 2,
+        height: rowH - leftPad,
+        ellipsis: !wrapRows,
+        lineGap: 1,
+      });
     });
     y += rowH;
   });

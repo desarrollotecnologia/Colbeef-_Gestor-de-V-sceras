@@ -184,7 +184,9 @@
     tbody tr.total-row{background:#e8f5e9;font-weight:700;border-top:2px solid var(--vp);}
     tbody tr.incompleto-row{background:#fee2e2;border-left:3px solid #ef4444;}
     tbody tr.incompleto-row:hover{background:#fecaca!important;}
-    tbody tr.decomiso-row{background:#fff7ed;border-left:3px solid #f59e0b;}
+    #tablaDecomisosPrincipal td.col-id-producto{font-family:ui-monospace,Consolas,monospace;font-size:0.8rem;white-space:nowrap;}
+    #tablaDecomisosPrincipal td.col-puesto-zona{font-size:0.78rem;line-height:1.35;word-break:break-word;max-width:22rem;}
+    #tablaDecomisosPrincipal td.col-parte-dec{white-space:nowrap;font-weight:600;}
     tbody tr.decomiso-row:hover{background:#ffedd5!important;}
     tbody tr.clickable:hover{background:#d4edda;cursor:pointer;}
     tbody td{padding:0.75rem 1rem;}
@@ -515,8 +517,8 @@
     <div class="alert" id="decAlert"></div>
     <div class="table-wrap">
       <table id="tablaDecomisosPrincipal">
-        <thead><tr><th>Fecha</th><th>Código</th><th>Subproducto</th><th>Puesto</th><th>Causa</th></tr></thead>
-        <tbody id="tablaDecomisos"><tr><td colspan="5" class="empty-state">Cargando salidas de cava y decomisos desde SIRT…</td></tr></tbody>
+        <thead><tr><th>ID producto</th><th>Puesto (zona)</th><th>Parte decomisada</th></tr></thead>
+        <tbody id="tablaDecomisos"><tr><td colspan="3" class="empty-state">Cargando salidas de cava y decomisos desde SIRT…</td></tr></tbody>
       </table>
     </div>
     <details class="ux-collapsible" style="margin-top:1.25rem;">
@@ -887,13 +889,12 @@
         <table id="tablaDetallePuesto">
           <thead><tr>
             <th>Código</th>
-            <th>Base</th>
             <th>Propietario</th>
             <th>Tipo despacho</th>
             <th>Subproducto dec.</th>
             <th>Parte dec.</th>
           </tr></thead>
-          <tbody id="modalTbody"><tr><td colspan="6" class="empty-state">Cargando...</td></tr></tbody>
+          <tbody id="modalTbody"><tr><td colspan="5" class="empty-state">Cargando...</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1847,7 +1848,7 @@ function cargarCruceDecomisos(opts) {
   if (!opts.silent) {
     showSpinner('Consultando cava, salidas y cruzando decomisos…');
     document.getElementById('tablaDecomisos').innerHTML =
-      '<tr><td colspan="5" class="empty-state">Consultando SIRT…</td></tr>';
+      '<tr><td colspan="3" class="empty-state">Consultando SIRT…</td></tr>';
   }
   google.script.run
     .withSuccessHandler(function (res) {
@@ -1861,7 +1862,7 @@ function cargarCruceDecomisos(opts) {
       var msg = e && e.message ? e.message : String(e);
       showAlert('decAlert', 'error', msg, { persistent: true, technical: msg });
       document.getElementById('tablaDecomisos').innerHTML =
-        '<tr><td colspan="5" class="empty-state">Error al consultar SIRT.</td></tr>';
+        '<tr><td colspan="3" class="empty-state">Error al consultar SIRT.</td></tr>';
     })
     .prepararModuloDecomisosDesdeSIRT(filtro);
 }
@@ -1871,13 +1872,12 @@ function generarPDF() {
 }
 function renderTablaDecomisos(resultados) {
   var tbody=document.getElementById('tablaDecomisos');
-  if(!resultados||resultados.length===0){tbody.innerHTML='<tr><td colspan="5" class="empty-state">Sin decomisos vinculados a salidas de cava para esta fecha.</td></tr>';return;}
+  if(!resultados||resultados.length===0){tbody.innerHTML='<tr><td colspan="3" class="empty-state">Sin decomisos vinculados a salidas de cava para esta fecha.</td></tr>';return;}
   tbody.innerHTML=resultados.map(function(r){
-    var fechaTxt = String(r.fecha || '').trim();
-    if (r.hora) fechaTxt = (fechaTxt ? fechaTxt + ' ' : '') + String(r.hora).trim();
-    return '<tr><td>'+escapeHtml(fechaTxt)+'</td><td>'+escapeHtml(r.id||'')+'</td><td>'+
-      escapeHtml(r.subproducto||r.producto||'')+'</td><td>'+escapeHtml(r.puesto||'')+'</td><td>'+
-      escapeHtml(r.causa||'')+'</td></tr>';
+    var parte = String(r.parteDecomisada || r.puesto || '').trim();
+    var zona = String(r.destino || '').trim();
+    return '<tr><td class="col-id-producto">'+escapeHtml(r.id||'')+'</td><td class="col-puesto-zona">'+
+      escapeHtml(zona)+'</td><td class="col-parte-dec">'+escapeHtml(parte)+'</td></tr>';
   }).join('');
 }
 function cargarVistaSalidasDecomiso() {
@@ -2156,7 +2156,6 @@ function renderFilaDetallePuesto(f) {
   return (
     '<tr class="' + (dec ? 'fila-decomiso' : '') + '">' +
     '<td class="col-codigo">' + escapeHtml(f.id || '') + '</td>' +
-    '<td class="col-codigo">' + escapeHtml(f.codigoBase || '') + '</td>' +
     '<td class="col-propietario">' + escapeHtml(f.propietario || '') + '</td>' +
     '<td class="col-tipo">' + tipoHtml + '</td>' +
     celdaDec(sub, 'col-dec-sub') +
@@ -2169,13 +2168,13 @@ function abrirDetalle(elOrStr) {
   var puesto = typeof elOrStr === 'string' ? elOrStr : elOrStr.getAttribute('data-puesto');
   document.getElementById('modalPuestoTitulo').textContent = puesto;
   document.getElementById('modalTbody').innerHTML =
-    '<tr><td colspan="6" class="empty-state">Cargando...</td></tr>';
+    '<tr><td colspan="5" class="empty-state">Cargando...</td></tr>';
   document.getElementById('modalDetalle').classList.add('show');
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success || !res.filas || res.filas.length === 0) {
         document.getElementById('modalTbody').innerHTML =
-          '<tr><td colspan="6" class="empty-state">Sin datos.</td></tr>';
+          '<tr><td colspan="5" class="empty-state">Sin datos.</td></tr>';
         return;
       }
       var filas = res.filas.slice().sort(function (a, b) {
@@ -2200,7 +2199,7 @@ function abrirDetalle(elOrStr) {
     })
     .withFailureHandler(function (e) {
       document.getElementById('modalTbody').innerHTML =
-        '<tr><td colspan="6" class="empty-state" style="color:#991b1b;">Error: ' +
+        '<tr><td colspan="5" class="empty-state" style="color:#991b1b;">Error: ' +
         escapeHtml(e.message) +
         '</td></tr>';
     })
@@ -2926,10 +2925,10 @@ function renderTablaCrudas(filas) {
   });
   document.getElementById('crudasTbody').innerHTML = rows.map(function(g) {
     return '<tr style="background:#fffbeb;border-left:3px solid #f59e0b;">'
-      + '<td style="font-weight:600;font-size:0.82rem;">' + g.puesto + '</td>'
+      + '<td style="font-weight:600;font-size:0.82rem;">' + escapeHtml(g.puesto) + '</td>'
       + '<td class="num" style="font-weight:800;color:#d97706;font-size:1.1rem;">' + g.cantidad + '</td>'
-      + '<td><span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;">' + g.opl + '</span></td>'
-      + '<td style="font-size:0.75rem;color:var(--gris);word-break:break-all;">' + g.codigos.join(', ') + '</td>'
+      + '<td><span style="background:#d1fae5;color:#065f46;padding:2px 8px;border-radius:12px;font-size:0.78rem;font-weight:600;">' + escapeHtml(g.opl) + '</span></td>'
+      + '<td style="font-size:0.75rem;color:var(--gris);word-break:break-all;">' + escapeHtml(g.codigos.join(', ')) + '</td>'
       + '</tr>';
   }).join('');
 }

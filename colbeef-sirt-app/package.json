@@ -10,6 +10,7 @@
     "test:decomiso-cruce": "node scripts/test-decomiso-cruce.mjs",
     "test:planilla-opl": "node scripts/test-planilla-opl.mjs",
     "test:crudas-despacho": "node scripts/test-crudas-despacho.mjs",
+    "test:despacho-kpi-freeze": "node scripts/test-despacho-kpi-freeze.mjs",
     "test:opl-juego": "node scripts/test-opl-juego.mjs",
     "analyze:data-excel": "node scripts/analyze-data-excel.mjs",
     "probe:decomiso-dates": "node scripts/probe-decomiso-dates.mjs",

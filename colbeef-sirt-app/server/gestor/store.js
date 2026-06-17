@@ -49,6 +49,14 @@ export function defaultState() {
     oplConfig: defaultOplConfig(),
     oplBaselineFecha: '',
     oplBaselineTurno: '',
+    /** Totales congelados del tablero (En cava / Decomisos / Crudas) por fecha+turno. */
+    despachoKpiBaseline: {
+      fecha: '',
+      turno: '',
+      juegosBases: [],
+      decomisoBases: [],
+      crudasBases: [],
+    },
     /** Total fijo de juegos a despachar por OPL (baseline del día). */
     oplTotalsJuego: {},
     oplProgreso: [],
@@ -71,6 +79,9 @@ export async function loadState() {
     if (!cache.oplConfig || !cache.oplConfig.length) cache.oplConfig = defaultOplConfig();
     else asegurarOplExcepcionesEnConfig(cache);
     if (!cache.oplTotalsJuego) cache.oplTotalsJuego = {};
+    if (!cache.despachoKpiBaseline || typeof cache.despachoKpiBaseline !== 'object') {
+      cache.despachoKpiBaseline = defaultState().despachoKpiBaseline;
+    }
     delete cache.oplTotalsSubproducto;
     return cache;
   } catch {
