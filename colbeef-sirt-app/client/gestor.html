@@ -984,7 +984,21 @@
 
   window.volverPortalPrincipal = function () {
     if (window.ColbeefUsage) ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
-    location.href = portalReturn;
+    var usuario =
+      (window.ColbeefUsage && ColbeefUsage.usuario) ||
+      localStorage.getItem('colbeef_usuario') ||
+      '';
+    var url = portalReturn;
+    try {
+      var u = new URL(portalReturn, location.origin);
+      if (usuario) u.searchParams.set('usuario', String(usuario).trim());
+      else if (!u.searchParams.has('usuario')) u.searchParams.set('usuario', '');
+      url = u.toString();
+    } catch (_) {
+      var sep = portalReturn.indexOf('?') >= 0 ? '&' : '?';
+      url = portalReturn + sep + 'usuario=' + encodeURIComponent(String(usuario).trim());
+    }
+    location.href = url;
   };
 
   var logoClicks = 0;
