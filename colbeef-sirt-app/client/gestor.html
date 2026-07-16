@@ -24,7 +24,7 @@
     .logo-text h1{font-size:1.8rem;font-weight:700;letter-spacing:-0.5px;}
     .logo-text p{color:var(--gris);font-size:0.9rem;}
     .fecha-badge{background:white;padding:0.45rem 1rem;border-radius:40px;font-weight:500;color:var(--vp);box-shadow:var(--sombra);border:1px solid var(--vc);display:flex;align-items:center;gap:0.5rem;}
-    .btn-volver-portal{width:42px;height:42px;border-radius:12px;border:1.5px solid var(--vc);background:#fff;color:var(--vp);font-size:1.25rem;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:var(--sombra);}
+    .btn-volver-portal{width:42px;height:42px;border-radius:12px;border:1.5px solid var(--vc);background:#fff;color:var(--vp);font-size:1.25rem;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:var(--sombra);display:inline-flex;align-items:center;justify-content:center;text-decoration:none;}
     .btn-volver-portal:hover{background:var(--vc);}
     .usuario-badge{background:#ecfdf5;color:var(--vp);padding:0.4rem 0.85rem;border-radius:999px;font-size:0.78rem;font-weight:600;border:1px solid var(--vc);white-space:nowrap;}
 
@@ -380,7 +380,7 @@
 
   <!-- ═══ HEADER ═══ -->
   <div class="header">
-    <button type="button" class="btn-volver-portal" onclick="volverPortalPrincipal()" title="Volver al programa principal">←</button>
+    <a id="btnVolverPortal" class="btn-volver-portal" href="http://192.168.20.205:8501/?session=active" onclick="return volverPortalPrincipal(event)" title="Volver al programa principal">←</a>
     <div class="logo-area">
       <div class="logo-icon" id="logoIconGestor" title="Colbeef"><img src="/colbeef-icon.png" alt="Colbeef" width="60" height="60"></div>
       <div class="logo-text">
@@ -982,12 +982,18 @@
     return;
   }
 
-  window.volverPortalPrincipal = function () {
-    if (window.ColbeefUsage) ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
-    var usuario =
-      (window.ColbeefUsage && ColbeefUsage.usuario) ||
+  function usuarioActual() {
+    return (
+      (window.ColbeefUsage && window.ColbeefUsage.usuario) ||
       localStorage.getItem('colbeef_usuario') ||
-      '';
+      fromUrl ||
+      ''
+    );
+  }
+
+  function enlacePortalPrincipal() {
+    var usuario =
+      usuarioActual();
     var url = portalReturn;
     try {
       var u = new URL(portalReturn, location.origin);
@@ -998,13 +1004,26 @@
       var sep = portalReturn.indexOf('?') >= 0 ? '&' : '?';
       url = portalReturn + sep + 'usuario=' + encodeURIComponent(String(usuario).trim());
     }
-    location.href = url;
+    return url;
+  }
+
+  window.volverPortalPrincipal = function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    try {
+      if (window.ColbeefUsage && window.ColbeefUsage.track) {
+        window.ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
+      }
+    } catch (_) {}
+    location.assign(enlacePortalPrincipal());
+    return false;
   };
 
   var logoClicks = 0;
   var logoTimer = null;
   document.addEventListener('DOMContentLoaded', function () {
     if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
+    var btnVolver = document.getElementById('btnVolverPortal');
+    if (btnVolver) btnVolver.href = enlacePortalPrincipal();
 
     var logo = document.getElementById('logoIconGestor');
     if (logo) {
