@@ -1,3 +1,9 @@
+/**
+ * Persistencia de PDF generados.
+ *
+ * El estado solo conserva metadatos e identificadores; el contenido binario se
+ * guarda en disco para evitar inflar `gestor-state.json` con Base64.
+ */
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -19,10 +25,12 @@ export async function guardarPdfHistorial(buffer, meta = {}) {
   return { id, fileName };
 }
 
+/** Lee el archivo indicado; la validación del ID corresponde al motor/API. */
 export async function leerPdfHistorial(fileName) {
   return fs.readFile(path.join(PDF_HISTORIAL_DIR, fileName));
 }
 
+/** URL pública relativa para abrir o descargar un PDF desde Express. */
 export function urlAbrirPdfHistorial(id) {
   return `/api/historial/pdf/${encodeURIComponent(id)}`;
 }

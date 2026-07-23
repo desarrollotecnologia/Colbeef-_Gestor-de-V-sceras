@@ -1,3 +1,4 @@
+/** Exportaciones resumidas construidas directamente desde métricas SIRT. */
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
 import { getDashboard, getDespachosPorPropietario, getCategoriasVw } from './metrics.js';
@@ -12,6 +13,10 @@ function bufferPdf(doc) {
   });
 }
 
+/**
+ * Genera un libro XLSX en memoria con resumen, propietarios y categorías.
+ * El llamador decide las cabeceras HTTP y el nombre final de descarga.
+ */
 export async function buildExcelBuffer(opts) {
   const dash = await getDashboard(opts);
   const prop = await getDespachosPorPropietario({ ...opts, limit: 200 });
@@ -88,6 +93,7 @@ export async function buildExcelBuffer(opts) {
   return Buffer.from(buf);
 }
 
+/** Genera un PDF A4 resumido, sin escribir archivos temporales en disco. */
 export async function buildPdfBuffer(opts) {
   const dash = await getDashboard(opts);
   const prop = await getDespachosPorPropietario({ ...opts, limit: 30 });

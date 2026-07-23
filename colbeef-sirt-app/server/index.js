@@ -1,3 +1,13 @@
+/**
+ * Punto de entrada HTTP del Gestor de Vísceras.
+ *
+ * Responsabilidades:
+ * - exponer API REST y puente RPC para la interfaz histórica;
+ * - servir portal, gestor y dashboard de usabilidad;
+ * - validar conectividad con SIRT;
+ * - entregar exportaciones y PDF almacenados;
+ * - publicar enlaces accesibles en la red local.
+ */
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -34,6 +44,7 @@ const PORTAL_RETURN_URL =
   String(process.env.PORTAL_RETURN_URL || '').trim() ||
   'http://192.168.20.205:8501/?session=active';
 const isProd = process.env.NODE_ENV === 'production';
+/** Los archivos adicionales se procesan en memoria y se limitan a 12 MiB. */
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
 
 app.use(
@@ -44,6 +55,10 @@ app.use(
 );
 app.use(express.json({ limit: '8mb' }));
 
+/**
+ * Compatibilidad con `google.script.run`: delega únicamente métodos incluidos
+ * en la lista blanca de `gestor/rpc.js`.
+ */
 app.post('/api/rpc', async (req, res) => {
   try {
     const { method, args } = req.body || {};
@@ -78,6 +93,7 @@ function requireUsabilityAdmin(req, res, next) {
   next();
 }
 
+// ── Telemetría y dashboard administrativo ──────────────────────────────────
 app.post('/api/usability/event', async (req, res) => {
   try {
     const out = await recordEvent(req.body || {}, reqMeta(req));

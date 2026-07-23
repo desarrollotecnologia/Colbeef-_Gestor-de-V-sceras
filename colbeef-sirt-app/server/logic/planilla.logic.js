@@ -1,5 +1,16 @@
+/** Cálculo puro de la planilla de puntos a partir de productos en cava. */
 import { extraerPuesto } from './helpers.js';
 
+/**
+ * Asigna 0,25 puntos por pieza y consolida el resultado por zona y puesto.
+ *
+ * Los puestos sin configuración en `mapaPlazas` se envían a
+ * `ENTRADA A CAVA`, evitando perder piezas en el consolidado.
+ *
+ * @param {Array<object>} filasCava Productos normalizados en cava.
+ * @param {Record<string, string>} mapaPlazas Relación código de puesto → zona.
+ * @returns {Array<{zona:string,total:number,puestos:Array<object>}>}
+ */
 export function calcularPlanilla(filasCava, mapaPlazas) {
   const pts = {};
   for (const f of filasCava) {

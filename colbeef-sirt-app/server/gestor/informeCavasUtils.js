@@ -1,3 +1,8 @@
+/**
+ * Reglas de inventario y ocupación usadas tanto por la UI como por el informe.
+ * Mantener aquí una sola fórmula evita diferencias entre pantalla y exportación.
+ */
+
 /** Configuración por defecto de cavas (misma estructura que Excel / App Script). */
 export const CAVAS_DEFAULT = [
   { grupo: 'V. Rojas & Blancas (V.Rojas)', carros: 40, capPorCarro: 20, inventario: 0 },
@@ -68,6 +73,7 @@ export function calcularTotalesCavas(cavas) {
   };
 }
 
+/** Porcentaje de ocupación de una cava respecto a carros × capacidad por carro. */
 export function participacionFila(c) {
   const cap = Number(c.carros || 0) * Number(c.capPorCarro || 0);
   const inv = Number(c.inventario || 0);
@@ -93,6 +99,13 @@ export function inventarioCavasDesdeEstado(filasEstado) {
   return counts;
 }
 
+/**
+ * Autocompleta el inventario desde SIRT cuando el formulario no tiene valores.
+ *
+ * Los datos manuales tienen prioridad, salvo que `opts.forzar` sea verdadero.
+ * Acondicionamiento usa el beneficio del día porque no se deriva directamente
+ * de los tipos presentes en Estado_Cavas.
+ */
 export function fusionarInventarioSirtEnCavas(cavas, filasEstado, opts = {}) {
   const base = (cavas || []).map((c) => ({ ...c }));
   const counts = inventarioCavasDesdeEstado(filasEstado);

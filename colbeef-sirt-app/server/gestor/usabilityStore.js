@@ -1,3 +1,9 @@
+/**
+ * Telemetría ligera del gestor y autenticación del dashboard de usabilidad.
+ *
+ * Los eventos se guardan localmente; los tokens administrativos viven solo en
+ * memoria, expiran en 24 horas y se invalidan al reiniciar el proceso.
+ */
 import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
@@ -62,6 +68,7 @@ export async function recordEvent(payload, reqMeta = {}) {
   return { success: true, id: evt.id };
 }
 
+/** Valida la contraseña configurada y crea un token administrativo temporal. */
 export function loginAdmin(password) {
   if (String(password || '') !== adminPassword) return null;
   const token = crypto.randomBytes(24).toString('hex');
@@ -69,6 +76,7 @@ export function loginAdmin(password) {
   return token;
 }
 
+/** Comprueba existencia y vencimiento del token sin renovar su vigencia. */
 export function verifyAdminToken(token) {
   const t = String(token || '').trim();
   if (!t) return false;
@@ -84,6 +92,10 @@ function dayKey(iso) {
   return String(iso || '').slice(0, 10);
 }
 
+/**
+ * Agrega eventos por usuario, acción, módulo y día.
+ * Limita las listas para mantener una respuesta pequeña para Chart.js.
+ */
 export async function getUsageStats(days = 30) {
   const data = await loadData();
   const cutoff = new Date();
@@ -145,6 +157,7 @@ export async function getUsageStats(days = 30) {
   };
 }
 
+/** Genera un enlace nominal; el tracker conservará el usuario en localStorage. */
 export function buildGestorLink(baseUrl, usuario) {
   const base = String(baseUrl || '').replace(/\/$/, '');
   const u = encodeURIComponent(String(usuario || '').trim());

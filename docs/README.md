@@ -13,6 +13,7 @@ Documentación en **Mermaid** (editable en `.mmd` y vista previa en `.md` en Git
 | 1 | Arquitectura general | [01-arquitectura.md](diagrams/01-arquitectura.md) |
 | 2 | Endpoint backend → UI | [02-endpoints-a-ui.md](diagrams/02-endpoints-a-ui.md) |
 | 3 | Mapa de pantallas | [03-mapa-pantallas.md](diagrams/03-mapa-pantallas.md) |
+| 4 | Flujo operativo (uso diario) | [04-flujo-operativo.md](diagrams/04-flujo-operativo.md) |
 
 **Este índice:** [docs/README.md](README.md)
 
@@ -23,6 +24,7 @@ Documentación en **Mermaid** (editable en `.mmd` y vista previa en `.md` en Git
 - [01-arquitectura.mmd](diagrams/01-arquitectura.mmd)
 - [02-endpoints-a-ui.mmd](diagrams/02-endpoints-a-ui.mmd)
 - [03-mapa-pantallas.mmd](diagrams/03-mapa-pantallas.mmd)
+- [04-flujo-operativo.mmd](diagrams/04-flujo-operativo.mmd)
 
 ---
 
@@ -32,6 +34,7 @@ Documentación en **Mermaid** (editable en `.mmd` y vista previa en `.md` en Git
 - https://github.com/desarrollotecnologia/Colbeef-_Gestor-de-V-sceras/blob/main/docs/diagrams/01-arquitectura.md
 - https://github.com/desarrollotecnologia/Colbeef-_Gestor-de-V-sceras/blob/main/docs/diagrams/02-endpoints-a-ui.md
 - https://github.com/desarrollotecnologia/Colbeef-_Gestor-de-V-sceras/blob/main/docs/diagrams/03-mapa-pantallas.md
+- https://github.com/desarrollotecnologia/Colbeef-_Gestor-de-V-sceras/blob/main/docs/diagrams/04-flujo-operativo.md
 
 > Si algún enlace devuelve 404, la carpeta `docs/` aún no está en GitHub: haz commit y push de `docs/`.
 

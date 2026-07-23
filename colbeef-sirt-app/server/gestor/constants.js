@@ -1,5 +1,9 @@
+/** Catálogo central de reglas configurables compartidas por el motor. */
+
+/** OPL aplicado a propietarios que no tienen una excepción explícita. */
 export const OPL_DEFAULT = 'TRANSCARNES';
 
+/** Asignaciones de negocio propietario → operador logístico. */
 export const OPL_EXCEPCIONES_DEFAULT = [
   ['AVILA MONSALVE REINALDO', 'DRA CAVA'],
   ['BENITEZ GARNICA CEFERINO', 'EDGAR AM'],
@@ -27,6 +31,7 @@ export const OPL_MODELO = {
     'Los porcentajes usan juegos completos (4 subproductos) y fecha_salida real en SIRT. No coinciden con el Excel histórico.',
 };
 
+/** Destinos administrativos o especiales excluidos del despacho operativo. */
 export const PUESTOS_EXCLUIDOS_DESP = [
   '01305/TEMP1 /DxL///CALLE 23# 6-52 PLACITA GIRARDOT',
   '03105/Guarin //Cra 33a # 32-109',
@@ -44,8 +49,10 @@ export const PUESTOS_EXCLUIDOS_DESP = [
   'RH32/Temp 2 Girón /DxL///CRA 29 # 33-70 LLANITO PARTE BAJA',
 ];
 
+/** Cuatro componentes necesarios para considerar completo un juego visceral. */
 export const TIPOS_PRODUCTO = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
+/** Turno logístico esperado por día de semana de JavaScript (0 = domingo). */
 export const TURNO_POR_DIA = { 0: 'DxL', 1: 'LxM', 2: 'MxM', 3: 'MxJ', 4: 'JxV', 5: 'VxS', 6: 'SxD' };
 
 export const PREFIJOS_TURNO = [
@@ -56,6 +63,7 @@ export const PREFIJOS_TURNO = [
 export const ESTADO_COMPLETO = 'Completo';
 export const ESTADO_PENDIENTE = 'Cerrado con pendientes';
 
+/** Textos históricos de observación que identifican una VB como cruda. */
 export const CRUDAS_VALORES = [
   'CRUDAS',
   'CRUDAS\nRETIRAR LIBRILLOS ASURCARNES',

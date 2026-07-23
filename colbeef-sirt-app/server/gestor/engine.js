@@ -1,4 +1,15 @@
-﻿import {
+﻿/**
+ * Motor principal del Gestor de Vísceras.
+ *
+ * Orquesta la sincronización SIRT, conserva compatibilidad con las matrices del
+ * Apps Script original y aplica reglas de negocio de decomisos, despachos,
+ * juegos completos, OPL, crudas, planilla e historial PDF.
+ *
+ * SIRT es la fuente de verdad. `store.js` conserva únicamente estado auxiliar
+ * y baselines de la operación activa. Las funciones exportadas constituyen el
+ * contrato utilizado por REST y por la lista blanca RPC.
+ */
+import {
   TIPOS_PRODUCTO,
   PUESTOS_EXCLUIDOS_DESP,
   OPL_DEFAULT,
@@ -56,7 +67,7 @@ function cargarMapaOPL(state) {
   return mapa;
 }
 
-/** Lista de OPL para selects (defaults + config + hist├│rico). */
+/** Lista de OPL para selects (valores por defecto, configuración e histórico). */
 function listarOplsConocidos(s) {
   const set = new Set([OPL_DEFAULT]);
   OPL_EXCEPCIONES_DEFAULT.forEach(([, opl]) => {
@@ -77,6 +88,7 @@ function listarOplsConocidos(s) {
     });
 }
 
+/** Un juego es completo únicamente si contiene los cuatro tipos configurados. */
 function tieneJuegoCompleto(tipos) {
   return TIPOS_PRODUCTO.every((tipo) => tipos.has(tipo));
 }
@@ -87,8 +99,10 @@ function filasDespachoTurno(despachosCavas, turno) {
 }
 
 /**
- * Resumen por puesto: productos en cava con salida del d├¡a ÔåÆ totales por destino,
- * decomiso y cruda.
+ * Construye el resumen operativo por puesto para un turno.
+ *
+ * Cruza programación, estado neto en cava, decomisos SAI/vw y observaciones de
+ * crudas. Además calcula juegos completos y distribución por OPL.
  */
 function construirResumenDespachosDesdeFilas(
   despachosCavas,
@@ -245,7 +259,7 @@ function construirResumenDespachosDesdeFilas(
       r.direccionPuesto = meta.direccionEntrega || po.direccion;
       r.etiquetaPuesto =
         meta.sucursalNombre && meta.zonaLogistica
-          ? `${meta.sucursalNombre} ┬À ${meta.zonaLogistica}`
+          ? `${meta.sucursalNombre} · ${meta.zonaLogistica}`
           : po.etiqueta;
       r.rutaPuesto = po.ruta;
       r.codigoPuesto = meta.sucursalNombre || po.codigo || codigoPuestoPlanilla(meta.puesto);
@@ -322,7 +336,7 @@ function agruparJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
 
 export { contarJuegosCompletosPorClave };
 
-/** Agrupa subproductos ├║nicos (animal+tipo) por clave OPL / propietario. */
+/** Agrupa subproductos únicos (animal+tipo) por clave OPL / propietario. */
 function agruparSubproductosPorClave(rows, cols, getClave, turno = '') {
   const grupos = {};
   (rows || []).forEach((fila) => {
@@ -399,7 +413,7 @@ async function fetchDespachosParaConsulta(filtro) {
         usoLookback: false,
         turnoOperacion: turno,
         modoDespachos: 'turno-isodow',
-        avisoRango: `Sin piezas en cava programadas para el turno ${turno} (d├¡a ${useRange.from}).`,
+        avisoRango: `Sin piezas en cava programadas para el turno ${turno} (día ${useRange.from}).`,
       };
     }
     return {
@@ -422,7 +436,7 @@ async function fetchDespachosParaConsulta(filtro) {
     return {
       desp: despLb,
       usoLookback: true,
-      avisoRango: 'Sin registros en la fecha exacta; se us├│ ventana lookback de SIRT.',
+      avisoRango: 'Sin registros en la fecha exacta; se usó ventana lookback de SIRT.',
     };
   }
   return { desp, usoLookback: false, avisoRango: '' };
@@ -435,7 +449,7 @@ function filaSalidaCavaIdDestino(fila) {
   };
 }
 
-/** ├ìndice de animales en cava (c├│digo base) y cu├íles tienen VB cruda. */
+/** Índice de animales en cava (código base) y cuáles tienen VB cruda. */
 function construirIndiceEnCava(estadoFromRow12) {
   const basesEnCava = new Set();
   const crudaBases = new Set();
@@ -450,7 +464,7 @@ function construirIndiceEnCava(estadoFromRow12) {
   return { basesEnCava, crudaBases };
 }
 
-/** Animales ├║nicos (c├│digo base) con decomiso en salida programada del turno (mismo criterio que tablero). */
+/** Animales únicos (código base) con decomiso en salida programada del turno. */
 function contarAnimalesDecomisoEnSalidasProgramadas(
   salidasFilas,
   reporteDecomisos,
@@ -490,7 +504,7 @@ function decomisoCruceDtoDesdeReporte(filaReporte, destino = '') {
   };
 }
 
-/** Cruce pieza programada Ôåö decomiso SAI (una fila por parte decomisada en SIRT). */
+/** Cruce pieza programada ↔ decomiso SAI (una fila por parte decomisada en SIRT). */
 function cruzarDecomisosConSalidas(salidasFilas, reporteDecomisos) {
   const salidas = salidasFilas || [];
   if (!salidas.length || !reporteDecomisos?.length) return [];
@@ -540,7 +554,7 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
 
 const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
 
-/** Propietarios ├║nicos con juegos del turno (desde filas Despachos_Cavas). */
+/** Propietarios únicos con juegos del turno (desde filas Despachos_Cavas). */
 function propietariosConJuegosDesdeDespachos(despachos, turno) {
   const neto = filasDespachoTurnoOperacion(despachos || [], turno);
   const conteo = contarJuegosCompletosPorClave(
@@ -576,13 +590,13 @@ function isoDesdeCeldaFecha(celda) {
   return '';
 }
 
-/** Agrupa progreso OPL por operador log├¡stico (mapeo propietario ÔåÆ OPL). */
+/** Agrupa progreso OPL por operador logístico (mapeo propietario → OPL). */
 function claveOplDesdeFila(fila, mapaOPL) {
   const prop = String(fila[4] ?? '').trim().toUpperCase();
   return mapaOPL[prop] || OPL_DEFAULT;
 }
 
-/** Salidas f├¡sicas del d├¡a operaci├│n (fecha_salida en SIRT). */
+/** Salidas físicas del día de operación (`fecha_salida` en SIRT). */
 function filasSalidasCavaDelDia(rows, fechaOpIso) {
   if (!fechaOpIso) return [];
   return (rows || []).filter((fila) => isoDesdeCeldaFecha(fila[0]) === fechaOpIso);
@@ -619,7 +633,7 @@ async function sincronizarSalidasCavaDiaEnSesion(s, filtro) {
   }
 }
 
-/** Refresca programaci├│n en cava y salidas f├¡sicas antes de calcular OPL (evita cach├® obsoleta). */
+/** Refresca programación y salidas físicas antes de calcular OPL. */
 async function refrescarDatosOplDesdeSirt(s) {
   const filtro = normalizarRangoFechas(s.lastSyncRange || {});
   if (!filtroSirtValido(filtro)) return false;
@@ -662,7 +676,7 @@ function reconstruirResumenDespachosOplSync(s, turno) {
   return rd;
 }
 
-/** Reinicia totales OPL al cambiar el d├¡a o el turno de operaci├│n. */
+/** Reinicia totales OPL al cambiar el día o turno de operación. */
 function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
   const t = String(turno || s.resumenDespachos?.turno || '').trim();
@@ -690,7 +704,7 @@ function limpiarOplTotalsJuego(s) {
   delete s.oplTotalsSubproducto;
 }
 
-/** Congela el total de juegos a despachar por OPL (crece si entra m├ís programaci├│n, no baja). */
+/** Congela el total OPL: crece si entra más programación y no baja al despachar. */
 function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelDia) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
   const totals = obtenerOplTotalsJuego(s);
@@ -709,7 +723,7 @@ function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelD
   });
 }
 
-/** Congela el m├íximo de juegos vistos por propietario (no baja si salen de cava). */
+/** Conserva el máximo de juegos vistos por propietario durante la operación. */
 function actualizarBaselineOplDesdeDespachosSync(s, turno) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from);
   const mapaOPL = cargarMapaOPL(s);
@@ -789,7 +803,7 @@ function basesCrudasEnFilasDespacho(filas, crudaBasesIdx) {
   return bases;
 }
 
-/** Snapshot actual: programaci├│n del turno + salidas f├¡sicas del d├¡a (despachados siguen contando). */
+/** Instantánea actual: programación del turno + salidas físicas del día. */
 function extraerKpisProgramacionActuales(s, turno, opts = {}) {
   const fechaOp =
     String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
@@ -840,7 +854,7 @@ function fusionarBaselineKpi(stored, current, activas) {
 
 /**
  * Congela totales del tablero (En cava / Decomisos / Crudas):
- * suben si entra m├ís programaci├│n; solo bajan si el animal ya no est├í en salida del d├¡a.
+ * suben si entra más programación; solo bajan si ya no existe salida del día.
  */
 export function actualizarBaselineDespachoKpisSync(s, turno, opts = {}) {
   const fechaOp = String(s.lastSyncRange?.from || '').trim() || hoyIsoLocal();
@@ -964,7 +978,7 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
         fecha,
         totalJuegos: 0,
         message: hayTotales
-          ? 'Sin despachos del turno a├║n para esta fecha (consulta en vivo).'
+          ? 'Sin despachos del turno aún para esta fecha (consulta en vivo).'
           : 'Sin despachos del turno. Procese Decomisos y Despachos para activar OPL.',
       };
     }
@@ -1101,7 +1115,7 @@ export async function resumirDecomisos() {
   const totalPiezasVinculadas = resultado.length;
   const ahora = new Date();
   s.resumenRows = [
-    ['C├│digo', 'Destino', 'Subproducto', 'Puesto', 'Causa', 'Fecha', 'Hora', 'Fecha Procesamiento'],
+    ['Código', 'Destino', 'Subproducto', 'Puesto', 'Causa', 'Fecha', 'Hora', 'Fecha Procesamiento'],
     ...resultado.map((r) => [
       r.id,
       r.destino,
@@ -1301,7 +1315,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
   return { success: true, total: Object.keys(codigosUnicos).length };
 }
 
-/** Identificador de versi├│n del motor (comprobar en /api/dashboard que el servidor despleg├│ el build nuevo). */
+/** Versión del motor expuesta por la API para comprobar el despliegue activo. */
 export const GESTOR_BUILD = 'despacho-kpi-freeze-v1';
 
 function metaRespuestaOpl(extra = {}) {
@@ -1321,7 +1335,7 @@ function isoToDdMmYyyy(iso) {
   return `${m[3]}/${m[2]}/${m[1]}`;
 }
 
-/** Filas de puesto para tablero / operaci├│n en vivo (sin agrupar por zona comercial). */
+/** Filas de puesto para operación en vivo, sin agrupar por zona comercial. */
 function mapearOperacionPuestos(resultado) {
   return (resultado || [])
     .filter((r) => Number(r.Juegos || 0) > 0)
@@ -1342,6 +1356,13 @@ function mapearOperacionPuestos(resultado) {
     .sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
 }
 
+/**
+ * Consulta en vivo todos los KPI del dashboard para una fecha.
+ *
+ * Ejecuta las fuentes SIRT en paralelo, arma el resumen del turno y actualiza
+ * el baseline diario para que En cava, Decomisos y Crudas no disminuyan al
+ * registrar salidas físicas.
+ */
 export async function getDashboardData(range) {
   let filtro = normalizarRangoFechas(range || {});
   if (!filtroSirtValido(filtro)) {
@@ -1400,7 +1421,7 @@ export async function getDashboardData(range) {
       const rd = construirResumenDespachosDesdeFilas(desp, turnoOp, reporte, estado, cargarMapaOPL(sWork), {
         indiceVw,
       });
-      rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} ┬À turno ${turnoOp} (consulta SIRT)`;
+      rd.fechaStr = `${isoToDdMmYyyy(fechaIso)} · turno ${turnoOp} (consulta SIRT)`;
       sWork.resumenDespachos = rd;
       sWork.lastSyncRange = filtro;
       sWork.salidasCavaDia = salidasDia;
@@ -1434,11 +1455,11 @@ export async function getDashboardData(range) {
             : 0;
         progresoMensaje =
           despachados +
-          ' despachados ┬À ' +
+          ' despachados · ' +
           (oplLive.totalPendientes || 0) +
-          ' pendientes ┬À ' +
+          ' pendientes · ' +
           totalJuegosDespachar +
-          ' juegos turno ┬À ' +
+          ' juegos turno · ' +
           turnoOp +
           (modoProg
             ? ' (ISODOW del ' +
@@ -1447,9 +1468,9 @@ export async function getDashboardData(range) {
               rezagoDias +
               ' d)'
             : ' el ' + isoToDdMmYyyy(fechaIso)) +
-          ' ┬À ' +
+          ' · ' +
           filasSalidasDia +
-          ' piezas ┬À ' +
+          ' piezas · ' +
           juegosStockCava +
           ' juegos stock cava';
       } else if (filasSalidasDia > 0 && totalJuegosDespachar === 0) {
@@ -1457,20 +1478,20 @@ export async function getDashboardData(range) {
           filasSalidasDia +
           ' piezas programadas el ' +
           isoToDdMmYyyy(fechaIso) +
-          ' ┬À turno ' +
+          ' · turno ' +
           turnoOp +
-          ' ┬À 0 juegos completos (revise filtro turno/puesto)' +
-          ' ┬À ' +
+          ' · 0 juegos completos (revise filtro turno/puesto)' +
+          ' · ' +
           juegosStockCava +
           ' en stock cava';
       } else {
         progresoMensaje =
-          'Sin programaci├│n a despachar el ' +
+          'Sin programación a despachar el ' +
           isoToDdMmYyyy(fechaIso) +
-          ' ┬À turno ' +
+          ' · turno ' +
           turnoOp +
-          (despPack.avisoRango ? ' ┬À ' + despPack.avisoRango : '') +
-          ' ┬À ' +
+          (despPack.avisoRango ? ' · ' + despPack.avisoRango : '') +
+          ' · ' +
           juegosStockCava +
           ' juegos en stock cava';
       }
@@ -1536,7 +1557,7 @@ export async function getDashboardData(range) {
     }
   }
 
-  return { success: false, message: 'Sin fecha de consulta SIRT v├ílida.' };
+  return { success: false, message: 'Sin fecha de consulta SIRT válida.' };
 }
 
 function getDashboardDataDespachosSync(s) {
@@ -1551,6 +1572,10 @@ function getDashboardDataDespachosSync(s) {
   };
 }
 
+/**
+ * Procesa la programación cargada en sesión y persiste el resumen del turno.
+ * Requiere Estado_Cavas y Despachos_Cavas previamente sincronizados.
+ */
 export async function procesarDespachos(turnoForzado) {
   const s = await loadState();
   if (!s.estadoFromRow12?.length) {
@@ -1722,6 +1747,12 @@ export async function limpiarResumen() {
   return { success: true };
 }
 
+/**
+ * Refresca programación y salidas físicas antes de calcular el progreso OPL.
+ *
+ * Los despachados provienen de `fecha_salida`; no se infieren restando el
+ * inventario. Al finalizar todos los OPL se guarda una entrada histórica.
+ */
 export async function calcularProgresoOPL(_totalJuegosParam) {
   const s = await loadState();
   const fecha = fmtNow();
@@ -1859,7 +1890,7 @@ export async function upsertOpl(propietario, opl) {
   const s = await loadState();
   const p = String(propietario ?? '').trim();
   const o = String(opl ?? '').trim();
-  if (!p) return { success: false, message: 'Propietario vac├¡o.' };
+  if (!p) return { success: false, message: 'Propietario vacío.' };
   const idx = s.oplConfig.findIndex((r) => String(r.propietario).trim().toUpperCase() === p.toUpperCase());
   if (idx >= 0) {
     s.oplConfig[idx].opl = o;
@@ -1874,7 +1905,7 @@ export async function upsertOpl(propietario, opl) {
 export async function eliminarOpl(rowIdx) {
   const s = await loadState();
   const i = Number(rowIdx) - 2;
-  if (i < 0 || i >= s.oplConfig.length) return { success: false, message: 'Fila inv├ílida.' };
+  if (i < 0 || i >= s.oplConfig.length) return { success: false, message: 'Fila inválida.' };
   s.oplConfig.splice(i, 1);
   await saveState(s);
   return { success: true };
@@ -1947,7 +1978,7 @@ export async function cerrarOperacion() {
   const s = await loadState();
   await sincronizarOplProgresoDesdeSirt(s);
   const hist = await guardarHistoricoOPLInternal(s, ESTADO_PENDIENTE);
-  if (!hist.success) return { success: false, message: 'Error guardando hist├│rico: ' + hist.message };
+  if (!hist.success) return { success: false, message: 'Error guardando histórico: ' + hist.message };
   s.despachosCavas = [];
   s.salidasCavaDia = [];
   s.resumenDespachos = { turno: '', fechaStr: '', totalJuegos: 0, resultado: [], historicoGuardadoFlag: '' };
@@ -1991,7 +2022,7 @@ export async function getPuestosCrudas() {
   return { success: true, puestos, total: Object.keys(puestos).length };
 }
 
-/** Puesto log├¡stico completo (c├│digo/zona/turno) para una VB cruda en cava. */
+/** Puesto logístico completo (código/zona/turno) para una VB cruda en cava. */
 function construirMapaPuestoCrudaPorBase(despachos, turno) {
   const map = {};
   filasDespachoTurnoOperacion(despachos || [], turno).forEach((fila) => {
@@ -2019,7 +2050,7 @@ function resolverPuestoFilaCruda(fila, puestoPorBase, turno) {
   return zona || suc || 'SIN PUESTO';
 }
 
-/** Solo c├│digo de puesto para Crudas (sucursal o primer segmento de ruta SIRT). */
+/** Solo código de puesto para Crudas (sucursal o primer segmento de ruta SIRT). */
 function codigoPuestoCrudas(puestoResuelto, sucursalFila) {
   const suc = String(sucursalFila ?? '').trim();
   if (suc) return suc;
@@ -2027,6 +2058,11 @@ function codigoPuestoCrudas(puestoResuelto, sucursalFila) {
   return first || String(puestoResuelto || '').trim() || 'SIN PUESTO';
 }
 
+/**
+ * Lista VB crudas únicas y resuelve su puesto desde la salida programada.
+ * La respuesta de pantalla usa solo el código de sucursal y agrupa después por
+ * puesto + OPL; el PDF reconstruye la ruta logística completa.
+ */
 export async function getCrudasDetalle() {
   const s = await loadState();
   const mapaOPL = cargarMapaOPL(s);
@@ -2152,7 +2188,7 @@ export async function eliminarPlaza(filaIdx) {
   return { success: true, message: 'Plaza eliminada correctamente' };
 }
 
-/** C├│digo de puesto (primer segmento de ruta SIRT), p. ej. 01028 ÔåÆ 1028 si es num├®rico. */
+/** Código de puesto: primer segmento de ruta; normaliza valores numéricos. */
 function codigoPuestoPlanilla(puestoFull) {
   const first = String(puestoFull || '').split('/')[0].trim();
   if (!first) return '';
@@ -2168,7 +2204,7 @@ const ZONA_POR_SEGMENTO_RUTA = [
   ['PROVENZA', 'PROVENZA'],
   ['CUMBRE', 'CUMBRE'],
   ['GIRON', 'GIRON'],
-  ['GIR├ôN', 'GIRON'],
+  ['GIRÓN', 'GIRON'],
   ['LAGOS', 'LAGOS'],
   ['FLORIDA', 'FLORIDA'],
   ['PIEDECUESTA', 'PIEDECUESTA'],
@@ -2344,7 +2380,7 @@ function construirConsolidadoPlanillaSync(s) {
   return consolidado.length ? { consolidado, totalJuegos, turno, fechaHoy } : null;
 }
 
-/** Planilla desde resumen de despachos programados (misma base que m├│dulo Despachos). */
+/** Planilla desde el resumen programado del módulo Despachos. */
 function consolidarDesdeResumenDespachos(s) {
   return construirConsolidadoPlanillaSync(s);
 }
@@ -2386,15 +2422,19 @@ export async function consolidarDatos() {
   return {
     success: false,
     message:
-      'No hay despachos procesados para esta fecha. Use ┬½Procesar Planilla┬╗ o procese el m├│dulo Despachos primero.',
+      'No hay despachos procesados para esta fecha. Use «Procesar Planilla» o procese Despachos primero.',
   };
 }
 
-/** Sincroniza SIRT + despachos + consolidaci├│n de planilla para la fecha operaci├│n. */
+/** Sincroniza SIRT, despachos y planilla para la fecha de operación. */
+/**
+ * Sincroniza la fecha solicitada y deja listo el consolidado usado por Planilla.
+ * Evita que la planilla opere con datos de una sesión o turno anterior.
+ */
 export async function prepararPlanillaDesdeSIRT(range = {}) {
   const filtro = normalizarRangoFechas(range || {});
   if (!filtroSirtValido(filtro)) {
-    return { success: false, message: 'Indique una fecha v├ílida (AAAA-MM-DD).' };
+    return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
   }
   const s0 = await loadState();
   s0.lastSyncRange = filtro;
@@ -2448,7 +2488,7 @@ export async function generarPlanillaPuntos(opl) {
     s.consolidado = pack.consolidado;
     await saveState(s);
   } else if (!s.consolidado?.length) {
-    return { success: false, message: "No hay datos. Ejecuta 'Procesar Planilla' para la fecha operaci├│n." };
+    return { success: false, message: "No hay datos. Ejecute 'Procesar Planilla' para la fecha de operación." };
   }
   const zonasMap = {};
   let totalOPL = 0;
@@ -2504,7 +2544,7 @@ export async function generarPlanillaPuntos(opl) {
     const zonaFila = String(fila[5] ?? '').trim() || po.zona;
     puestosFlat.push({
       puesto: puestoFull,
-      etiqueta: sucursal && zonaFila ? `${sucursal} ┬À ${zonaFila}` : po.etiqueta,
+      etiqueta: sucursal && zonaFila ? `${sucursal} · ${zonaFila}` : po.etiqueta,
       sucursal,
       zona: zonaFila,
       cantidad: Math.round(cantidad * 100) / 100,
@@ -2526,7 +2566,7 @@ export async function generarPlanillaPuntos(opl) {
   };
 }
 
-/** Vista en vivo de puestos programados (sin persistir sesi├│n). */
+/** Vista en vivo de puestos programados, sin persistir la sesión. */
 export async function getOperacionEnVivo(range) {
   const out = await consultarDespachosPreview(null, range);
   if (!out.success) return out;
@@ -2646,7 +2686,7 @@ function historialPdfParaCliente(items) {
       id: it.id || '',
       nombre: it.nombre || 'documento.pdf',
       fecha: it.fecha || '',
-      tipo: it.tipo || 'ÔÇö',
+      tipo: it.tipo || '—',
       registros: Number(it.registros || 0),
       usuario: it.usuario || 'SISTEMA',
       url: openUrl,
@@ -2725,13 +2765,13 @@ export async function consultarSalidasCavaDesdeSIRT(range) {
   };
 }
 
-/** Vista previa de decomisos SAI (ventana autom├ítica de N d├¡as). */
+/** Vista previa de decomisos SAI en una ventana automática de N días. */
 export async function consultarDecomisosDesdeSIRT(range) {
   return consultarDecomisosDesdeSirt(range);
 }
 
-/** Cruce decomisos Ôåö cava en vivo, sin guardar sesi├│n (solo lectura para UI v2). */
-/** Despachos del turno en vivo, sin guardar sesi├│n. */
+/** Cruce decomisos ↔ cava en vivo, sin guardar sesión. */
+/** Despachos del turno en vivo, sin guardar sesión. */
 export async function consultarDespachosPreview(turno, range) {
   const filtro = normalizarRangoFechas(range || {});
   const useRange = filtroSirtValido(filtro) ? filtro : {};
@@ -2834,13 +2874,18 @@ export async function prepararModuloDespachosDesdeSIRT(turno, range) {
 
 /**
  * Importa Estado_Cavas, Reporte_Decomisos y Despachos_Cavas para la fecha,
- * cruza decomisos y procesa despachos (turno desde datos SIRT o d├¡a de la fecha).
- * Persiste en la sesi├│n del servidor (gestor-state).
+ * cruza decomisos y procesa despachos usando el turno resuelto desde SIRT.
+ * Persiste la instantánea en la sesión local del servidor.
+ */
+/**
+ * Sincronización integral de una fecha: cava, decomisos, despachos y salidas.
+ * Persiste una instantánea coherente para que todos los módulos compartan el
+ * mismo rango y turno operativo.
  */
 export async function sincronizarSesionDesdeSirtPorFecha(range) {
   const filtro = normalizarRangoFechas(range || {});
   if (!filtroSirtValido(filtro)) {
-    return { success: false, message: 'Indique una fecha v├ílida (AAAA-MM-DD).' };
+    return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
   }
   try {
     const dec = await prepararModuloDecomisosDesdeSIRT(filtro);
@@ -2929,6 +2974,10 @@ async function sincronizarOplProgresoDesdeSirt(s) {
   return pack;
 }
 
+/**
+ * Importa el XLSX opcional de salidas adicionales.
+ * Este es el único flujo manual de datos operativos; el resto proviene de SIRT.
+ */
 export async function importarExcelAdicionales(bytes, nombre) {
   const s = await loadState();
   try {
@@ -3020,7 +3069,7 @@ export async function importarAdicionales(_fileData, _nombreArchivo, _tipoManual
   };
 }
 
-/** Agrupa crudas para PDF (puesto completo / zona, no solo c├│digo sucursal). */
+/** Agrupa crudas para PDF usando la ruta completa del puesto. */
 function construirResumenCrudasPdfSync(s) {
   const mapaOPL = cargarMapaOPL(s);
   const turno = resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
@@ -3044,11 +3093,15 @@ function construirResumenCrudasPdfSync(s) {
     .map((f) => ({
       puesto: f.puesto,
       cantidad: f.cantidad,
-      opl: f.opl || 'ÔÇö',
+      opl: f.opl || '—',
       codigos: [...new Set(f.codigos)].join(', '),
     }));
 }
 
+/**
+ * Genera el PDF oficial de decomisos y lo incorpora al historial local.
+ * El detalle usa Código/Destino/Parte decomisada y añade el resumen de crudas.
+ */
 export async function generarPDFDecomisos() {
   const res = await getResumenDecomisos();
   if (!res.resultados?.length) return { success: false, message: 'No hay datos en Resumen.' };
@@ -3092,14 +3145,14 @@ async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.font('Helvetica-Bold').fontSize(15).fillColor('#166534').text('LISTADO DE DECOMISOS V├ìSCERAS CON SALIDA', { align: 'center' });
+    doc.font('Helvetica-Bold').fontSize(15).fillColor('#166534').text('LISTADO DE DECOMISOS VÍSCERAS CON SALIDA', { align: 'center' });
     doc.moveDown(0.35);
-    doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Fecha de generaci├│n: ${fecha}`, { align: 'center' });
+    doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Fecha de generación: ${fecha}`, { align: 'center' });
     doc.moveDown(0.9);
 
     drawThemedPdfTable(
       doc,
-      ['C├│digo', 'Destino', 'Decomisos'],
+      ['Código', 'Destino', 'Decomisos'],
       rows.map((r) => [r.id, r.destino, r.decomiso]),
       [98, 312, 130],
       { theme: 'decomisos', wrapRows: true }
@@ -3107,11 +3160,11 @@ async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
 
     if (resumenCrudas.length) {
       doc.moveDown(0.85);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#9a3412').text('RESUMEN DE CRUDAS - V├ìSCERAS BLANCAS');
+      doc.font('Helvetica-Bold').fontSize(11).fillColor('#9a3412').text('RESUMEN DE CRUDAS - VÍSCERAS BLANCAS');
       doc.moveDown(0.35);
       drawThemedPdfTable(
         doc,
-        ['PUESTO', 'CANTIDAD', 'OPL', 'C├ôDIGOS'],
+        ['PUESTO', 'CANTIDAD', 'OPL', 'CÓDIGOS'],
         resumenCrudas.map((x) => [x.puesto, x.cantidad, x.opl, x.codigos]),
         [198, 52, 72, 218],
         { theme: 'crudas', wrapRows: true }
@@ -3119,7 +3172,7 @@ async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
     }
 
     doc.moveDown(0.85);
-    doc.font('Helvetica').fontSize(8).fillColor('#6b7280').text(`Documento generado autom├íticamente ┬À Gestor de V├¡sceras Colbeef ┬À ${fecha}`, { align: 'center' });
+    doc.font('Helvetica').fontSize(8).fillColor('#6b7280').text(`Documento generado automáticamente · Gestor de Vísceras Colbeef · ${fecha}`, { align: 'center' });
     doc.end();
   });
 }
@@ -3151,7 +3204,7 @@ const PDF_TABLE_THEMES = {
   },
 };
 
-/** Tablas estilo planilla Apps Script: cabecera s├│lida, filas alternadas, salto de p├ígina con cabecera repetida. */
+/** Tabla estilo planilla: cabecera sólida y repetida después de cada salto de página. */
 function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   const themeKey = opts.theme === 'crudas' ? 'crudas' : opts.theme === 'producto' ? 'producto' : 'decomisos';
   const t = PDF_TABLE_THEMES[themeKey];

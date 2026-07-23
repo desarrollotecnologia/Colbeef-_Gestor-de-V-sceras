@@ -1,4 +1,10 @@
-﻿import { query } from '../db.js';
+﻿/**
+ * Métricas agregadas para endpoints REST y exportaciones.
+ *
+ * Esta capa consulta períodos históricos. No sustituye el dashboard operativo
+ * de `gestor/engine.js`, que trabaja con fecha, turno y estado de sesión.
+ */
+import { query } from '../db.js';
 import { DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL } from '../gestor/sql/despachosColbeefGrouped.js';
 
 const SQL_BASE_PP = `
@@ -31,6 +37,11 @@ function clampDays(d) {
 }
 
 /**
+ * Calcula KPIs históricos en un rango explícito o en los últimos N días.
+ *
+ * `totalSalidas` representa códigos base registrados; `conSalidaCava` cuenta
+ * códigos base con salida física. La diferencia se expone como pendiente.
+ *
  * @param {{ days?: number, from?: string, to?: string }} opt
  */
 export async function getDashboard(opt = {}) {
@@ -137,6 +148,7 @@ export async function getDashboard(opt = {}) {
   };
 }
 
+/** Agrupa la vista filtrada de despachos por propietario y suma su peso. */
 export async function getDespachosPorPropietario({ days = 7, from, to, limit = 50 } = {}) {
   const useRange = from && to;
   const p = useRange ? [from, to] : [clampDays(days)];
@@ -158,6 +170,7 @@ export async function getDespachosPorPropietario({ days = 7, from, to, limit = 5
   return { success: true, rows };
 }
 
+/** Devuelve las categorías con mayor peso para el período solicitado. */
 export async function getCategoriasVw({ days = 7, from, to, limit = 20 } = {}) {
   const useRange = from && to;
   const p = useRange ? [from, to] : [clampDays(days)];
@@ -166,7 +179,7 @@ export async function getCategoriasVw({ days = 7, from, to, limit = 20 } = {}) {
   const lim = Math.min(Number(limit) || 20, 100);
   const sql = `
     SELECT
-      COALESCE(NULLIF(TRIM(v.categoria), ''), '(Sin categor├¡a)') AS categoria,
+      COALESCE(NULLIF(TRIM(v.categoria), ''), '(Sin categoría)') AS categoria,
       COALESCE(SUM(v.sum), 0)::numeric(18,2) AS kg
     FROM (${DESPACHOS_COLBEEF_GROUPED_FILTERED_SQL}) v
     GROUP BY 1

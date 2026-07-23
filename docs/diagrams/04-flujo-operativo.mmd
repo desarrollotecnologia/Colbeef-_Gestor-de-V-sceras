@@ -1,0 +1,46 @@
+flowchart TD
+  A([Inicio]) --> B[Portal: ingresa nombre del operador]
+  B --> C[Gestor: selecciona fecha de operación]
+  C --> D[Sincronizar / cargar datos desde SIRT]
+
+  D --> E[Dashboard]
+  E --> E1[En cava · Decomisos · Crudas]
+  E --> E2[Progreso OPL]
+  E --> E3[Total juegos a despachar]
+
+  E --> F{¿Qué módulo necesita?}
+
+  F -->|Decomisos| G[Cruce decomisos ↔ salidas]
+  G --> G1[Ver ID · puesto · parte decomisada]
+  G1 --> G2[Generar PDF de decomisos]
+
+  F -->|Despachos| H[Procesar despachos del turno]
+  H --> H1[Tabla por puesto y tipo de producto]
+  H1 --> H2[Detalle por puesto / decomisos]
+
+  F -->|OPL| I[Recalcular progreso OPL]
+  I --> I1[Total · Despachados · Pendientes]
+  I1 --> I2{¿fecha_salida en SIRT?}
+  I2 -->|Sí| I3[Suben despachados]
+  I2 -->|No| I4[Siguen pendientes]
+
+  F -->|Crudas| J[VB con observación CRUDAS]
+  J --> J1[Agrupar por puesto + OPL]
+
+  F -->|Planilla| K[Consolidar puestos / zonas / OPL]
+  K --> K1[Exportar planilla]
+
+  F -->|Informe laboral| L[Beneficio · cavas · percheros]
+  L --> L1[Generar informe PNG]
+
+  F -->|Historial PDF| M[Abrir / descargar PDF guardados]
+
+  G2 --> N[Historial PDF]
+  L1 --> O([Fin / continuar operación])
+  K1 --> O
+  H2 --> O
+  I3 --> O
+  I4 --> O
+  J1 --> O
+  M --> O
+  N --> O

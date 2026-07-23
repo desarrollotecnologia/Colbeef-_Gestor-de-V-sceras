@@ -1,5 +1,13 @@
+/**
+ * Lógica pura de despachos usada por las rutas REST.
+ *
+ * Este módulo trabaja con DTO (objetos con nombres de propiedades), mientras
+ * `gestor/engine.js` conserva matrices posicionales por compatibilidad con la
+ * aplicación histórica de Google Apps Script.
+ */
 import { codigoBase, detectarTurno } from './helpers.js';
 
+/** Destinos que no deben participar en los totales operativos de despacho. */
 const PUESTOS_EXCLUIDOS = [
   '01305/TEMP1 /DxL///CALLE 23# 6-52 PLACITA GIRARDOT',
   '03105/Guarin //Cra 33a # 32-109',
@@ -19,6 +27,17 @@ const PUESTOS_EXCLUIDOS = [
 
 const TIPOS = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
+/**
+ * Agrupa las piezas programadas por puesto para el turno activo.
+ *
+ * `totalJuegos` se obtiene de animales únicos con vísceras rojas, criterio
+ * heredado de esta capa REST. El motor principal usa el criterio más estricto
+ * de juego completo (los cuatro tipos de producto).
+ *
+ * @param {Array<object>} filasDespachos Filas normalizadas provenientes de SIRT.
+ * @param {string} [turnoForzado] Turno explícito; si falta, se infiere de las rutas.
+ * @returns {{turno:string,totalJuegos:number,totalPuestos:number,tipos:string[],resultado:Array<object>}}
+ */
 export function procesarDespachos(filasDespachos, turnoForzado) {
   const turno = turnoForzado || detectarTurno(filasDespachos.map((f) => String(f.puesto || '')));
   const mapaPuestos = {};
@@ -59,6 +78,13 @@ export function procesarDespachos(filasDespachos, turnoForzado) {
   };
 }
 
+/**
+ * Devuelve las piezas de un puesto, ordenadas por tipo e identificador.
+ *
+ * @param {Array<object>} filasDespachos Despachos normalizados.
+ * @param {string} puesto Ruta exacta del puesto.
+ * @param {string} [turno] Turno opcional para limitar el resultado.
+ */
 export function getDetallePuesto(filasDespachos, puesto, turno) {
   return filasDespachos
     .filter((f) => f.puesto === puesto && (!turno || String(f.puesto || '').includes(turno)))

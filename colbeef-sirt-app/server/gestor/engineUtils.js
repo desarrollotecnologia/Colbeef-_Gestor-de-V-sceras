@@ -1,5 +1,13 @@
-﻿import { PREFIJOS_TURNO, TURNO_POR_DIA } from './constants.js';
+﻿/**
+ * Funciones puras compartidas por el motor: normalización de identificadores,
+ * cruce de decomisos, interpretación de rutas y resolución del turno.
+ *
+ * Centralizar estas reglas es importante porque SIRT entrega IDs y rutas con
+ * variaciones de mayúsculas, sufijos y segmentos opcionales.
+ */
+import { PREFIJOS_TURNO, TURNO_POR_DIA } from './constants.js';
 
+/** Elimina caracteres extra y el último segmento para obtener el animal base. */
 export function codigoBase(id) {
   const s = String(id ?? '')
     .trim()
@@ -26,7 +34,7 @@ export function claveSubproductoSalida(fila) {
   return `${base}|${tipo}`;
 }
 
-/** Subproductos que ya registraron salida de cava (mismo d├¡a consultado). */
+/** Subproductos que ya registraron salida de cava el mismo día consultado. */
 export function construirSetSalidasDelDia(despachosCavas) {
   const salidas = new Set();
   (despachosCavas || []).forEach((fila) => {
@@ -36,7 +44,7 @@ export function construirSetSalidasDelDia(despachosCavas) {
   return salidas;
 }
 
-/** Programaci├│n en cava sin piezas que ya tienen fecha_salida (evita doble conteo OPL). */
+/** Programación sin piezas que ya tienen `fecha_salida`, para evitar doble conteo OPL. */
 export function despachosProgramadosSinSalidasDelDia(programados, salidasDelDia) {
   const salidas = construirSetSalidasDelDia(salidasDelDia);
   if (!salidas.size) return programados || [];
@@ -47,8 +55,8 @@ export function despachosProgramadosSinSalidasDelDia(programados, salidasDelDia)
 }
 
 /**
- * Quita del stock en cava los subproductos que ya aparecen en salidas del d├¡a
- * (evita doble conteo cuando SIRT a├║n no actualiz├│ fecha_salida).
+ * Quita del stock en cava los subproductos que ya aparecen en salidas del día.
+ * Evita doble conteo cuando el estado de inventario de SIRT aún no se actualizó.
  */
 export function estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas) {
   const salidas = construirSetSalidasDelDia(despachosCavas);
@@ -59,7 +67,7 @@ export function estadoEnCavaSinSalidasDelDia(estadoFromRow12, despachosCavas) {
   });
 }
 
-/** Solo restar del stock en cava cuando despachos = salida f├¡sica (fecha_salida), no programaci├│n. */
+/** Solo resta stock si la fuente representa una salida física, no programación. */
 export function despachosRestanDeStockEnCava() {
   const fuente = String(process.env.SIRT_DESPACHOS_FUENTE || 'programado').toLowerCase();
   return fuente === 'riel' || fuente === 'cava_riel';
@@ -73,14 +81,14 @@ export function aplicarEstadoEnCavaNeto(estadoBruto, despachosCavas) {
 }
 
 /**
- * Cruce Estado_Cavas Ôåö Reporte_Decomisos (Apps Script comparaba strings del Excel;
- * en SIRT suele variar may├║sculas o sufijo de lote).
+ * Cruce Estado_Cavas ↔ Reporte_Decomisos. En SIRT pueden variar mayúsculas,
+ * caracteres auxiliares o el sufijo de lote.
  */
 export function normalizeProductIdForDecomisoCruce(raw) {
   return String(raw ?? '').trim().toLowerCase();
 }
 
-/** Mapa id ÔåÆ producto/subproducto del reporte (varias claves por fila para tolerar formato). */
+/** Mapa ID → subproducto; registra ID completo y base para tolerar formatos. */
 export function construirMapaReporteDecomisos(reporteFilas) {
   const mapa = {};
   (reporteFilas || []).forEach((fila) => {
@@ -119,7 +127,7 @@ function mergeUniqueList(a, b) {
 }
 
 /**
- * Mapa animal (id normalizado / base) ÔåÆ tipos decomisados, subproducto y parte (puesto SAI).
+ * Mapa animal (ID normalizado/base) → tipos, subproducto y parte decomisada.
  */
 export function construirMapaDecomisosPorAnimal(reporteFilas) {
   const mapa = {};
@@ -161,7 +169,7 @@ export function decomisoInfoDesdeMapa(mapaPorAnimal, idRaw) {
   return mapaPorAnimal[normalizeProductIdForDecomisoCruce(base)] || null;
 }
 
-/** ├ìndice codigo_animal (vw_decomisos) ÔåÆ partes decomisadas del inspector. */
+/** Índice `codigo_animal` de vw_decomisos → partes decomisadas. */
 export function construirIndiceDecomisosVw(vwFilas) {
   const porAnimal = new Map();
   (vwFilas || []).forEach((r) => {
@@ -193,7 +201,7 @@ export function construirIndiceDecomisosVw(vwFilas) {
   return porAnimal;
 }
 
-/** Cruce pieza en cava: identificacion LIKE codigo_animal% (misma l├│gica que SQL del usuario). */
+/** Cruce por prefijo entre la identificación de pieza y el código del animal. */
 export function decomisoInfoDesdeVw(indiceVw, idRaw) {
   if (!indiceVw || indiceVw.size === 0) return null;
   const id = String(idRaw ?? '')
@@ -250,7 +258,7 @@ export function esCruda(valor) {
 
 const TURNOS_EN_RUTA = ['DxL', 'LxM', 'MxM', 'MxJ', 'JxV', 'VxS', 'SxD'];
 
-/** Descompone ruta SIRT: sucursal/destino/turno ÔÇö sucursal=puesto, destino=zona. */
+/** Descompone una ruta SIRT en sucursal, destino, dirección y turno. */
 export function parsePuestoOperacion(puestoFull) {
   const raw = String(puestoFull || '').trim();
   const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
@@ -264,7 +272,7 @@ export function parsePuestoOperacion(puestoFull) {
   const direccion = sinTurno[2] || '';
   const turno = parts.find((p) => TURNOS_EN_RUTA.includes(p)) || '';
   const etiqueta =
-    codigo && zona ? `${codigo} ┬À ${zona}` : codigo || zona || raw.slice(0, 96);
+    codigo && zona ? `${codigo} · ${zona}` : codigo || zona || raw.slice(0, 96);
   const ruta = sinTurno.join(' / ');
   const zonaKey = zona.toUpperCase();
   const clave =
@@ -279,8 +287,8 @@ export function parsePuestoOperacion(puestoFull) {
 }
 
 /**
- * Log├¡stica desde fila Despachos_Cavas:
- * [8]=destino (zona), [9]=ruta, [10]=sucursal (puesto), [11]=direcci├│n.
+ * Logística desde fila Despachos_Cavas:
+ * [8]=destino, [9]=ruta, [10]=sucursal y [11]=dirección.
  */
 export function parseLogisticaDespacho(fila) {
   const zona = String(fila[8] ?? '').trim();
@@ -294,7 +302,7 @@ export function parseLogisticaDespacho(fila) {
     zona: z,
     sucursal: suc,
     direccion: direccion || po.direccion,
-    etiqueta: suc && z ? `${suc} ┬À ${z}` : po.etiqueta,
+    etiqueta: suc && z ? `${suc} · ${z}` : po.etiqueta,
     clave: po.clave,
     puestoFull: puestoFull || (suc && z ? `${suc}/${z}/` : ''),
     turno: po.turno,
@@ -306,7 +314,7 @@ export function extraerPuesto(destinoRaw) {
   return p.codigo || '';
 }
 
-/** Clave estable: mismo local + ciudad (no mezclar rutas distintas bajo un solo c├│digo). */
+/** Clave estable local + ciudad para no mezclar rutas de un mismo código. */
 export function claveAgrupacionPuesto(destinoRaw) {
   const p = parsePuestoOperacion(destinoRaw);
   if (p.clave) return p.clave;
@@ -320,7 +328,7 @@ export function detectarTurnoPorDia() {
   return TURNO_POR_DIA[new Date().getDay()] || 'SxD';
 }
 
-/** PostgreSQL ISODOW: 1 = lunes ÔÇª 7 = domingo (desde fecha operaci├│n AAAA-MM-DD). */
+/** Convierte fecha ISO al ISODOW de PostgreSQL: lunes=1, domingo=7. */
 export function isodowDesdeFechaISO(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   const d = m
@@ -331,7 +339,7 @@ export function isodowDesdeFechaISO(iso) {
   return js === 0 ? 7 : js;
 }
 
-/** Turno sugerido seg├║n el d├¡a de la semana de una fecha ISO (AAAA-MM-DD), p. ej. hist├│rico SIRT. */
+/** Turno sugerido según el día de una fecha ISO, útil para consultas históricas. */
 export function detectarTurnoPorFechaISO(iso) {
   const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!m) return detectarTurnoPorDia();
@@ -369,7 +377,7 @@ export function detectarTurnoDesdeDatos(rows, fechaIsoFallback = '') {
 
 /**
  * Filas del turno operativo (como Apps Script / tablero):
- * - Excluye piezas marcadas con otro sufijo (LxM, MxM, ÔÇª).
+ * - Excluye piezas marcadas explícitamente con otro turno.
  * - Si no traen turno en puesto, asigna el turno detectado (JxV, etc.).
  */
 export function filasDespachoTurnoOperacion(filas, turno, colPuesto = 9, colDestino = 8) {

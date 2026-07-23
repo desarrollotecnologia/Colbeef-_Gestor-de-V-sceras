@@ -1,4 +1,19 @@
-﻿import { query } from '../db.js';
+﻿/**
+ * Adaptador de lectura SIRT → estructuras del gestor.
+ *
+ * Todas las consultas se parametrizan y pasan por `db.js`. Las funciones
+ * `fetch*Rows` devuelven matrices posicionales compatibles con el Apps Script
+ * original; las funciones `*ToDto` exponen objetos legibles para la API REST.
+ *
+ * Contratos de matrices principales:
+ * - Estado_Cavas: 14 columnas; código [0], tipo [1], propietario [3],
+ *   sucursal [5], destino [8] y observación [13].
+ * - Despachos_Cavas: 13 columnas; fecha [0], código [3], propietario [4],
+ *   tipo [7], zona [8], ruta [9], sucursal [10] y observación [12].
+ * - Reporte_Decomisos: código [0], fecha [1], subproducto [2], causa [4],
+ *   responsable [5], parte [6] y hora [7].
+ */
+import { query } from '../db.js';
 import { TIPOS_PRODUCTO } from './constants.js';
 import {
   detectarTurnoPorFechaISO,
@@ -27,6 +42,7 @@ const DECOMISO_LOOKBACK_DAYS = Math.max(
   Math.min(30, Number(process.env.SIRT_DECOMISO_LOOKBACK_DAYS ?? 7))
 );
 
+/** Tipos que forman un juego visceral y participan en inventario/despacho. */
 const TIPOS_SUBPRODUCTO = `('Visceras Rojas', 'Visceras Blancas', 'Cabeza', 'Patas y Manos')`;
 
 /** Ruta logística SIRT: sucursal (puesto) / destino (zona) / — turno se añade en JS. */

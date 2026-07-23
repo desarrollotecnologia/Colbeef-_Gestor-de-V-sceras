@@ -1,3 +1,10 @@
+/**
+ * Almacén local del estado operativo.
+ *
+ * SIRT continúa siendo la fuente de verdad. Este archivo persiste solamente la
+ * sesión del gestor, configuración OPL, baselines, informes e historial local.
+ * Se usa una caché en memoria para evitar leer el JSON en cada llamada RPC.
+ */
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -71,6 +78,10 @@ export function defaultState() {
 
 let cache = null;
 
+/**
+ * Carga el estado una vez y completa campos nuevos con valores por defecto.
+ * Si el archivo no existe o es inválido, inicia una sesión vacía.
+ */
 export async function loadState() {
   if (cache) return cache;
   try {
@@ -90,12 +101,14 @@ export async function loadState() {
   }
 }
 
+/** Actualiza la caché y reemplaza atómicamente el contenido lógico del estado. */
 export async function saveState(s) {
   cache = s;
   await fs.mkdir(path.dirname(STATE_PATH), { recursive: true });
   await fs.writeFile(STATE_PATH, JSON.stringify(s, null, 2), 'utf8');
 }
 
+/** Acceso de diagnóstico a la referencia actualmente almacenada en memoria. */
 export function getCache() {
   return cache;
 }

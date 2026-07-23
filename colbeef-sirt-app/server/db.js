@@ -1,3 +1,10 @@
+/**
+ * Conexión compartida a PostgreSQL/SIRT.
+ *
+ * Por seguridad operativa, `POSTGRES_READ_ONLY=true` rechaza cualquier consulta
+ * cuyo texto no comience por SELECT o WITH. Las consultas deben parametrizar
+ * valores externos; este control no reemplaza la parametrización SQL.
+ */
 import pg from 'pg';
 import dotenv from 'dotenv';
 import { dirname, join } from 'path';
@@ -28,6 +35,7 @@ if (!pgPassword) {
   );
 }
 
+/** Pool único reutilizado por todos los servicios del backend. */
 export const pool = new pg.Pool({
   host: pgHost,
   port: Number(process.env.POSTGRES_PORT || 5432),

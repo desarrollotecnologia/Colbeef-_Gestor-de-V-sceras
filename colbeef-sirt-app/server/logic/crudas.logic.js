@@ -1,10 +1,18 @@
+/** Detección de vísceras blancas crudas para las respuestas REST normalizadas. */
 import { codigoBase, extraerPuesto } from './helpers.js';
 
+/** Acepta `CRUDAS` y observaciones cuyo texto comienza por esa palabra. */
 function esCruda(val) {
   const v = String(val || '').trim().toUpperCase();
   return v === 'CRUDAS' || v.startsWith('CRUDAS');
 }
 
+/**
+ * Detecta animales únicos con víscera blanca cruda y los agrupa por puesto.
+ *
+ * @param {Array<object>} filasCava Productos en cava normalizados.
+ * @returns {{total:number,codigos:string[],porPuesto:Array<object>}}
+ */
 export function detectarCrudas(filasCava) {
   const codigosUnicos = new Set();
   const porPuesto = {};
@@ -26,6 +34,11 @@ export function detectarCrudas(filasCava) {
   };
 }
 
+/**
+ * Cruza los animales crudos en cava con sus rutas de despacho del turno.
+ *
+ * @returns {Set<string>} Rutas de puestos que contienen al menos una VB cruda.
+ */
 export function setPuestosCrudas(filasCava, filasDespachos, turno) {
   const { codigos } = detectarCrudas(filasCava);
   const setCodigos = new Set(codigos);

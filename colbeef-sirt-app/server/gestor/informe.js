@@ -1,3 +1,10 @@
+/**
+ * Datos y renderizado del Informe Laboral.
+ *
+ * La información editable se conserva en el estado local, mientras beneficio e
+ * inventario pueden enriquecerse desde SIRT. La salida es HTML autocontenido
+ * que el navegador puede convertir a PNG mediante html2canvas.
+ */
 import { loadState, saveState } from './store.js';
 import { fetchAnimalesBeneficiadosDia } from './sirtSync.js';
 import {
@@ -77,6 +84,10 @@ function normalizarOpcionesInforme(opts) {
   };
 }
 
+/**
+ * Obtiene el formulario guardado, completa beneficio e inventario y calcula
+ * totales con las mismas fórmulas usadas en la exportación.
+ */
 export async function getInformeDatos(opts = {}) {
   const s = await loadState();
   const base = s.informe
@@ -108,6 +119,7 @@ export async function getInformeDatos(opts = {}) {
   return { success: true, ...base, fechaConsulta: fechaIso, cavasTotales };
 }
 
+/** Valida la estructura fija de cinco cavas y cinco grupos de percheros. */
 export async function guardarInformeDatos(payload) {
   const data = typeof payload === 'string' ? JSON.parse(payload) : payload;
   if (!data) return { success: false, message: 'Payload vacío.' };
@@ -121,6 +133,7 @@ export async function guardarInformeDatos(payload) {
   return { success: true };
 }
 
+/** Endpoint/RPC de cálculo sin persistencia para previsualización en la UI. */
 export async function calcularTotalesInformeCavas(payload) {
   const data = typeof payload === 'string' ? JSON.parse(payload || '[]') : payload;
   const cavas = Array.isArray(data) ? data : data?.cavas;
@@ -130,6 +143,7 @@ export async function calcularTotalesInformeCavas(payload) {
   return { success: true, ...calcularTotalesCavas(cavas) };
 }
 
+/** Elimina únicamente el borrador del informe; no modifica información SIRT. */
 export async function limpiarInformeDatos() {
   const s = await loadState();
   s.informe = null;
@@ -137,6 +151,10 @@ export async function limpiarInformeDatos() {
   return { success: true };
 }
 
+/**
+ * Construye el informe oficial con las secciones seleccionadas por el usuario.
+ * Todo texto procedente de datos se escapa antes de insertarse en el HTML.
+ */
 export async function generarInformeHTML(payload) {
   const raw = typeof payload === 'string' ? JSON.parse(payload || '{}') : payload || {};
   const opts = normalizarOpcionesInforme(raw);

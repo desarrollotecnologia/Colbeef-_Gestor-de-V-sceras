@@ -1,4 +1,9 @@
-// "2602-06503-60K" -> "2602-06503" (elimina el ultimo segmento)
+/**
+ * Utilidades compartidas por la capa REST normalizada.
+ * El motor compatible con Apps Script posee equivalentes en `engineUtils.js`.
+ */
+
+/** Normaliza un ID y elimina el último segmento: 2602-06503-60K → 2602-06503. */
 export function codigoBase(id) {
   const s = String(id || '')
     .trim()
@@ -7,8 +12,10 @@ export function codigoBase(id) {
   return g > 0 ? s.substring(0, g) : s;
 }
 
-// Detecta turno leyendo los puestos: gana el turno con mas apariciones.
-// Fallback: dia de la semana actual.
+/**
+ * Detecta el turno predominante en las rutas de puesto.
+ * Si ninguna ruta contiene turno, usa el correspondiente al día actual.
+ */
 export function detectarTurno(puestos = []) {
   const TURNOS = ['SxD', 'VxS', 'JxV', 'MxJ', 'MxM', 'LxM', 'DxL'];
   const DIA_TURNO = { 0: 'DxL', 1: 'LxM', 2: 'MxM', 3: 'MxJ', 4: 'JxV', 5: 'VxS', 6: 'SxD' };
@@ -27,7 +34,7 @@ export function detectarTurno(puestos = []) {
   return ganador;
 }
 
-// "5423/MercaPublico/LxM//Cra 5 #23" -> "5423"
+/** Prefijos de turno que se retiran antes de extraer el código del puesto. */
 const PREFIJOS = [
   '/LxM/',
   '/MxM/',
@@ -54,4 +61,5 @@ export function extraerPuesto(destinoRaw) {
   return puesto;
 }
 
+/** OPL usado cuando un propietario no tiene una excepción configurada. */
 export const OPL_DEFAULT = 'TRANSCARNES';

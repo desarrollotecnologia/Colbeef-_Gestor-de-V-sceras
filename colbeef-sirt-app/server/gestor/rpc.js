@@ -1,3 +1,9 @@
+/**
+ * Lista blanca de métodos disponibles para la interfaz heredada.
+ *
+ * `google-script-shim.js` envía `{ method, args }` a `/api/rpc`; únicamente los
+ * nombres registrados aquí pueden ejecutarse en el servidor.
+ */
 import * as engine from './engine.js';
 import * as informe from './informe.js';
 
@@ -54,6 +60,10 @@ const handlers = {
   getOperacionEnVivo: engine.getOperacionEnVivo,
 };
 
+/**
+ * Ejecuta un método RPC permitido y convierte excepciones al contrato `_error`
+ * esperado por los manejadores `withFailureHandler` del cliente.
+ */
 export async function dispatchRpc(method, args) {
   const fn = handlers[method];
   if (!fn) {
