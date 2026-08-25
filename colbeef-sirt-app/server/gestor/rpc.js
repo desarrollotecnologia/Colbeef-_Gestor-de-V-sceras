@@ -6,6 +6,7 @@
  */
 import * as engine from './engine.js';
 import * as informe from './informe.js';
+import { recordAuditoria } from './mysqlSchema.js';
 
 const handlers = {
   initializeSheets: engine.initializeSheets,
@@ -60,19 +61,86 @@ const handlers = {
   getOperacionEnVivo: engine.getOperacionEnVivo,
 };
 
+/** Métodos que modifican estado o generan documentos — se auditan en MySQL. */
+const AUDIT_METHODS = new Set([
+  'cerrarOperacion',
+  'limpiarResumen',
+  'limpiarDespachos',
+  'limpiarInformeDatos',
+  'generarPDFDecomisos',
+  'procesarDespachos',
+  'prepararModuloDespachosDesdeSIRT',
+  'prepararModuloDecomisosDesdeSIRT',
+  'sincronizarSesionDesdeSirtPorFecha',
+  'calcularProgresoOPL',
+  'upsertOpl',
+  'eliminarOpl',
+  'importarExcelAdicionales',
+  'importarAdicionales',
+  'guardarInformeDatos',
+  'guardarFechaInicioOperacion',
+  'insertarPlaza',
+  'insertarPlazaPorZona',
+  'modificarPlaza',
+  'eliminarPlaza',
+  'consolidarDatos',
+  'prepararPlanillaDesdeSIRT',
+]);
+
+function moduleForMethod(method) {
+  const m = String(method || '');
+  if (/decomiso/i.test(m)) return 'decomisos';
+  if (/despacho/i.test(m)) return 'despachos';
+  if (/opl/i.test(m)) return 'opl';
+  if (/plaza|planilla|consolidar/i.test(m)) return 'planilla';
+  if (/informe/i.test(m)) return 'informe';
+  if (/adicional/i.test(m)) return 'adicionales';
+  if (/sirt|sincronizar/i.test(m)) return 'sirt';
+  if (/limpiar|cerrar/i.test(m)) return 'operacion';
+  return 'gestor';
+}
+
 /**
  * Ejecuta un método RPC permitido y convierte excepciones al contrato `_error`
  * esperado por los manejadores `withFailureHandler` del cliente.
+ * @param {string} method
+ * @param {any[]} args
+ * @param {{ usuario?: string, ip?: string, userAgent?: string }} [auditCtx]
  */
-export async function dispatchRpc(method, args) {
+export async function dispatchRpc(method, args, auditCtx = {}) {
   const fn = handlers[method];
   if (!fn) {
     return { _error: 'Método RPC no implementado: ' + method };
   }
   try {
     const result = await fn.apply(null, args);
+    if (AUDIT_METHODS.has(String(method)) && !(result && result._error)) {
+      const ok = result && typeof result === 'object' && 'success' in result ? !!result.success : true;
+      void recordAuditoria(
+        {
+          usuario: auditCtx.usuario || 'anonimo',
+          accion: String(method),
+          modulo: moduleForMethod(method),
+          detalle: ok ? 'ok' : 'success=false',
+          meta: { ok },
+        },
+        { ip: auditCtx.ip, userAgent: auditCtx.userAgent }
+      );
+    }
     return result;
   } catch (e) {
+    if (AUDIT_METHODS.has(String(method))) {
+      void recordAuditoria(
+        {
+          usuario: auditCtx.usuario || 'anonimo',
+          accion: String(method),
+          modulo: moduleForMethod(method),
+          detalle: `error: ${e.message || e}`,
+          meta: { ok: false },
+        },
+        { ip: auditCtx.ip, userAgent: auditCtx.userAgent }
+      );
+    }
     return { _error: e.message || String(e) };
   }
 }

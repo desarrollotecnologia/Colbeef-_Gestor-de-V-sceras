@@ -16,9 +16,16 @@
 
   function send(payload) {
     try {
+      var headers = { 'Content-Type': 'application/json' };
+      try {
+        var t =
+          sessionStorage.getItem('colbeef_auth_token') ||
+          localStorage.getItem('colbeef_auth_token');
+        if (t) headers.Authorization = 'Bearer ' + t;
+      } catch (_) {}
       fetch('/api/usability/event', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: headers,
         body: JSON.stringify(payload),
         keepalive: true,
       }).catch(function () {});

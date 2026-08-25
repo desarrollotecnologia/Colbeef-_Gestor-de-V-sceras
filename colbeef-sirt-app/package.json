@@ -23,7 +23,8 @@
     "start:lan": "npm run build && cross-env NODE_ENV=production node server/index.js",
     "service:install": "node scripts/service-install.cjs",
     "service:uninstall": "node scripts/service-uninstall.cjs",
-    "mysql:init": "node scripts/mysql-init.mjs"
+    "mysql:init": "node scripts/mysql-init.mjs",
+    "user:create": "node scripts/user-create.mjs"
   },
   "dependencies": {
     "chart.js": "^4.4.1",

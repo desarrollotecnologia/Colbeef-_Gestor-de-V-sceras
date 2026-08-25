@@ -971,88 +971,155 @@
 <script>
 (function () {
   var portalReturn = window.COLBEEF_PORTAL_RETURN || '/portal.html';
+  var TOKEN_KEY = 'colbeef_auth_token';
 
-  var params = new URLSearchParams(location.search);
-  var fromUrl = params.get('usuario');
-  var stored = localStorage.getItem('colbeef_usuario');
-  if (fromUrl) localStorage.setItem('colbeef_usuario', fromUrl.trim());
-  else if (!stored) {
-    // Sin usuario: portal local (no redirigir al programa 8501 — eso solo la flecha ←)
+  function authToken() {
+    try {
+      return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function clearAuth() {
+    try {
+      sessionStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+    } catch (_) {}
+  }
+
+  var token = authToken();
+  if (!token) {
     location.replace('/portal.html');
     return;
   }
 
-  function usuarioActual() {
-    return (
-      (window.ColbeefUsage && window.ColbeefUsage.usuario) ||
-      localStorage.getItem('colbeef_usuario') ||
-      fromUrl ||
-      ''
-    );
-  }
-
-  function enlacePortalPrincipal() {
-    var usuario =
-      usuarioActual();
-    var url = portalReturn;
-    try {
-      var u = new URL(portalReturn, location.origin);
-      if (usuario) u.searchParams.set('usuario', String(usuario).trim());
-      else if (!u.searchParams.has('usuario')) u.searchParams.set('usuario', '');
-      url = u.toString();
-    } catch (_) {
-      var sep = portalReturn.indexOf('?') >= 0 ? '&' : '?';
-      url = portalReturn + sep + 'usuario=' + encodeURIComponent(String(usuario).trim());
-    }
-    return url;
-  }
-
-  window.volverPortalPrincipal = function (event) {
-    if (event && event.preventDefault) event.preventDefault();
-    try {
-      if (window.ColbeefUsage && window.ColbeefUsage.track) {
-        window.ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
-      }
-    } catch (_) {}
-    location.assign(enlacePortalPrincipal());
-    return false;
-  };
-
-  var logoClicks = 0;
-  var logoTimer = null;
-  document.addEventListener('DOMContentLoaded', function () {
-    if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
-    var btnVolver = document.getElementById('btnVolverPortal');
-    if (btnVolver) btnVolver.href = enlacePortalPrincipal();
-
-    var logo = document.getElementById('logoIconGestor');
-    if (logo) {
-      logo.style.cursor = 'pointer';
-      logo.addEventListener('click', function () {
-        logoClicks++;
-        clearTimeout(logoTimer);
-        logoTimer = setTimeout(function () { logoClicks = 0; }, 900);
-        if (logoClicks >= 5) {
-          logoClicks = 0;
-          var pwd = prompt('Contraseña de administración:');
-          if (!pwd) return;
-          fetch('/api/usability/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ password: pwd }),
-          })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-              if (!data.success) { alert('Contraseña incorrecta'); return; }
-              sessionStorage.setItem('colbeef_usabilidad_token', data.token);
-              if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
-              location.href = '/usabilidad.html';
-            })
-            .catch(function () { alert('No se pudo verificar la contraseña'); });
-        }
+  fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } })
+    .then(function (r) {
+      return r.json().then(function (d) {
+        return { ok: r.ok, d: d };
       });
+    })
+    .then(function (res) {
+      if (!res.ok || !res.d.success) {
+        clearAuth();
+        location.replace('/portal.html');
+        return;
+      }
+      localStorage.setItem('colbeef_usuario', res.d.usuario);
+      localStorage.setItem('colbeef_rol', res.d.rol || 'operador');
+      bootGestor(res.d.usuario);
+    })
+    .catch(function () {
+      clearAuth();
+      location.replace('/portal.html');
+    });
+
+  function bootGestor(usuarioSesion) {
+    var params = new URLSearchParams(location.search);
+    var fromUrl = params.get('usuario') || usuarioSesion;
+    if (fromUrl) localStorage.setItem('colbeef_usuario', String(fromUrl).trim());
+
+    function usuarioActual() {
+      return (
+        (window.ColbeefUsage && window.ColbeefUsage.usuario) ||
+        localStorage.getItem('colbeef_usuario') ||
+        fromUrl ||
+        ''
+      );
     }
-  });
+
+    function enlacePortalPrincipal() {
+      var usuario = usuarioActual();
+      var url = portalReturn;
+      try {
+        var u = new URL(portalReturn, location.origin);
+        if (usuario) u.searchParams.set('usuario', String(usuario).trim());
+        else if (!u.searchParams.has('usuario')) u.searchParams.set('usuario', '');
+        url = u.toString();
+      } catch (_) {
+        var sep = portalReturn.indexOf('?') >= 0 ? '&' : '?';
+        url = portalReturn + sep + 'usuario=' + encodeURIComponent(String(usuario).trim());
+      }
+      return url;
+    }
+
+    window.cerrarSesionGestor = function () {
+      var t = authToken();
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: t ? { Authorization: 'Bearer ' + t } : {},
+      }).finally(function () {
+        clearAuth();
+        location.replace('/portal.html');
+      });
+    };
+
+    window.volverPortalPrincipal = function (event) {
+      if (event && event.preventDefault) event.preventDefault();
+      try {
+        if (window.ColbeefUsage && window.ColbeefUsage.track) {
+          window.ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
+        }
+      } catch (_) {}
+      location.assign(enlacePortalPrincipal());
+      return false;
+    };
+
+    var logoClicks = 0;
+    var logoTimer = null;
+    document.addEventListener('DOMContentLoaded', function () {
+      if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
+      var btnVolver = document.getElementById('btnVolverPortal');
+      if (btnVolver) btnVolver.href = enlacePortalPrincipal();
+
+      var badge = document.getElementById('usuarioBadge');
+      if (badge) {
+        var rol = localStorage.getItem('colbeef_rol') || '';
+        badge.textContent = (usuarioActual() || '') + (rol ? ' · ' + rol : '');
+        badge.style.display = 'inline-flex';
+        badge.title = 'Clic para cerrar sesión';
+        badge.style.cursor = 'pointer';
+        badge.addEventListener('click', function () {
+          if (confirm('¿Cerrar sesión?')) window.cerrarSesionGestor();
+        });
+      }
+
+      var logo = document.getElementById('logoIconGestor');
+      if (logo) {
+        logo.style.cursor = 'pointer';
+        logo.addEventListener('click', function () {
+          logoClicks++;
+          clearTimeout(logoTimer);
+          logoTimer = setTimeout(function () { logoClicks = 0; }, 900);
+          if (logoClicks >= 5) {
+            logoClicks = 0;
+            var pwd = prompt('Contraseña de administración:');
+            if (!pwd) return;
+            fetch('/api/usability/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ password: pwd }),
+            })
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (!data.success) { alert('Contraseña incorrecta'); return; }
+                sessionStorage.setItem('colbeef_usabilidad_token', data.token);
+                if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
+                location.href = '/usabilidad.html';
+              })
+              .catch(function () { alert('No se pudo verificar la contraseña'); });
+          }
+        });
+      }
+
+      window.__colbeefAuthReady = true;
+      if (typeof window.__colbeefPendingInit === 'function') {
+        window.__colbeefPendingInit();
+        window.__colbeefPendingInit = null;
+      }
+    });
+  }
 })();
 </script>
 <script>
@@ -1099,6 +1166,7 @@ var dashboardRefreshTimer = null;
 // INIT
 // ══════════════════════════════════════════════════════
 window.onload = function() {
+  function startGestorInit() {
   state.dashboardVista = 'sirt';
   var df = document.getElementById('fechaGlobal');
   if (df) df.value = fechaHoyISO();
@@ -1111,6 +1179,9 @@ window.onload = function() {
     .withFailureHandler(function(e){console.warn('initSheets:',e);})
     .initializeSheets();
   iniciarRefrescoOperacion();
+  }
+  if (window.__colbeefAuthReady) startGestorInit();
+  else window.__colbeefPendingInit = startGestorInit;
 };
 
 var operacionRefreshTimer = null;

@@ -31,6 +31,7 @@ import {
   verifyAdminToken,
   getUsageStats,
   buildGestorLink,
+  migrateUsabilityJsonToMysql,
 } from './gestor/usabilityStore.js';
 import {
   initGestorMysql,
@@ -38,7 +39,15 @@ import {
   getGestorMysqlStatus,
   isGestorMysqlReady,
 } from './gestorDb.js';
-import { ensureGestorSchema } from './gestor/mysqlSchema.js';
+import { ensureGestorSchema, recordAuditoria } from './gestor/mysqlSchema.js';
+import {
+  loginUser,
+  logoutUser,
+  resolveSession,
+  tokenFromReq,
+  isAuthRequired,
+  createUser,
+} from './gestor/authStore.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -62,6 +71,80 @@ app.use(
 );
 app.use(express.json({ limit: '8mb' }));
 
+const PUBLIC_API_PATHS = new Set([
+  '/api/health',
+  '/api/info',
+  '/api/auth/login',
+  '/api/auth/logout',
+  '/api/usability/login',
+]);
+
+function reqMeta(req) {
+  return {
+    ip: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
+    userAgent: req.headers['user-agent'] || '',
+  };
+}
+
+/** Nombre de sesión autenticada (preferido) o header legacy. */
+function usuarioFromReq(req) {
+  if (req.auth?.usuario) return String(req.auth.usuario).slice(0, 120);
+  const h = String(req.headers['x-colbeef-usuario'] || '').trim();
+  if (h) return h.slice(0, 120);
+  const b = String(req.body?.usuario || '').trim();
+  if (b) return b.slice(0, 120);
+  return 'anonimo';
+}
+
+async function requireAuth(req, res, next) {
+  if (!isAuthRequired()) return next();
+  const token = tokenFromReq(req);
+  const session = await resolveSession(token);
+  if (!session) {
+    return res.status(401).json({
+      success: false,
+      _error: 'No autenticado. Inicie sesión en el portal.',
+      message: 'No autenticado. Inicie sesión en el portal.',
+    });
+  }
+  req.auth = session;
+  next();
+}
+
+function requireRole(...roles) {
+  return (req, res, next) => {
+    if (!isAuthRequired()) return next();
+    if (!req.auth) {
+      return res.status(401).json({ success: false, message: 'No autenticado.' });
+    }
+    if (!roles.includes(req.auth.rol)) {
+      return res.status(403).json({ success: false, message: 'Sin permiso para esta acción.' });
+    }
+    next();
+  };
+}
+
+function auditRest(req, accion, modulo, detalle, meta = {}) {
+  void recordAuditoria(
+    {
+      usuario: usuarioFromReq(req),
+      accion,
+      modulo,
+      detalle: detalle || '',
+      meta,
+    },
+    reqMeta(req)
+  );
+}
+
+/** Exige sesión en casi toda la API; login/health/usabilidad-admin quedan públicos o con su propio token. */
+app.use(async (req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+  if (PUBLIC_API_PATHS.has(req.path)) return next();
+  if (req.path === '/api/usability/stats') return next();
+  return requireAuth(req, res, next);
+});
+
 /**
  * Compatibilidad con `google.script.run`: delega únicamente métodos incluidos
  * en la lista blanca de `gestor/rpc.js`.
@@ -72,24 +155,69 @@ app.post('/api/rpc', async (req, res) => {
     if (!method) {
       return res.status(400).json({ _error: 'Falta method' });
     }
-    const out = await dispatchRpc(String(method), Array.isArray(args) ? args : []);
+    const meta = reqMeta(req);
+    const out = await dispatchRpc(String(method), Array.isArray(args) ? args : [], {
+      usuario: req.auth?.usuario || usuarioFromReq(req),
+      ip: meta.ip,
+      userAgent: meta.userAgent,
+    });
     res.json(out);
   } catch (e) {
     res.status(500).json({ _error: e.message });
   }
 });
 
-function reqMeta(req) {
-  return {
-    ip: req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '',
-    userAgent: req.headers['user-agent'] || '',
-  };
-}
+// ── Auth (login real) ──────────────────────────────────────────────────────
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const out = await loginUser(req.body?.usuario, req.body?.password, reqMeta(req));
+    if (!out.success) return res.status(401).json(out);
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    await logoutUser(tokenFromReq(req), reqMeta(req));
+    res.json({ success: true });
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  res.json({
+    success: true,
+    usuario: req.auth.usuario,
+    rol: req.auth.rol,
+    expiresAt: req.auth.expiresAt,
+  });
+});
+
+app.post('/api/auth/users', requireRole('admin'), async (req, res) => {
+  try {
+    const out = await createUser({
+      nombre: req.body?.usuario || req.body?.nombre,
+      password: req.body?.password,
+      rol: req.body?.rol || 'operador',
+    });
+    auditRest(req, 'create_user', 'auth', out.usuario, { rol: out.rol });
+    res.json(out);
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
 
 function adminTokenFromReq(req) {
   const auth = String(req.headers.authorization || '');
-  if (auth.startsWith('Bearer ')) return auth.slice(7).trim();
-  return String(req.headers['x-usability-admin'] || '').trim();
+  // Token de usabilidad admin (no confundir con sesión del gestor)
+  if (auth.startsWith('Bearer ') && String(req.headers['x-usability-admin'] || '').trim()) {
+    return String(req.headers['x-usability-admin']).trim();
+  }
+  return String(req.headers['x-usability-admin'] || '').trim() ||
+    (auth.startsWith('Bearer ') ? auth.slice(7).trim() : '');
 }
 
 function requireUsabilityAdmin(req, res, next) {
@@ -113,7 +241,10 @@ app.post('/api/usability/event', async (req, res) => {
 app.post('/api/usability/login', (req, res) => {
   const token = loginAdmin(req.body?.password);
   if (!token) {
-    return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
+    return res.status(401).json({
+      success: false,
+      message: 'Contraseña incorrecta o USABILITY_ADMIN_PASSWORD no configurada en .env.',
+    });
   }
   res.json({ success: true, token });
 });
@@ -294,7 +425,11 @@ app.get('/api/decomisos/detalle', async (req, res) => {
 
 app.post('/api/decomisos/resumir', async (req, res) => {
   try {
-    res.json(await gestor.prepararModuloDecomisosDesdeSIRT(parseGestorRange(req)));
+    const out = await gestor.prepararModuloDecomisosDesdeSIRT(parseGestorRange(req));
+    auditRest(req, 'prepararModuloDecomisosDesdeSIRT', 'decomisos', 'REST', {
+      ok: !!out?.success,
+    });
+    res.json(out);
   } catch (e) {
     apiError(res, e);
   }
@@ -346,6 +481,7 @@ app.post('/api/despachos/procesar', async (req, res) => {
       enCava.success && despachos.success
         ? [...setPuestosCrudas(enCava.filas || [], despachos.filas || [], out.turno)]
         : [];
+    auditRest(req, 'prepararModuloDespachosDesdeSIRT', 'despachos', 'REST', { ok: true, turno: out.turno });
     res.json({ ...out, puestosCrudas });
   } catch (e) {
     apiError(res, e);
@@ -378,7 +514,11 @@ app.get('/api/opl/config', async (_req, res) => {
 
 app.post('/api/opl/config', async (req, res) => {
   try {
-    res.json(await gestor.upsertOpl(req.body?.propietario, req.body?.opl));
+    const out = await gestor.upsertOpl(req.body?.propietario, req.body?.opl);
+    auditRest(req, 'upsertOpl', 'opl', `${req.body?.propietario || ''} → ${req.body?.opl || ''}`, {
+      ok: !!out?.success,
+    });
+    res.json(out);
   } catch (e) {
     apiError(res, e);
   }
@@ -386,7 +526,9 @@ app.post('/api/opl/config', async (req, res) => {
 
 app.delete('/api/opl/config/:idx', async (req, res) => {
   try {
-    res.json(await gestor.eliminarOpl(req.params.idx));
+    const out = await gestor.eliminarOpl(req.params.idx);
+    auditRest(req, 'eliminarOpl', 'opl', `idx=${req.params.idx}`, { ok: !!out?.success });
+    res.json(out);
   } catch (e) {
     apiError(res, e);
   }
@@ -402,7 +544,9 @@ app.get('/api/opl/progreso', async (_req, res) => {
 
 app.post('/api/opl/calcular', async (req, res) => {
   try {
-    res.json(await gestor.calcularProgresoOPL(req.body?.totalJuegos));
+    const out = await gestor.calcularProgresoOPL(req.body?.totalJuegos);
+    auditRest(req, 'calcularProgresoOPL', 'opl', 'REST', { ok: !!out?.success });
+    res.json(out);
   } catch (e) {
     apiError(res, e);
   }
@@ -433,7 +577,11 @@ app.post('/api/adicionales', upload.single('archivo'), async (req, res) => {
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Falta archivo .xlsx.' });
     const uploadRes = await gestor.importarExcelAdicionales(req.file.buffer, req.file.originalname);
     if (!uploadRes.success) return res.status(400).json(uploadRes);
-    res.json(await gestor.importarAdicionales(null, req.file.originalname, 'AUTO'));
+    const out = await gestor.importarAdicionales(null, req.file.originalname, 'AUTO');
+    auditRest(req, 'importarAdicionales', 'adicionales', req.file.originalname || '', {
+      ok: !!out?.success,
+    });
+    res.json(out);
   } catch (e) {
     apiError(res, e);
   }
@@ -462,10 +610,11 @@ app.get('/api/historial/pdf/:id', async (req, res) => {
   }
 });
 
-app.post('/api/limpiar', async (_req, res) => {
+app.post('/api/limpiar', async (req, res) => {
   try {
     const resumen = await gestor.limpiarResumen();
     const despachos = await gestor.limpiarDespachos();
+    auditRest(req, 'limpiar', 'operacion', 'REST limpiar resumen+despachos', { ok: true });
     res.json({ success: true, resumen, despachos });
   } catch (e) {
     apiError(res, e);
@@ -596,6 +745,12 @@ async function startServer() {
   await initGestorMysql();
   if (isGestorMysqlReady()) {
     await ensureGestorSchema();
+    await migrateUsabilityJsonToMysql();
+  }
+  if (!String(process.env.USABILITY_ADMIN_PASSWORD || '').trim()) {
+    console.warn(
+      '[usabilidad] USABILITY_ADMIN_PASSWORD no está en .env — el login de /usabilidad.html no funcionará.'
+    );
   }
 
   app.listen(PORT, BIND_HOST, () => {

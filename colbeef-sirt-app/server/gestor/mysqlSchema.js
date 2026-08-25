@@ -93,6 +93,11 @@ export async function ensureGestorSchema() {
   }
 
   console.log(`[gestor-mysql] Esquema OK (versión ${SCHEMA_VERSION})`);
+
+  const { ensureAuthSessionsTable, seedAdminUser } = await import('./authStore.js');
+  await ensureAuthSessionsTable();
+  await seedAdminUser();
+
   return { ok: true, version: SCHEMA_VERSION };
 }
 

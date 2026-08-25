@@ -60,6 +60,26 @@ Si el usuario `gestor` también tiene permiso `CREATE`, el Node puede crear la B
 Tablas: `usuarios`, `auditoria`, `usability_events`, `sesion_lock`, `gestor_state`, `schema_meta`.  
 Si MySQL no está disponible, el programa sigue con JSON local.
 
+### Login real (portal)
+
+El portal pide **usuario + contraseña** (tabla `usuarios` en MySQL). La API exige token Bearer.
+
+En `.env` (primera vez, crea el admin automáticamente):
+
+```env
+GESTOR_AUTH_REQUIRED=true
+GESTOR_ADMIN_USER=admin
+GESTOR_ADMIN_PASSWORD="su_clave_segura"
+```
+
+Crear más operadores:
+
+```bash
+npm run user:create -- --user=jperez --pass=clave123 --rol=operador
+```
+
+Roles: `operador` · `supervisor` · `admin`. Clic en el badge del usuario en el gestor cierra sesión.
+
 ---
 
 ## Cliente React
