@@ -113,7 +113,11 @@ export async function dispatchRpc(method, args, auditCtx = {}) {
     return { _error: 'Método RPC no implementado: ' + method };
   }
   try {
-    const result = await fn.apply(null, args);
+    let callArgs = Array.isArray(args) ? args : [];
+    if (String(method) === 'generarPDFDecomisos') {
+      callArgs = [{ usuario: auditCtx.usuario || 'anonimo' }];
+    }
+    const result = await fn.apply(null, callArgs);
     if (AUDIT_METHODS.has(String(method)) && !(result && result._error)) {
       const ok = result && typeof result === 'object' && 'success' in result ? !!result.success : true;
       void recordAuditoria(

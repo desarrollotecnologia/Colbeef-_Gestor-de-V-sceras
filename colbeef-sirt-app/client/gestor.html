@@ -315,7 +315,8 @@
 
     /* ── HISTORIAL ── */
     .historial-item{background:var(--fondo);border:1px solid var(--vc);border-radius:12px;padding:1rem 1.5rem;margin-bottom:0.8rem;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;}
-    .historial-link{background:var(--vp);color:white;padding:0.4rem 1.2rem;border-radius:30px;font-size:0.8rem;font-weight:600;text-decoration:none;}
+    .historial-link{background:var(--vp);color:white;padding:0.4rem 1.2rem;border-radius:30px;font-size:0.8rem;font-weight:600;text-decoration:none;border:none;cursor:pointer;display:inline-block;font-family:inherit;}
+    .historial-link:hover{filter:brightness(1.05);}
 
     /* ── BUSCADOR DESPACHOS ── */
     .search-desp{display:flex;align-items:center;gap:0.5rem;background:white;border:2px solid var(--vc);border-radius:40px;padding:0.45rem 1rem;transition:border-color 0.2s;flex:1;max-width:320px;}
@@ -843,7 +844,22 @@
   <!-- ═══ HISTORIAL ═══ -->
   <div id="viewHistorial" class="view-detail">
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
-    <h2 style="color:var(--vp);margin-bottom:1.5rem;">Historial de PDFs generados</h2>
+    <h2 style="color:var(--vp);margin-bottom:0.5rem;">Historial de PDFs generados</h2>
+    <p style="color:var(--gris);font-size:0.88rem;margin:0 0 1rem;">Busque por fecha para no mezclar todos los días. Por defecto muestra solo hoy.</p>
+    <div class="historial-filtros" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end;margin-bottom:1.2rem;background:#fff;border:1px solid var(--vc);border-radius:12px;padding:0.9rem 1rem;">
+      <div>
+        <label for="histFechaDesde" style="display:block;font-size:0.75rem;font-weight:600;color:var(--gris);margin-bottom:0.25rem;">Desde</label>
+        <input type="date" id="histFechaDesde" class="inf-input" style="min-width:150px;">
+      </div>
+      <div>
+        <label for="histFechaHasta" style="display:block;font-size:0.75rem;font-weight:600;color:var(--gris);margin-bottom:0.25rem;">Hasta</label>
+        <input type="date" id="histFechaHasta" class="inf-input" style="min-width:150px;">
+      </div>
+      <button type="button" class="btn btn-primary" onclick="buscarHistorialPdf()">🔍 Buscar</button>
+      <button type="button" class="btn btn-secondary" onclick="historialPdfHoy()">Hoy</button>
+      <button type="button" class="btn btn-secondary" onclick="historialPdfUltimos7()">Últimos 7 días</button>
+    </div>
+    <p id="historialFiltroMeta" style="font-size:0.8rem;color:var(--gris);margin:0 0 0.8rem;"></p>
     <div id="historialContainer"><p class="empty-state">Cargando...</p></div>
   </div>
 
@@ -1987,7 +2003,7 @@ function cargarCruceDecomisos(opts) {
 }
 function generarPDF() {
   showSpinner('Generando PDF...');
-  google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}showAlert('decAlert','success','✓ PDF generado: <a href="'+res.url+'" target="_blank" style="color:#065f46;font-weight:bold;">Abrir PDF</a>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
+  google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}showAlert('decAlert','success','✓ PDF generado. <button type="button" class="historial-link" style="display:inline;border:none;cursor:pointer;" onclick="abrirPdfHistorialAuth(\''+(res.id||'')+'\',\''+(String(res.nombre||'documento.pdf').replace(/'/g,''))+'\',false)">Abrir PDF</button>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
 }
 function renderTablaDecomisos(resultados) {
   var tbody=document.getElementById('tablaDecomisos');
@@ -2651,25 +2667,154 @@ function generarInforme(){
 // ══════════════════════════════════════════════════════
 // HISTORIAL
 // ══════════════════════════════════════════════════════
-function loadHistorial(){
+function authHeadersGestor() {
+  var h = {};
+  try {
+    var t =
+      sessionStorage.getItem('colbeef_auth_token') ||
+      localStorage.getItem('colbeef_auth_token');
+    if (t) h.Authorization = 'Bearer ' + t;
+  } catch (_) {}
+  return h;
+}
+
+/** Abre o descarga PDF con token (una pestaña nueva no envía Authorization sola). */
+function abrirPdfHistorialAuth(id, nombre, download) {
+  if (!id) {
+    alert('PDF sin identificador');
+    return;
+  }
+  var url =
+    '/api/historial/pdf/' +
+    encodeURIComponent(id) +
+    (download ? '?download=1' : '');
+  fetch(url, { headers: authHeadersGestor() })
+    .then(function (r) {
+      if (r.status === 401) {
+        location.replace('/portal.html');
+        throw new Error('Sesión expirada');
+      }
+      if (!r.ok) throw new Error('No se pudo obtener el PDF (' + r.status + ')');
+      return r.blob();
+    })
+    .then(function (blob) {
+      var obj = URL.createObjectURL(blob);
+      if (download) {
+        var a = document.createElement('a');
+        a.href = obj;
+        a.download = nombre || 'documento.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(function () {
+          URL.revokeObjectURL(obj);
+        }, 4000);
+      } else {
+        var w = window.open(obj, '_blank');
+        if (!w) {
+          var a2 = document.createElement('a');
+          a2.href = obj;
+          a2.target = '_blank';
+          a2.rel = 'noopener';
+          document.body.appendChild(a2);
+          a2.click();
+          a2.remove();
+        }
+        setTimeout(function () {
+          URL.revokeObjectURL(obj);
+        }, 120000);
+      }
+    })
+    .catch(function (e) {
+      alert(e.message || 'Error al abrir PDF');
+    });
+}
+window.abrirPdfHistorialAuth = abrirPdfHistorialAuth;
+
+function loadHistorial(filtro){
   document.getElementById('historialContainer').innerHTML='<p class="empty-state">Cargando...</p>';
+  var opts = filtro || {};
+  if (!opts.from && !opts.to && !opts.date) {
+    var hoy = fechaHoyISO();
+    opts = { from: hoy, to: hoy, date: hoy };
+  }
+  var dEl = document.getElementById('histFechaDesde');
+  var hEl = document.getElementById('histFechaHasta');
+  if (dEl && (opts.from || opts.date)) dEl.value = opts.from || opts.date;
+  if (hEl && (opts.to || opts.date)) hEl.value = opts.to || opts.date;
+
   google.script.run.withSuccessHandler(function(res){
     var c=document.getElementById('historialContainer');
-    if(!res||!res.success||!res.historial||res.historial.length===0){c.innerHTML='<p class="empty-state">No hay PDFs generados aún.</p>';return;}
+    var meta = document.getElementById('historialFiltroMeta');
+    var f = (res && res.filtro) || opts;
+    if (meta) {
+      var a = f.date || f.from || '—';
+      var b = f.date || f.to || a;
+      meta.textContent = a === b
+        ? 'Mostrando PDF del ' + fechaISOaTexto(a)
+        : 'Mostrando PDF del ' + fechaISOaTexto(a) + ' al ' + fechaISOaTexto(b);
+    }
+    if(!res||!res.success||!res.historial||res.historial.length===0){
+      c.innerHTML='<p class="empty-state">No hay PDFs en ese rango de fechas.</p>';
+      return;
+    }
     c.innerHTML=res.historial.map(function(item){
-      var href = item.url || '#';
-      var abrir = href.indexOf('/api/historial/pdf/') === 0
-        ? '<a class="historial-link" href="'+href+'" target="_blank" rel="noopener">Abrir</a>'
-          + '<a class="historial-link" style="background:#374151;margin-left:0.35rem;" href="'+href+'" download="'+(item.nombre||'documento.pdf').replace(/"/g,'')+'">Descargar</a>'
+      var id = (item.id || '').replace(/"/g, '');
+      var nom = (item.nombre || 'documento.pdf').replace(/"/g, '');
+      var abrir = id
+        ? '<button type="button" class="historial-link" data-pdf-id="'+id+'" data-pdf-nombre="'+nom+'" data-pdf-dl="0">Abrir</button>'
+          + '<button type="button" class="historial-link" style="background:#374151;margin-left:0.35rem;" data-pdf-id="'+id+'" data-pdf-nombre="'+nom+'" data-pdf-dl="1">Descargar</button>'
         : '<span style="font-size:0.8rem;color:#991b1b;">Sin enlace — regenere el PDF</span>';
       return '<div class="historial-item">'
         +'<div><div style="font-weight:600;color:var(--vp);">📄 '+(item.nombre||'Sin nombre')+'</div>'
-        +'<div style="font-size:0.8rem;color:var(--gris);">📅 '+(item.fecha||'—')+' | 🏷️ '+(item.tipo||'—')+' | 📊 '+(item.registros||0)+' registros</div></div>'
+        +'<div style="font-size:0.8rem;color:var(--gris);">📅 '+(item.fecha||'—')+' | 🏷️ '+(item.tipo||'—')+' | 👤 '+(item.usuario||'—')+' | 📊 '+(item.registros||0)+' registros</div></div>'
         + abrir
         +'</div>';
     }).join('');
-  }).withFailureHandler(function(e){document.getElementById('historialContainer').innerHTML='<p class="empty-state" style="color:#991b1b;">Error: '+e.message+'</p>';}).getHistorialPDF();
+    c.querySelectorAll('[data-pdf-id]').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        abrirPdfHistorialAuth(btn.getAttribute('data-pdf-id'), btn.getAttribute('data-pdf-nombre'), btn.getAttribute('data-pdf-dl')==='1');
+      });
+    });
+  }).withFailureHandler(function(e){document.getElementById('historialContainer').innerHTML='<p class="empty-state" style="color:#991b1b;">Error: '+e.message+'</p>';}).getHistorialPDF(opts);
 }
+
+function buscarHistorialPdf() {
+  var desde = (document.getElementById('histFechaDesde') || {}).value || '';
+  var hasta = (document.getElementById('histFechaHasta') || {}).value || '';
+  if (!desde && !hasta) {
+    alert('Elija al menos una fecha');
+    return;
+  }
+  if (desde && !hasta) hasta = desde;
+  if (hasta && !desde) desde = hasta;
+  if (desde > hasta) {
+    var t = desde; desde = hasta; hasta = t;
+  }
+  loadHistorial({ from: desde, to: hasta });
+}
+
+function historialPdfHoy() {
+  var hoy = fechaHoyISO();
+  loadHistorial({ date: hoy, from: hoy, to: hoy });
+}
+
+function historialPdfUltimos7() {
+  var hasta = fechaHoyISO();
+  var d = new Date();
+  d.setDate(d.getDate() - 6);
+  var desde =
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0');
+  loadHistorial({ from: desde, to: hasta });
+}
+
+window.buscarHistorialPdf = buscarHistorialPdf;
+window.historialPdfHoy = historialPdfHoy;
+window.historialPdfUltimos7 = historialPdfUltimos7;
 
 // ══════════════════════════════════════════════════════
 // UTILIDADES

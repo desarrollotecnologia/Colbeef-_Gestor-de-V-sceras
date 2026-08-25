@@ -602,8 +602,12 @@ app.get('/api/historial/pdf/:id', async (req, res) => {
       return res.status(404).type('text/plain').send('PDF no encontrado o archivo dañado.');
     }
     const nombre = String(out.nombre || 'documento.pdf').replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ ]/g, '_');
+    const asDownload = String(req.query.download || '') === '1';
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="${nombre}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `${asDownload ? 'attachment' : 'inline'}; filename="${nombre}"`
+    );
     res.send(out.buffer);
   } catch (e) {
     apiError(res, e);

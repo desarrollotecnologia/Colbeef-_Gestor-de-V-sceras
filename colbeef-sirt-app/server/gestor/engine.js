@@ -45,7 +45,12 @@ import {
   guardarPdfHistorial,
   leerPdfHistorial,
   urlAbrirPdfHistorial,
+  insertPdfMetaMysql,
+  listPdfMetaMysql,
+  findPdfMetaMysql,
+  migratePdfHistorialJsonToMysql,
 } from './pdfHistorial.js';
+import { isGestorMysqlReady } from '../gestorDb.js';
 import {
   fetchEstadoCavasRows,
   fetchReporteDecomisosRows,
@@ -2694,21 +2699,101 @@ function historialPdfParaCliente(items) {
   });
 }
 
-export async function getHistorialPDF() {
+export async function getHistorialPDF(filtro) {
+  const opts =
+    filtro && typeof filtro === 'object'
+      ? {
+          from: String(filtro.from || filtro.desde || '').trim(),
+          to: String(filtro.to || filtro.hasta || '').trim(),
+          date: String(filtro.date || filtro.fecha || '').trim(),
+        }
+      : {};
+
+  // Por defecto: solo el día de hoy (evita llenar la lista con todos los PDF).
+  if (!opts.from && !opts.to && !opts.date) {
+    const d = new Date();
+    const iso =
+      d.getFullYear() +
+      '-' +
+      String(d.getMonth() + 1).padStart(2, '0') +
+      '-' +
+      String(d.getDate()).padStart(2, '0');
+    opts.date = iso;
+  }
+
   const s = await loadState();
   await migrarHistorialPdfLegacy(s);
-  const historial = historialPdfParaCliente((s.historialPdf || []).slice().reverse());
-  return { success: true, historial };
+
+  if (isGestorMysqlReady()) {
+    try {
+      await migratePdfHistorialJsonToMysql(s.historialPdf || []);
+      const fromMysql = await listPdfMetaMysql(opts);
+      if (fromMysql) {
+        return {
+          success: true,
+          historial: historialPdfParaCliente(fromMysql),
+          store: 'mysql',
+          filtro: opts,
+        };
+      }
+    } catch (e) {
+      console.warn('[historial] MySQL falló, usando JSON:', e.message);
+    }
+  }
+
+  const from = opts.date || opts.from;
+  const to = opts.date || opts.to || from;
+  let items = (s.historialPdf || []).slice().reverse();
+  if (from) {
+    items = items.filter((it) => {
+      const raw = String(it.fecha || '');
+      // fecha puede ser ISO o texto local; intentar Date
+      const t = Date.parse(raw);
+      let day = '';
+      if (!Number.isNaN(t)) {
+        const d = new Date(t);
+        day =
+          d.getFullYear() +
+          '-' +
+          String(d.getMonth() + 1).padStart(2, '0') +
+          '-' +
+          String(d.getDate()).padStart(2, '0');
+      } else {
+        const m = raw.match(/(\d{4}-\d{2}-\d{2})/);
+        day = m ? m[1] : '';
+      }
+      if (!day) return false;
+      return day >= from && day <= (to || from);
+    });
+  }
+
+  return {
+    success: true,
+    historial: historialPdfParaCliente(items),
+    store: 'json',
+    filtro: opts,
+  };
 }
 
 /** Sirve un PDF del historial (archivo en disco o legacy en memoria). */
 export async function obtenerPdfHistorial(idParam) {
   const id = String(idParam || '').trim();
   if (!id) return null;
-  const s = await loadState();
-  const item = (s.historialPdf || []).find(
-    (x) => x.id === id || x.fileName === id || String(x.fileName || '').startsWith(`${id}_`)
-  );
+
+  let item = null;
+  if (isGestorMysqlReady()) {
+    try {
+      item = await findPdfMetaMysql(id);
+    } catch (_) {
+      /* fallback JSON */
+    }
+  }
+  if (!item) {
+    const s = await loadState();
+    item = (s.historialPdf || []).find(
+      (x) => x.id === id || x.fileName === id || String(x.fileName || '').startsWith(`${id}_`)
+    );
+  }
   if (!item) return null;
 
   if (item.fileName) {
@@ -3101,8 +3186,12 @@ function construirResumenCrudasPdfSync(s) {
 /**
  * Genera el PDF oficial de decomisos y lo incorpora al historial local.
  * El detalle usa Código/Destino/Parte decomisada y añade el resumen de crudas.
+ * @param {{ usuario?: string } | string} [opts]
  */
-export async function generarPDFDecomisos() {
+export async function generarPDFDecomisos(opts) {
+  const usuario =
+    (typeof opts === 'string' ? opts : opts?.usuario) ||
+    'SISTEMA';
   const res = await getResumenDecomisos();
   if (!res.resultados?.length) return { success: false, message: 'No hay datos en Resumen.' };
   const fecha = fmtNow();
@@ -3118,19 +3207,26 @@ export async function generarPDFDecomisos() {
   const nombre = `Listado_Decomisos_${fmtDateOnly().replace(/\//g, '-')}.pdf`;
   const { id, fileName } = await guardarPdfHistorial(pdfBuffer, { nombre });
   const openUrl = urlAbrirPdfHistorial(id);
-  s.historialPdf = s.historialPdf || [];
-  s.historialPdf.push({
+  const meta = {
     id,
     fileName,
     nombre,
     fecha,
     tipo: 'DECOMISOS',
     registros: res.resultados.length,
-    usuario: 'SISTEMA',
-  });
+    usuario: String(usuario).slice(0, 120) || 'SISTEMA',
+  };
+  s.historialPdf = s.historialPdf || [];
+  s.historialPdf.push(meta);
   await saveState(s);
+  try {
+    await insertPdfMetaMysql(meta);
+  } catch (e) {
+    console.warn('[historial] no se pudo guardar meta en MySQL:', e.message);
+  }
   return {
     success: true,
+    id,
     nombre,
     url: openUrl,
     message: 'PDF generado correctamente.',

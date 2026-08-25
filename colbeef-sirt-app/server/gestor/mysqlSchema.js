@@ -98,6 +98,9 @@ export async function ensureGestorSchema() {
   await ensureAuthSessionsTable();
   await seedAdminUser();
 
+  const { ensurePdfHistorialTable } = await import('./pdfHistorial.js');
+  await ensurePdfHistorialTable();
+
   return { ok: true, version: SCHEMA_VERSION };
 }
 
