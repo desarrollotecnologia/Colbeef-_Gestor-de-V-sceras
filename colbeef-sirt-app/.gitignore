@@ -147,3 +147,10 @@ dist
 # Generado automaticamente al instalar el servicio en cada maquina.
 server/daemon/
 service-install.log
+
+### Copias locales y datos de ejecucion ###
+# Copias del .env hechas antes de un despliegue: llevan credenciales reales.
+.env.*
+!.env.example
+# PDF generados en la maquina donde corre el gestor.
+server/data/pdf-historial/
