@@ -40,6 +40,7 @@ import {
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
   filasDespachoTurnoOperacion,
+  despachosProgramadosSinSalidasDelDia,
   fechaOperativaHoy,
   fechaOperativaDesdeCelda,
   getDiaOperativoCorteHora,
@@ -918,9 +919,14 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasTurno);
   const totalsFrozen = obtenerOplTotalsJuego(s);
 
-  // Pendientes = juegos completos aún sin fecha_salida (programados del turno).
-  const pendOpl = contarJuegosCompletosPorClave(
+  // `despachosCavas` es la programación completa del turno e incluye piezas que ya
+  // salieron: hay que restarlas o el mismo juego cuenta como pendiente y despachado.
+  const programadosPendientes = despachosProgramadosSinSalidasDelDia(
     programadosBruto,
+    salidasTurno
+  );
+  const pendOpl = contarJuegosCompletosPorClave(
+    programadosPendientes,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
@@ -1324,7 +1330,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'despachados-solo-salidas-fisicas-v7';
+export const GESTOR_BUILD = 'salidas-fisicas-con-pendientes-netos-v8';
 
 function metaRespuestaOpl(extra = {}) {
   return {
