@@ -2240,6 +2240,24 @@ function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
   return 'SIN ZONA';
 }
 
+/** Zona/puesto de salida temprana (TEMP, TEMP1, TEMPRANA…). */
+function esIndicacionTemprana(...textos) {
+  return textos.some((t) => {
+    const u = String(t || '')
+      .trim()
+      .toUpperCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    if (!u) return false;
+    return (
+      /\bTEMP\s*\d*\b/.test(u) ||
+      /\bTEMPRAN/.test(u) ||
+      /\/TEMP\d*\b/.test(u) ||
+      /^TEMP\d*\b/.test(u)
+    );
+  });
+}
+
 function construirMapaPuestoOpl(despachosCavas, turno, mapaOPL) {
   const mapa = {};
   filasDespachoTurnoOperacion(despachosCavas || [], turno).forEach((fila) => {
@@ -2497,18 +2515,24 @@ export async function generarPlanillaPuntos(opl) {
   const zonasArray = Object.keys(zonasMap)
     .map((zona) => {
       const puestosArray = Object.keys(zonasMap[zona].puestosMap)
-        .map((pk) => ({
-          puesto: zonasMap[zona].puestosMap[pk].etiqueta,
-          cantidad: Math.round(zonasMap[zona].puestosMap[pk].cantidad * 100) / 100,
-        }))
-        .sort((a, b) => a.puesto.localeCompare(b.puesto, 'es'));
+        .map((pk) => {
+          const etiqueta = zonasMap[zona].puestosMap[pk].etiqueta;
+          return {
+            puesto: etiqueta,
+            cantidad: Math.round(zonasMap[zona].puestosMap[pk].cantidad * 100) / 100,
+            temprana: esIndicacionTemprana(zona, etiqueta, pk),
+          };
+        })
+        .sort((a, b) => Number(b.temprana) - Number(a.temprana) || a.puesto.localeCompare(b.puesto, 'es'));
+      const temprana = esIndicacionTemprana(zona) || puestosArray.some((p) => p.temprana);
       return {
         nombre: zona,
         total: Math.round(zonasMap[zona].total * 100) / 100,
         puestos: puestosArray,
+        temprana,
       };
     })
-    .sort((a, b) => b.total - a.total);
+    .sort((a, b) => Number(b.temprana) - Number(a.temprana) || b.total - a.total);
   const pct = totalGlobal > 0 ? ((totalOPL / totalGlobal) * 100).toFixed(1) : '0.0';
   const puestosFlat = [];
   s.consolidado.forEach((fila) => {
@@ -2527,9 +2551,15 @@ export async function generarPlanillaPuntos(opl) {
       zona: zonaFila,
       cantidad: Math.round(cantidad * 100) / 100,
       opl: oplReg,
+      temprana: esIndicacionTemprana(zonaFila, sucursal, puestoFull),
     });
   });
-  puestosFlat.sort((a, b) => a.etiqueta.localeCompare(b.etiqueta, 'es'));
+  puestosFlat.sort(
+    (a, b) => Number(b.temprana) - Number(a.temprana) || a.etiqueta.localeCompare(b.etiqueta, 'es')
+  );
+  const totalTempranas = puestosFlat
+    .filter((p) => p.temprana)
+    .reduce((sum, p) => sum + Number(p.cantidad || 0), 0);
   return {
     success: true,
     opl,
@@ -2537,6 +2567,8 @@ export async function generarPlanillaPuntos(opl) {
     puestos: puestosFlat,
     totalOPL: Math.round(totalOPL * 100) / 100,
     totalGlobal: Math.round(totalGlobal * 100) / 100,
+    totalTempranas: Math.round(totalTempranas * 100) / 100,
+    tieneTempranas: totalTempranas > 0 || zonasArray.some((z) => z.temprana),
     porcentaje: pct,
     turno,
     fecha: fechaPlanilla,
@@ -2621,15 +2653,27 @@ export async function generarHTMLPlanillaPDF(opl) {
   if (!datos.success) return { success: false, message: datos.message };
   let zonasHtml = '';
   datos.zonas.forEach((z) => {
+    const tempr = Boolean(z.temprana);
+    const headBg = tempr ? '#dc2626' : '#259c39';
+    const border = tempr ? '#fecaca' : '#b7e4c7';
+    const thBg = tempr ? '#fee2e2' : '#e8f5e9';
+    const cantColor = tempr ? '#dc2626' : '#259c39';
     const filas = z.puestos
       .map((p) => {
         const cantStr = p.cantidad % 1 === 0 ? String(p.cantidad) : p.cantidad.toFixed(2);
-        return `<tr><td style='text-align:left;padding:5px 8px;border-bottom:1px solid #d1fae5;font-weight:500;font-size:0.75rem;'>${p.puesto}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid #d1fae5;font-weight:700;color:#259c39;font-size:0.75rem;'>${cantStr}</td></tr>`;
+        const rowBg = p.temprana ? 'background:#fef2f2;' : '';
+        return `<tr style='${rowBg}'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:500;font-size:0.75rem;'>${p.puesto}${p.temprana ? ' <span style="color:#dc2626;font-weight:700;">TEMP</span>' : ''}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:${cantColor};font-size:0.75rem;'>${cantStr}</td></tr>`;
       })
       .join('');
-    zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid #b7e4c7;overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:#259c39;color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:#e8f5e9;padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:#e8f5e9;padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    const badge = tempr
+      ? ` <span style='background:rgba(255,255,255,0.25);padding:2px 6px;border-radius:20px;font-size:0.65rem;'>TEMPRANA</span>`
+      : '';
+    zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre}${badge} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   });
-  const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p><div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
+  const avisoTemp = datos.tieneTempranas
+    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Zonas TEMP / tempranas resaltadas en rojo (${datos.totalTempranas} juegos)</p>`
+    : '';
+  const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p>${avisoTemp}<div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
   return { success: true, html };
 }
 
