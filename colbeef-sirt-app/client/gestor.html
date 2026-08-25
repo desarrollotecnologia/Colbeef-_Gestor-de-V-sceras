@@ -1581,10 +1581,10 @@ function updateDashboard(data) {
     } else if (data.consultaSIRT || data.operacionOPLFinalizada != null) {
       if (oplTerminada) {
         renderDashOplFinalizada(data.oplPreviewFecha || data.fechaConsulta || '');
-      } else if (data.todosOPL && data.todosOPL.length > 0) {
-        renderDashOplMini(data.todosOPL);
       } else if (data.progresoOPL && data.progresoOPL.length > 0) {
         renderDashOplMini(data.progresoOPL);
+      } else if (data.todosOPL && data.todosOPL.length > 0) {
+        renderDashOplMini(data.todosOPL);
       } else if (data.oplPreviewMessage) {
         var esc = escapeHtml(String(data.oplPreviewMessage));
         document.getElementById('dashOplMini').innerHTML =
@@ -1595,10 +1595,10 @@ function updateDashboard(data) {
       }
     } else if (oplTerminada) {
       renderDashOplFinalizada(data.oplPreviewFecha || '');
-    } else if (data.todosOPL && data.todosOPL.length > 0) {
-      renderDashOplMini(data.todosOPL);
     } else if (data.progresoOPL && data.progresoOPL.length > 0) {
       renderDashOplMini(data.progresoOPL);
+    } else if (data.todosOPL && data.todosOPL.length > 0) {
+      renderDashOplMini(data.todosOPL);
     } else {
       loadDashOPL();
     }
@@ -2783,7 +2783,7 @@ function renderDashOplMini(progreso) {
       + '</div>'
       // Barra de progreso
       + '<div style="background:#e5e7eb;height:6px;border-radius:10px;overflow:hidden;">'
-      +   '<div style="height:100%;border-radius:10px;background:' + barColor + ';width:' + Math.max(pct, 3) + '%;transition:width 0.5s ease;"></div>'
+      +   '<div style="height:100%;border-radius:10px;background:' + barColor + ';width:' + (pct > 0 ? Math.max(pct, 3) : 0) + '%;transition:width 0.5s ease;"></div>'
       + '</div>'
       + '</div>';
   }).join('');

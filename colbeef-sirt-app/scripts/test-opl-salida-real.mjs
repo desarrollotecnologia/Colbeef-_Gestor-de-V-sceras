@@ -1,5 +1,5 @@
 /**
- * OPL: pendientes = en cava turno; despachados = meta congelada − pendientes.
+ * OPL: pendientes = programados turno sin salida; despachados = salidas físicas del día.
  * node scripts/test-opl-salida-real.mjs
  */
 import assert from 'assert';
@@ -47,9 +47,30 @@ const row = pack.todosOPL.find((p) => p.opl === opl);
 assert.ok(row, 'OPL presente');
 assert.strictEqual(row.total, 2, 'meta congelada 2');
 assert.strictEqual(row.pendientes, 1, '1 aún en cava');
-assert.strictEqual(row.despachados, 1, '1 = meta − pendientes');
+assert.strictEqual(row.despachados, 1, '1 salida física del día');
 assert.strictEqual(row.progreso, 50);
 assert.strictEqual(pack.operacionFinalizada, false, 'no debe marcar operación finalizada');
+
+const packSinSalidaReal = construirProgresoOplDesdeDespachos(
+  {
+    lastSyncRange: { from: '2026-08-25', to: '2026-08-25' },
+    despachosCavas: enCava,
+    salidasCavaDia: [],
+    oplTotalsJuego: { [opl]: 500 },
+    oplBaselineFecha: '2026-08-25',
+    oplBaselineTurno: turno,
+    oplConfig: [{ propietario: prop, opl, total: 0 }],
+    resumenDespachos: { turno, resultado: [] },
+  },
+  turno,
+  '25/08/2026 08:00'
+);
+const row3 = packSinSalidaReal.todosOPL.find((p) => p.opl === opl);
+assert.ok(row3);
+assert.strictEqual(row3.pendientes, 1);
+assert.strictEqual(row3.despachados, 0, 'sin salida física hoy = 0% aunque meta sea 500');
+assert.strictEqual(row3.progreso, 0);
+assert.strictEqual(packSinSalidaReal.totalDespachados, 0);
 
 const packSoloPend = construirProgresoOplDesdeDespachos(
   {

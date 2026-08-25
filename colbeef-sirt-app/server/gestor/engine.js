@@ -40,7 +40,6 @@ import {
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
   filasDespachoTurnoOperacion,
-  despachosProgramadosSinSalidasDelDia,
   fechaOperativaHoy,
   fechaOperativaDesdeCelda,
   getDiaOperativoCorteHora,
@@ -915,33 +914,29 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Pendientes = aún en cava según SIRT (fecha_salida IS NULL) para el turno.
-  const programadosPendientes = despachosProgramadosSinSalidasDelDia(
-    programadosBruto,
-    salidasTurno
-  );
-
-  // Meta por OPL: solo crece con programación vista (no con salidas de otros días/rezago).
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, []);
+  // Meta: programación + salidas físicas del día operativo (crece, no baja).
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasTurno);
   const totalsFrozen = obtenerOplTotalsJuego(s);
 
+  // Pendientes = juegos completos aún sin fecha_salida (programados del turno).
   const pendOpl = contarJuegosCompletosPorClave(
-    programadosPendientes,
+    programadosBruto,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
+  // Despachados = solo salidas físicas del día operativo (fecha_salida SIRT hoy).
+  const despOpl = contarJuegosCompletosPorClave(salidasTurno, COLS_DESPACHO_CAVA, claveOpl, '');
 
-  const opls = new Set([...Object.keys(totalsFrozen), ...Object.keys(pendOpl)]);
+  const opls = new Set([...Object.keys(totalsFrozen), ...Object.keys(pendOpl), ...Object.keys(despOpl)]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
     const pendientes = Number(pendOpl[opl] || 0);
-    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendientes);
+    const despachados = Number(despOpl[opl] || 0);
+    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendientes + despachados);
     if (totalMeta <= 0) return;
-    // Despachados = lo que ya no está pendiente de la meta (no un conteo aparte de salidas).
-    const despachados = Math.max(0, totalMeta - pendientes);
     let pct = Math.round((despachados / totalMeta) * 100);
     if (pendientes > 0) pct = Math.min(99, pct);
     else pct = 100;
@@ -1329,7 +1324,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'despachados-meta-menos-pendientes-v6';
+export const GESTOR_BUILD = 'despachados-solo-salidas-fisicas-v7';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1470,10 +1465,10 @@ export async function getDashboardData(range) {
         Number(oplLive.totalJuegos || 0),
         pendientes
       );
-      // Despachados = meta − pendientes (lo que SIRT ya no tiene en cava programada).
-      const despachados = Math.max(0, juegosEnCava - pendientes);
+      // Despachados = salidas físicas del día (no meta − pendientes: evita 99% sin salida real).
+      const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
       const totalJuegosDespachar = pendientes;
-      const juegosTotalesOperacion = juegosEnCava;
+      const juegosTotalesOperacion = Math.max(juegosEnCava, pendientes + despachados);
       const filasSalidasFisicas = (salidasDia || []).length;
       const filasProgramacion = desp.length;
       const turnoDespacho = String(rd.turno || '');
@@ -1486,9 +1481,9 @@ export async function getDashboardData(range) {
         else progreso = 100;
         progresoMensaje =
           pendientes +
-          ' aún en cava (sin fecha_salida SIRT) · ' +
+          ' pendientes · ' +
           despachados +
-          ' ya no figuran en programación · meta ' +
+          ' despachados (fecha_salida SIRT hoy) · meta ' +
           juegosTotalesOperacion +
           ' · turno ' +
           turnoOp +
