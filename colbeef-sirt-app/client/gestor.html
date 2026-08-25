@@ -1548,10 +1548,12 @@ function updateDashboard(data) {
       );
     }
 
-    // ── % contra meta en cava (congelada) ──
+    // ── % contra meta en cava (congelada); no 100% si aún faltan ──
     var progreso = Number(data.progreso || 0);
     if (juegosTotalesOperacion > 0) {
-      progreso = Math.min(100, Math.round((despachadosNum / juegosTotalesOperacion) * 100));
+      progreso = Math.round((despachadosNum / juegosTotalesOperacion) * 100);
+      if (pendientes > 0) progreso = Math.min(99, progreso);
+      else progreso = 100;
     }
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
@@ -1572,10 +1574,12 @@ function updateDashboard(data) {
     }
 
     // ── Tarjeta OPL ──
-    if (finalizada) {
+    var oplTerminada =
+      data.operacionOPLFinalizada && Number(pendientes || 0) === 0;
+    if (finalizada && Number(pendientes || 0) === 0) {
       renderDashOplFinalizada();
     } else if (data.consultaSIRT || data.operacionOPLFinalizada != null) {
-      if (data.operacionOPLFinalizada) {
+      if (oplTerminada) {
         renderDashOplFinalizada(data.oplPreviewFecha || data.fechaConsulta || '');
       } else if (data.todosOPL && data.todosOPL.length > 0) {
         renderDashOplMini(data.todosOPL);
@@ -1589,7 +1593,7 @@ function updateDashboard(data) {
         document.getElementById('dashOplMini').innerHTML =
           '<div style="color:var(--gris);font-size:0.82rem;margin-top:0.5rem;">Sin datos OPL para este día.</div>';
       }
-    } else if (data.operacionOPLFinalizada) {
+    } else if (oplTerminada) {
       renderDashOplFinalizada(data.oplPreviewFecha || '');
     } else if (data.todosOPL && data.todosOPL.length > 0) {
       renderDashOplMini(data.todosOPL);
@@ -3276,7 +3280,7 @@ function renderPlanilla(res) {
     (res.turno ? ' · turno ' + res.turno : '');
 
   var avisoTemp = res.tieneTempranas
-    ? '<div class="planilla-aviso-temp">⚠ Zonas / puestos TEMP (tempranas) en rojo — ' +
+    ? '<div class="planilla-aviso-temp">⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) en rojo — ' +
       (res.totalTempranas || 0) +
       ' juegos</div>'
     : '';
@@ -3296,7 +3300,7 @@ function renderPlanilla(res) {
           '<tr style="border-bottom:1px solid ' + (temp ? '#fecaca' : '#d1fae5') + ';' + rowBg + '">' +
           '<td style="padding:6px 10px;font-weight:600;">' +
           escapeHtml(p.sucursal || p.etiqueta || p.puesto) +
-          (temp ? ' <span style="color:#dc2626;font-size:0.72rem;">TEMP</span>' : '') +
+          (temp ? ' <span style="color:#dc2626;font-size:0.72rem;">TEMPRANA</span>' : '') +
           '</td>' +
           '<td style="' + zonaStyle + '">' +
           escapeHtml(p.zona || '—') +
@@ -3335,7 +3339,7 @@ function renderPlanilla(res) {
       var pTemp = !!p.temprana || tempr;
       return '<tr style="border-bottom:1px solid ' + rowBorder + ';' + (pTemp ? 'background:#fef2f2;' : '') + '">'
         + '<td style="padding:4px 8px;text-align:left;font-weight:500;font-size:0.8rem;">' + escapeHtml(p.puesto)
-        + (pTemp ? ' <span style="color:#dc2626;font-size:0.68rem;font-weight:700;">TEMP</span>' : '')
+        + (pTemp ? ' <span style="color:#dc2626;font-size:0.68rem;font-weight:700;">TEMPRANA</span>' : '')
         + '</td>'
         + '<td style="padding:4px 8px;text-align:center;font-weight:700;color:' + cantColor + ';font-size:0.82rem;">' + p.cantidad + '</td>'
         + '</tr>';

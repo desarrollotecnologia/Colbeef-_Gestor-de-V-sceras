@@ -12,6 +12,7 @@
 import {
   TIPOS_PRODUCTO,
   PUESTOS_EXCLUIDOS_DESP,
+  PUESTOS_TEMPRANAS,
   OPL_DEFAULT,
   OPL_EXCEPCIONES_DEFAULT,
   OPL_MODELO,
@@ -914,11 +915,15 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Quitar de pendientes lo que ya tiene fecha_salida (avance real de despacho).
+  // Pendientes = aún en cava según SIRT (fecha_salida IS NULL) para el turno.
   const programadosPendientes = despachosProgramadosSinSalidasDelDia(
     programadosBruto,
     salidasTurno
   );
+
+  // Meta por OPL: solo crece con programación vista (no con salidas de otros días/rezago).
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, []);
+  const totalsFrozen = obtenerOplTotalsJuego(s);
 
   const pendOpl = contarJuegosCompletosPorClave(
     programadosPendientes,
@@ -926,33 +931,30 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     claveOpl,
     ''
   );
-  const salOpl = contarJuegosCompletosPorClave(
-    salidasTurno,
-    COLS_DESPACHO_CAVA,
-    claveOpl,
-    ''
-  );
 
-  const opls = new Set([...Object.keys(pendOpl), ...Object.keys(salOpl)]);
+  const opls = new Set([...Object.keys(totalsFrozen), ...Object.keys(pendOpl)]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
     const pendientes = Number(pendOpl[opl] || 0);
-    const despachados = Number(salOpl[opl] || 0);
-    const total = pendientes + despachados;
-    if (total <= 0) return;
-    const pct = Math.min(100, Math.round((despachados / total) * 100));
+    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendientes);
+    if (totalMeta <= 0) return;
+    // Despachados = lo que ya no está pendiente de la meta (no un conteo aparte de salidas).
+    const despachados = Math.max(0, totalMeta - pendientes);
+    let pct = Math.round((despachados / totalMeta) * 100);
+    if (pendientes > 0) pct = Math.min(99, pct);
+    else pct = 100;
     const item = {
       opl,
-      total,
+      total: totalMeta,
       despachados,
       pendientes,
       progreso: pct,
       fecha,
     };
     todosOPL.push(item);
-    if (pct < 100) progreso.push(item);
+    if (pendientes > 0) progreso.push(item);
   });
 
   todosOPL.sort((a, b) => b.pendientes - a.pendientes || b.total - a.total || a.opl.localeCompare(b.opl));
@@ -1327,7 +1329,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'dia-operativo-4am-v4';
+export const GESTOR_BUILD = 'despachados-meta-menos-pendientes-v6';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1415,6 +1417,12 @@ export async function getDashboardData(range) {
         despachosCavas: desp,
         salidasCavaDia: salidasDia,
         oplConfig: baseOpl,
+        oplTotalsJuego:
+          persisted.oplTotalsJuego && typeof persisted.oplTotalsJuego === 'object'
+            ? { ...persisted.oplTotalsJuego }
+            : {},
+        oplBaselineFecha: persisted.oplBaselineFecha || '',
+        oplBaselineTurno: persisted.oplBaselineTurno || '',
         resumenDespachos: {
           turno: '',
           fechaStr: '',
@@ -1438,9 +1446,12 @@ export async function getDashboardData(range) {
       sWork.despachoKpiBaseline = persisted.despachoKpiBaseline;
       const kpiFrozen = actualizarBaselineDespachoKpisSync(sWork, turnoOp, { indiceVw });
       persisted.despachoKpiBaseline = sWork.despachoKpiBaseline;
-      await saveState(persisted);
 
       const oplLive = construirProgresoOplDesdeDespachos(sWork, turnoOp, fmtNow());
+      persisted.oplTotalsJuego = sWork.oplTotalsJuego;
+      persisted.oplBaselineFecha = sWork.oplBaselineFecha;
+      persisted.oplBaselineTurno = sWork.oplBaselineTurno;
+      await saveState(persisted);
       const preview = computeProgresoOPLPreview(sWork, oplLive.totalJuegos || rd.totalJuegos, {
         consultaSirt: true,
       });
@@ -1448,15 +1459,19 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      const pendientes = Number(oplLive.totalPendientes || 0);
-      const despachados = Number(oplLive.totalDespachados || 0);
-      // En cava congelado: máximo visto del turno (programación ∪ salidas); no baja al despachar.
+      // Pendientes = juegos completos aún sin fecha_salida en SIRT (consulta programado).
+      const pendientes = Number(
+        oplLive.totalPendientes != null ? oplLive.totalPendientes : rd.totalJuegos || 0
+      );
+      // En cava congelado: máximo visto del turno; no baja al despachar.
       const juegosEnCava = Math.max(
         Number(kpiFrozen.totalJuegos || 0),
         Number(rd.totalJuegos || 0),
-        pendientes + despachados
+        Number(oplLive.totalJuegos || 0),
+        pendientes
       );
-      // Único contador que disminuye: lo que aún falta por despachar.
+      // Despachados = meta − pendientes (lo que SIRT ya no tiene en cava programada).
+      const despachados = Math.max(0, juegosEnCava - pendientes);
       const totalJuegosDespachar = pendientes;
       const juegosTotalesOperacion = juegosEnCava;
       const filasSalidasFisicas = (salidasDia || []).length;
@@ -1466,14 +1481,16 @@ export async function getDashboardData(range) {
       let progreso = 0;
       let progresoMensaje = '';
       if (juegosTotalesOperacion > 0) {
-        progreso = Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100));
+        progreso = Math.round((despachados / juegosTotalesOperacion) * 100);
+        if (pendientes > 0) progreso = Math.min(99, progreso);
+        else progreso = 100;
         progresoMensaje =
-          despachados +
-          ' despachados de ' +
-          juegosTotalesOperacion +
-          ' en cava · ' +
           pendientes +
-          ' por despachar · turno ' +
+          ' aún en cava (sin fecha_salida SIRT) · ' +
+          despachados +
+          ' ya no figuran en programación · meta ' +
+          juegosTotalesOperacion +
+          ' · turno ' +
           turnoOp +
           ' · ' +
           isoToDdMmYyyy(fechaIso);
@@ -1544,7 +1561,9 @@ export async function getDashboardData(range) {
         decomisoVinculoStats,
         progresoOPL,
         todosOPL: preview.todosOPL || oplLive.todosOPL || [],
-        operacionOPLFinalizada: Boolean(preview.operacionFinalizada || oplLive.operacionFinalizada),
+        operacionOPLFinalizada: Boolean(
+          (preview.operacionFinalizada || oplLive.operacionFinalizada) && pendientes === 0
+        ),
         oplPreviewMessage: String(preview.message || ''),
         oplPreviewFecha: preview.fecha || '',
         operacionPuestos: mapearOperacionPuestos(rd.resultado),
@@ -1858,20 +1877,24 @@ export async function getProgresoOPL() {
   s.oplProgreso.forEach((r) => {
     const opl = String(r.opl || '').trim();
     const total = Number(r.total || 0);
-    const pct = Number(r.progreso || 0);
+    const pendientes = Number(r.pendientes || 0);
+    const despachados = Number(r.despachados || 0);
     if (!opl || total <= 0) return;
+    let pct = Number(r.progreso || 0);
+    if (pendientes > 0) pct = Math.min(99, pct);
+    else pct = 100;
     const fStr = String(r.fecha || '');
     if (!ultimaFecha && fStr) ultimaFecha = fStr;
     const item = {
       opl,
       total,
-      despachados: Number(r.despachados || 0),
-      pendientes: Number(r.pendientes || 0),
+      despachados,
+      pendientes,
       progreso: pct,
       fecha: fStr,
     };
     todosOPL.push(item);
-    if (pct < 100) progreso.push(item);
+    if (pendientes > 0) progreso.push(item);
   });
   const operacionFinalizada = todosOPL.length > 0 && progreso.length === 0;
   return { success: true, progreso, todosOPL, operacionFinalizada, fecha: ultimaFecha, unidad: 'juegos' };
@@ -2240,21 +2263,35 @@ function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
   return 'SIN ZONA';
 }
 
-/** Zona/puesto de salida temprana (TEMP, TEMP1, TEMPRANA…). */
+/** Zona/puesto de salida temprana según catálogo PUESTOS_TEMPRANAS (NSF, 6505, ARIR, LHMV, WMERCAN). */
+const PUESTOS_TEMPRANAS_SET = new Set(
+  PUESTOS_TEMPRANAS.map((p) => {
+    const u = String(p || '').trim().toUpperCase();
+    if (/^\d+$/.test(u)) return String(parseInt(u, 10));
+    return u;
+  })
+);
+
+function codigoCandidatoTemprana(texto) {
+  const raw = String(texto || '').trim();
+  if (!raw) return '';
+  const first = raw.split('/')[0].trim().toUpperCase();
+  if (!first) return '';
+  if (/^\d+$/.test(first)) return String(parseInt(first, 10));
+  return first;
+}
+
 function esIndicacionTemprana(...textos) {
   return textos.some((t) => {
-    const u = String(t || '')
-      .trim()
-      .toUpperCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+    const cod = codigoCandidatoTemprana(t);
+    if (cod && PUESTOS_TEMPRANAS_SET.has(cod)) return true;
+    const u = String(t || '').trim().toUpperCase();
     if (!u) return false;
-    return (
-      /\bTEMP\s*\d*\b/.test(u) ||
-      /\bTEMPRAN/.test(u) ||
-      /\/TEMP\d*\b/.test(u) ||
-      /^TEMP\d*\b/.test(u)
-    );
+    return PUESTOS_TEMPRANAS.some((p) => {
+      const code = codigoCandidatoTemprana(p);
+      if (!code) return false;
+      return new RegExp(`(^|/)${code.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(/|$)`, 'i').test(u);
+    });
   });
 }
 
@@ -2662,7 +2699,7 @@ export async function generarHTMLPlanillaPDF(opl) {
       .map((p) => {
         const cantStr = p.cantidad % 1 === 0 ? String(p.cantidad) : p.cantidad.toFixed(2);
         const rowBg = p.temprana ? 'background:#fef2f2;' : '';
-        return `<tr style='${rowBg}'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:500;font-size:0.75rem;'>${p.puesto}${p.temprana ? ' <span style="color:#dc2626;font-weight:700;">TEMP</span>' : ''}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:${cantColor};font-size:0.75rem;'>${cantStr}</td></tr>`;
+        return `<tr style='${rowBg}'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:500;font-size:0.75rem;'>${p.puesto}${p.temprana ? ' <span style="color:#dc2626;font-weight:700;">TEMPRANA</span>' : ''}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:${cantColor};font-size:0.75rem;'>${cantStr}</td></tr>`;
       })
       .join('');
     const badge = tempr
@@ -2671,7 +2708,7 @@ export async function generarHTMLPlanillaPDF(opl) {
     zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre}${badge} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   });
   const avisoTemp = datos.tieneTempranas
-    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Zonas TEMP / tempranas resaltadas en rojo (${datos.totalTempranas} juegos)</p>`
+    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) resaltados en rojo (${datos.totalTempranas} juegos)</p>`
     : '';
   const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p>${avisoTemp}<div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
   return { success: true, html };

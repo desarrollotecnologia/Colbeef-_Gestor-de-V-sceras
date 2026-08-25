@@ -49,6 +49,9 @@ export const PUESTOS_EXCLUIDOS_DESP = [
   'RH32/Temp 2 Girón /DxL///CRA 29 # 33-70 LLANITO PARTE BAJA',
 ];
 
+/** Códigos de puesto con salida temprana (referencia operativa / Apps Script). */
+export const PUESTOS_TEMPRANAS = ['NSF', '6505', 'ARIR', 'LHMV', 'WMERCAN'];
+
 /** Cuatro componentes necesarios para considerar completo un juego visceral. */
 export const TIPOS_PRODUCTO = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
