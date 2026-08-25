@@ -12,16 +12,37 @@ import dotenv from 'dotenv';
 import { isGestorMysqlReady, gestorQuery } from '../gestorDb.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
+
+function reloadEnv() {
+  const candidates = [
+    path.join(__dirname, '..', '..', '.env'),
+    path.join(process.cwd(), '.env'),
+  ];
+  for (const envPath of candidates) {
+    dotenv.config({ path: envPath });
+  }
+}
+
+reloadEnv();
 
 const DATA_PATH = path.join(__dirname, '..', 'data', 'usability-events.json');
 const MAX_EVENTS = 50000;
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+/** Clave por defecto si el .env del servidor no define USABILITY_ADMIN_PASSWORD. */
+const DEFAULT_ADMIN_PASSWORD = '123456789';
 
 const adminTokens = new Map();
 
 function getAdminPassword() {
-  return String(process.env.USABILITY_ADMIN_PASSWORD || '').trim();
+  reloadEnv();
+  let pwd = String(process.env.USABILITY_ADMIN_PASSWORD || '').trim();
+  if (
+    (pwd.startsWith('"') && pwd.endsWith('"')) ||
+    (pwd.startsWith("'") && pwd.endsWith("'"))
+  ) {
+    pwd = pwd.slice(1, -1).trim();
+  }
+  return pwd || DEFAULT_ADMIN_PASSWORD;
 }
 
 let cache = null;
@@ -113,13 +134,8 @@ export async function recordEvent(payload, reqMeta = {}) {
 }
 
 /** Valida la contraseña configurada y crea un token administrativo temporal. */
-/** Valida la contraseña configurada y crea un token administrativo temporal. */
 export function loginAdmin(password) {
   const adminPassword = getAdminPassword();
-  if (!adminPassword) {
-    console.error('[usabilidad] Defina USABILITY_ADMIN_PASSWORD en .env');
-    return null;
-  }
   if (String(password || '') !== adminPassword) return null;
   const token = crypto.randomBytes(24).toString('hex');
   adminTokens.set(token, Date.now() + TOKEN_TTL_MS);

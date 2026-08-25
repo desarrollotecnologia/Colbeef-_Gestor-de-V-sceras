@@ -1,6 +1,7 @@
 /**
  * Esquema MySQL del gestor: se aplica solo al arrancar (idempotente).
- * SIRT permanece en PostgreSQL; aquí solo control, auditoría y estado propio.
+ * SIRT permanece en PostgreSQL; aquí control, auditoría y estado propio
+ * (OPL, plazas, sesión operativa vía tabla gestor_state).
  */
 import { gestorQuery, isGestorMysqlReady } from '../gestorDb.js';
 

@@ -44,7 +44,7 @@ export default function App() {
             id="usuarioInput"
             className="portal-input"
             type="text"
-            placeholder="Ej: Sergio Anaya"
+            placeholder="Su nombre"
             value={usuario}
             onChange={(e) => setUsuario(e.target.value)}
             required

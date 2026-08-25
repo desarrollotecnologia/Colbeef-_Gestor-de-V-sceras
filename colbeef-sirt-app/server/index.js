@@ -8,6 +8,7 @@
  * - entregar exportaciones y PDF almacenados;
  * - publicar enlaces accesibles en la red local.
  */
+import './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
 import multer from 'multer';
@@ -40,6 +41,8 @@ import {
   isGestorMysqlReady,
 } from './gestorDb.js';
 import { ensureGestorSchema, recordAuditoria } from './gestor/mysqlSchema.js';
+import { migrateGestorStateJsonToMysql } from './gestor/store.js';
+import { seedPlazasCatalogIfNeeded } from './gestor/plazasCatalog.js';
 import {
   loginUser,
   logoutUser,
@@ -244,7 +247,7 @@ app.post('/api/usability/login', (req, res) => {
   if (!token) {
     return res.status(401).json({
       success: false,
-      message: 'Contraseña incorrecta o USABILITY_ADMIN_PASSWORD no configurada en .env.',
+      message: 'Contraseña incorrecta.',
     });
   }
   res.json({ success: true, token });
@@ -751,10 +754,13 @@ async function startServer() {
   if (isGestorMysqlReady()) {
     await ensureGestorSchema();
     await migrateUsabilityJsonToMysql();
+    await migrateGestorStateJsonToMysql();
   }
-  if (!String(process.env.USABILITY_ADMIN_PASSWORD || '').trim()) {
+  await seedPlazasCatalogIfNeeded();
+  const usabPwd = String(process.env.USABILITY_ADMIN_PASSWORD || '').trim();
+  if (!usabPwd) {
     console.warn(
-      '[usabilidad] USABILITY_ADMIN_PASSWORD no está en .env — el login de /usabilidad.html no funcionará.'
+      '[usabilidad] USABILITY_ADMIN_PASSWORD no está en .env — se usa la clave por defecto 123456789'
     );
   }
 

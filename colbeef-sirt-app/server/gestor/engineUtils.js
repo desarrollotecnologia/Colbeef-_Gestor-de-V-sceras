@@ -416,3 +416,84 @@ export function resolverTurnoOperacion(range = {}, despachosFilas = [], turnoFor
   if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) return detectarTurnoPorFechaISO(iso);
   return detectarTurnoPorDia();
 }
+
+/** Hora local (0–23) en que termina el día operativo y empieza el siguiente. Por defecto 4. */
+export function getDiaOperativoCorteHora() {
+  const n = Number(process.env.GESTOR_DIA_OPERATIVO_CORTE_HORA ?? 4);
+  if (!Number.isFinite(n)) return 4;
+  return Math.min(23, Math.max(0, Math.floor(n)));
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+/** Fecha civil local YYYY-MM-DD (no UTC). */
+export function fechaIsoLocalDesdeDate(d = new Date()) {
+  const x = d instanceof Date ? d : new Date(d);
+  if (Number.isNaN(x.getTime())) return '';
+  return `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+}
+
+export function addDaysIsoLocal(iso, delta) {
+  const m = String(iso || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return '';
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(delta || 0));
+  return fechaIsoLocalDesdeDate(d);
+}
+
+/**
+ * Día operativo Colbeef: antes de la hora de corte sigue contando como el día anterior.
+ * Ej. mar 02:30 con corte 4 → lunes.
+ */
+export function fechaOperativaDesdeDate(d = new Date(), corteHora = getDiaOperativoCorteHora()) {
+  const x = new Date(d instanceof Date ? d.getTime() : new Date(d).getTime());
+  if (Number.isNaN(x.getTime())) return '';
+  if (x.getHours() < Number(corteHora)) {
+    x.setDate(x.getDate() - 1);
+  }
+  return fechaIsoLocalDesdeDate(x);
+}
+
+export function fechaOperativaHoy(corteHora = getDiaOperativoCorteHora()) {
+  return fechaOperativaDesdeDate(new Date(), corteHora);
+}
+
+/**
+ * Interpreta celda fecha/hora (ISO, Date o dd/MM/yyyy[ HH:mm]) y devuelve día operativo.
+ * Si solo hay fecha (sin hora), se toma mediodía local para no empujar el día al anterior.
+ */
+export function fechaOperativaDesdeCelda(celda, corteHora = getDiaOperativoCorteHora()) {
+  const s = String(celda || '').trim();
+  if (!s) return '';
+  const isoDt = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (isoDt) {
+    const hasTime = isoDt[4] != null;
+    const d = new Date(
+      Number(isoDt[1]),
+      Number(isoDt[2]) - 1,
+      Number(isoDt[3]),
+      hasTime ? Number(isoDt[4]) : 12,
+      hasTime ? Number(isoDt[5] || 0) : 0,
+      hasTime ? Number(isoDt[6] || 0) : 0
+    );
+    return fechaOperativaDesdeDate(d, corteHora);
+  }
+  const dm = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (dm) {
+    const hasTime = dm[4] != null;
+    const d = new Date(
+      Number(dm[3]),
+      Number(dm[2]) - 1,
+      Number(dm[1]),
+      hasTime ? Number(dm[4]) : 12,
+      hasTime ? Number(dm[5] || 0) : 0,
+      hasTime ? Number(dm[6] || 0) : 0
+    );
+    return fechaOperativaDesdeDate(d, corteHora);
+  }
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return fechaOperativaDesdeDate(d, corteHora);
+  return '';
+}
+

@@ -18,6 +18,7 @@ import {
   ESTADO_COMPLETO,
   ESTADO_PENDIENTE,
 } from './constants.js';
+import { loadPlazasCatalog } from './plazasCatalog.js';
 import {
   codigoBase,
   construirMapaReporteDecomisos,
@@ -38,6 +39,10 @@ import {
   aplicarEstadoEnCavaNeto,
   resolverTurnoOperacion,
   filasDespachoTurnoOperacion,
+  despachosProgramadosSinSalidasDelDia,
+  fechaOperativaHoy,
+  fechaOperativaDesdeCelda,
+  getDiaOperativoCorteHora,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -602,14 +607,14 @@ function claveOplDesdeFila(fila, mapaOPL) {
   return mapaOPL[prop] || OPL_DEFAULT;
 }
 
-/** Salidas físicas del día de operación (`fecha_salida` en SIRT). */
+/** Salidas físicas del día operativo (incluye madrugada hasta la hora de corte). */
 function filasSalidasCavaDelDia(rows, fechaOpIso) {
   if (!fechaOpIso) return [];
-  return (rows || []).filter((fila) => isoDesdeCeldaFecha(fila[0]) === fechaOpIso);
+  return (rows || []).filter((fila) => fechaOperativaDesdeCelda(fila[0]) === fechaOpIso);
 }
 
 function hoyIsoLocal() {
-  return new Date().toISOString().slice(0, 10);
+  return fechaOperativaHoy();
 }
 
 /** Juegos en cava por OPL (misma base que tablero Despachos). */
@@ -909,10 +914,14 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-
-  const enCavaOpl = juegosPorOplDesdeResumenDespachos(s.resumenDespachos);
-  const progFallback = contarJuegosCompletosPorClave(
+  // Quitar de pendientes lo que ya tiene fecha_salida (avance real de despacho).
+  const programadosPendientes = despachosProgramadosSinSalidasDelDia(
     programadosBruto,
+    salidasTurno
+  );
+
+  const pendOpl = contarJuegosCompletosPorClave(
+    programadosPendientes,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
@@ -924,16 +933,12 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     ''
   );
 
-  const opls = new Set([
-    ...Object.keys(enCavaOpl),
-    ...Object.keys(progFallback),
-    ...Object.keys(salOpl),
-  ]);
+  const opls = new Set([...Object.keys(pendOpl), ...Object.keys(salOpl)]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const pendientes = Number(enCavaOpl[opl] ?? progFallback[opl] ?? 0);
+    const pendientes = Number(pendOpl[opl] || 0);
     const despachados = Number(salOpl[opl] || 0);
     const total = pendientes + despachados;
     if (total <= 0) return;
@@ -1322,7 +1327,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'despacho-kpi-freeze-v1';
+export const GESTOR_BUILD = 'dia-operativo-4am-v4';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1365,9 +1370,8 @@ function mapearOperacionPuestos(resultado) {
 /**
  * Consulta en vivo todos los KPI del dashboard para una fecha.
  *
- * Ejecuta las fuentes SIRT en paralelo, arma el resumen del turno y actualiza
- * el baseline diario para que En cava, Decomisos y Crudas no disminuyan al
- * registrar salidas físicas.
+ * - En cava: baseline del turno (solo sube si entra más programación; no baja al despachar).
+ * - Total a despachar: pendientes reales (sube con más asignación; baja con fecha_salida).
  */
 export async function getDashboardData(range) {
   let filtro = normalizarRangoFechas(range || {});
@@ -1435,74 +1439,62 @@ export async function getDashboardData(range) {
       const kpiFrozen = actualizarBaselineDespachoKpisSync(sWork, turnoOp, { indiceVw });
       persisted.despachoKpiBaseline = sWork.despachoKpiBaseline;
       await saveState(persisted);
-      const preview = computeProgresoOPLPreview(sWork, kpiFrozen.totalJuegos, { consultaSirt: true });
+
+      const oplLive = construirProgresoOplDesdeDespachos(sWork, turnoOp, fmtNow());
+      const preview = computeProgresoOPLPreview(sWork, oplLive.totalJuegos || rd.totalJuegos, {
+        consultaSirt: true,
+      });
 
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      const totalJuegosDespachar = Number(kpiFrozen.totalJuegos || 0);
-      const juegosEnCava = totalJuegosDespachar > 0 ? totalJuegosDespachar : juegosStockCava;
-      const filasSalidasDia = desp.length;
+      const pendientes = Number(oplLive.totalPendientes || 0);
+      const despachados = Number(oplLive.totalDespachados || 0);
+      // En cava congelado: máximo visto del turno (programación ∪ salidas); no baja al despachar.
+      const juegosEnCava = Math.max(
+        Number(kpiFrozen.totalJuegos || 0),
+        Number(rd.totalJuegos || 0),
+        pendientes + despachados
+      );
+      // Único contador que disminuye: lo que aún falta por despachar.
+      const totalJuegosDespachar = pendientes;
+      const juegosTotalesOperacion = juegosEnCava;
+      const filasSalidasFisicas = (salidasDia || []).length;
+      const filasProgramacion = desp.length;
       const turnoDespacho = String(rd.turno || '');
       const ultimaActDespachos = rd.fechaStr || '';
-      let juegosTotalesOperacion = 0;
-      let despachados = 0;
       let progreso = 0;
       let progresoMensaje = '';
-      const rezagoDias = Number(process.env.SIRT_PROGRAMACION_REZAGO_DAYS || 21);
-      const modoProg = despachosFuenteProgramadoTurno();
-      if (filasSalidasDia > 0 && totalJuegosDespachar > 0) {
-        const oplLive = construirProgresoOplDesdeDespachos(sWork, turnoOp, fmtNow());
-        juegosTotalesOperacion = oplLive.totalJuegos || totalJuegosDespachar;
-        despachados = oplLive.totalDespachados || 0;
-        progreso =
-          juegosTotalesOperacion > 0
-            ? Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100))
-            : 0;
+      if (juegosTotalesOperacion > 0) {
+        progreso = Math.min(100, Math.round((despachados / juegosTotalesOperacion) * 100));
         progresoMensaje =
           despachados +
-          ' despachados · ' +
-          (oplLive.totalPendientes || 0) +
-          ' pendientes · ' +
-          totalJuegosDespachar +
-          ' juegos turno · ' +
+          ' despachados de ' +
+          juegosTotalesOperacion +
+          ' en cava · ' +
+          pendientes +
+          ' por despachar · turno ' +
           turnoOp +
-          (modoProg
-            ? ' (ISODOW del ' +
-              isoToDdMmYyyy(fechaIso) +
-              ', rezago ' +
-              rezagoDias +
-              ' d)'
-            : ' el ' + isoToDdMmYyyy(fechaIso)) +
           ' · ' +
-          filasSalidasDia +
-          ' piezas · ' +
-          juegosStockCava +
-          ' juegos stock cava';
-      } else if (filasSalidasDia > 0 && totalJuegosDespachar === 0) {
+          isoToDdMmYyyy(fechaIso);
+      } else if (filasProgramacion > 0) {
         progresoMensaje =
-          filasSalidasDia +
+          filasProgramacion +
           ' piezas programadas el ' +
           isoToDdMmYyyy(fechaIso) +
           ' · turno ' +
           turnoOp +
-          ' · 0 juegos completos (revise filtro turno/puesto)' +
-          ' · ' +
-          juegosStockCava +
-          ' en stock cava';
+          ' · 0 juegos completos (revise filtro turno/puesto)';
       } else {
         progresoMensaje =
           'Sin programación a despachar el ' +
           isoToDdMmYyyy(fechaIso) +
           ' · turno ' +
           turnoOp +
-          (despPack.avisoRango ? ' · ' + despPack.avisoRango : '') +
-          ' · ' +
-          juegosStockCava +
-          ' juegos en stock cava';
+          (despPack.avisoRango ? ' · ' + despPack.avisoRango : '');
       }
-      const cr = { success: true, total: Number(kpiFrozen.totalCrudas || 0) };
-      const totalDecomisos = Number(kpiFrozen.totalConDecomiso || 0);
+      const cr = { success: true, total: Number(rd.totalCrudas || kpiFrozen.totalCrudas || 0) };
+      const totalDecomisos = Number(rd.totalConDecomiso || kpiFrozen.totalConDecomiso || 0);
       const totalDecomisosEnRango =
         Number(decomisoVinculoStats?.decomisosUnicos) ||
         Number(decomisoVinculoStats?.filasEnRango) ||
@@ -1529,6 +1521,7 @@ export async function getDashboardData(range) {
         totalCrudas: cr.total,
         totalJuegosDespachar,
         despachados,
+        faltan: pendientes,
         juegosTotalesOperacion,
         progresoMensaje,
         turnoDespacho,
@@ -1538,17 +1531,20 @@ export async function getDashboardData(range) {
         consultaSIRT: true,
         fechaConsulta: fechaIso,
         turnoOperacion: turnoOp,
+        diaOperativo: fechaIso,
+        diaOperativoCorteHora: getDiaOperativoCorteHora(),
         avisoDespachosFecha: despPack.avisoRango || '',
         filasEstadoCavas: estado.length,
         filasReporteDecomisos: totalDecomisosEnRango,
         filasReporteDecomisosRaw: reporte.length,
-        filasDespachosCavas: desp.length,
+        filasDespachosCavas: filasProgramacion,
+        filasSalidasFisicas,
         ...metaRespuestaOpl(),
         despachosFuente: String(process.env.SIRT_DESPACHOS_FUENTE || 'programado'),
         decomisoVinculoStats,
         progresoOPL,
-        todosOPL: preview.todosOPL || [],
-        operacionOPLFinalizada: Boolean(preview.operacionFinalizada),
+        todosOPL: preview.todosOPL || oplLive.todosOPL || [],
+        operacionOPLFinalizada: Boolean(preview.operacionFinalizada || oplLive.operacionFinalizada),
         oplPreviewMessage: String(preview.message || ''),
         oplPreviewFecha: preview.fecha || '',
         operacionPuestos: mapearOperacionPuestos(rd.resultado),
@@ -2107,36 +2103,12 @@ export async function getCrudasDetalle() {
   return { success: true, filas, turno };
 }
 
-const PLAZAS_DEFAULT = [
-  ['01028', 'CENTRO'],
-  ['01803', 'ENTRADA A CAVA'],
-  ['1203', 'CAMPO HERMOSO'],
-  ['SP.', 'LAGOS'],
-  ['A\\', 'VILLABEL'],
-  ['1003', 'CENTRO'],
-  ['E14', 'GIRON'],
-  ['A9', 'GIRON'],
-  ['E5', 'GIRON'],
-  ['10150', 'PIEDECUESTA'],
-  ['10308', 'PIEDECUESTA'],
-  ['10320', 'PIEDECUESTA'],
-  ['379P', 'PIEDECUESTA'],
-  ['ANAP', 'PIEDECUESTA'],
-  ['CRAX', 'PIEDECUESTA'],
-  ['MRP3', 'PIEDECUESTA'],
-  ['NESP', 'PIEDECUESTA'],
-  ['PAME', 'PIEDECUESTA'],
-  ['TOP', 'PIEDECUESTA'],
-  ['YP', 'PIEDECUESTA'],
-];
-
+/** Catálogo oficial BD Plazas OPL (fallback si el mapa aún está vacío). */
 function asegurarPlazasMap(s) {
-  if (!s.plazasMap || !Object.keys(s.plazasMap).length) {
-    s.plazasMap = s.plazasMap || {};
-    PLAZAS_DEFAULT.forEach(([p, pl]) => {
-      s.plazasMap[String(p).trim()] = String(pl).trim().toUpperCase();
-    });
-  }
+  if (s.plazasMap && Object.keys(s.plazasMap).length) return;
+  const catalog = loadPlazasCatalog();
+  s.plazasMap = { ...catalog.plazasMap };
+  if (!s.plazasCatalogVersion) s.plazasCatalogVersion = catalog.version;
 }
 
 export async function getPlazas() {

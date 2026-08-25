@@ -16,6 +16,11 @@
 import { query } from '../db.js';
 import { TIPOS_PRODUCTO } from './constants.js';
 import {
+  getDiaOperativoCorteHora,
+  fechaOperativaHoy,
+  fechaIsoLocalDesdeDate,
+} from './engineUtils.js';
+import {
   detectarTurnoPorFechaISO,
   mapTipoProductoNombre,
   resolverTurnoOperacion,
@@ -93,7 +98,16 @@ function normDate(v) {
 }
 
 function fmtDateCell(v) {
-  if (v instanceof Date) return v.toISOString().slice(0, 10);
+  if (v instanceof Date) return fechaIsoLocalDesdeDate(v);
+  return String(v ?? '').trim();
+}
+
+/** ISO local con hora para aplicar día operativo (corte madrugada). */
+function fmtDateTimeIsoLocal(v) {
+  if (v instanceof Date && !Number.isNaN(v.getTime())) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${v.getFullYear()}-${pad(v.getMonth() + 1)}-${pad(v.getDate())}T${pad(v.getHours())}:${pad(v.getMinutes())}:${pad(v.getSeconds())}`;
+  }
   return String(v ?? '').trim();
 }
 
@@ -107,7 +121,7 @@ function fmtDateTimeCell(v) {
 }
 
 function hoyIso() {
-  return new Date().toISOString().slice(0, 10);
+  return fechaOperativaHoy();
 }
 
 /**
@@ -169,7 +183,7 @@ function buildPuestoDespacho(r) {
 /** Matriz Despachos_Cavas: [8]=destino/zona, [9]=ruta puesto, [10]=sucursal, [11]=dirección. */
 function mapFilaDespachoCavaMatrix(r, opts = {}) {
   const row = new Array(13).fill('');
-  if (opts.fechaSalida) row[0] = fmtDateCell(r.fecha_salida);
+  if (opts.fechaSalida) row[0] = fmtDateTimeIsoLocal(r.fecha_salida) || fmtDateCell(r.fecha_salida);
   else row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
   row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
   row[2] = r.riel || '';
@@ -463,11 +477,15 @@ export async function consultarDecomisosDesdeSirt(range = {}) {
 /**
  * Salida física cava–riel (fecha_salida ya registrada en SIRT).
  * Fuente alternativa: SIRT_DESPACHOS_FUENTE=riel
+ *
+ * Con rango de fechas, incluye la madrugada del día siguiente hasta
+ * GESTOR_DIA_OPERATIVO_CORTE_HORA (p. ej. lunes hasta martes 04:00).
  */
 export async function fetchDespachosCavaRielRows(range = {}) {
   const from = normDate(range.from);
   const to = normDate(range.to);
   const fechaOp = from || to;
+  const corte = getDiaOperativoCorteHora();
   const sql = `
     SELECT
       ppcr.fecha_salida AS fecha_salida,
@@ -491,8 +509,11 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       OR ppcr.fecha_salida >= (CURRENT_DATE - $1::int)
     )
       AND ppcr.fecha_salida IS NOT NULL
-      AND ($2::date IS NULL OR ppcr.fecha_salida::date >= $2::date)
-      AND ($3::date IS NULL OR ppcr.fecha_salida::date <= $3::date)
+      AND ($2::date IS NULL OR ppcr.fecha_salida >= $2::timestamp)
+      AND (
+        $3::date IS NULL
+        OR ppcr.fecha_salida < ($3::date + INTERVAL '1 day' + make_interval(hours => $6))
+      )
       AND ($4::date IS NULL OR (
         ppel.fecha_programacion_despacho IS NOT NULL
         AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
@@ -508,6 +529,7 @@ export async function fetchDespachosCavaRielRows(range = {}) {
     to,
     fechaOp,
     PROGRAMACION_REZAGO_DAYS,
+    corte,
   ]);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r, { fechaSalida: true }));
 }

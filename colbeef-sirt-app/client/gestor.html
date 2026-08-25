@@ -399,7 +399,7 @@
   <!-- ═══ DASHBOARD ═══ -->
   <div id="viewDashboard">
     <div class="resumen-grid">
-      <!-- TARJETA 1: Salidas + Decomisos combinados -->
+      <!-- TARJETA 1: En cava (congelado) + Decomisos / Crudas -->
       <div class="tarjeta-resumen">
         <div class="tarjeta-split">
           <div class="split-left">
@@ -429,11 +429,16 @@
         <div class="resumen-icon">🚚</div>
       </div>
 
-      <!-- TARJETA 3: Total Juegos a Despachar -->
+      <!-- TARJETA 3: Total a despachar (único que baja) + despachados -->
       <div class="tarjeta-resumen">
         <div class="resumen-label">Total Juegos a Despachar</div>
-        <div class="resumen-valor" id="dashDespachos">—</div>
+        <div class="resumen-valor" id="dashDespachos" style="color:#dc2626;">—</div>
         <div class="resumen-sub" id="dashDespTurno"></div>
+        <div style="margin-top:0.45rem;font-size:0.82rem;color:#4b6358;">
+          Despachados: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
+          <span style="margin:0 0.35rem;opacity:0.5;">·</span>
+          Meta en cava: <strong id="dashTotalJuegos">—</strong>
+        </div>
         <div class="resumen-icon">🚛</div>
       </div>
     </div>
@@ -1463,8 +1468,15 @@ function updateDashboard(data) {
     var juegosEnCava = Number(
       data.juegosEnCava != null ? data.juegosEnCava : data.totalSalidas || 0
     );
-    var pendientes = Number(data.totalJuegosDespachar || 0);
-    var filasSalidasDia = Number(data.filasDespachosCavas != null ? data.filasDespachosCavas : 0);
+    var pendientes = Number(
+      data.faltan != null ? data.faltan : data.totalJuegosDespachar || 0
+    );
+    var despachadosNum = Number(data.despachados != null ? data.despachados : 0);
+    var juegosTotalesOperacion = Number(
+      data.juegosTotalesOperacion != null
+        ? data.juegosTotalesOperacion
+        : Math.max(juegosEnCava, pendientes + despachadosNum)
+    );
     var finalizada =
       !data.consultaSIRT &&
       juegosEnCava > 0 &&
@@ -1474,9 +1486,15 @@ function updateDashboard(data) {
     var filasCava = Number(data.filasEnCava != null ? data.filasEnCava : data.filasEstadoCavas || 0);
     var decoVinc = Number(data.totalDecomisosVinculadosCava != null ? data.totalDecomisosVinculadosCava : data.totalDecomisos || 0);
     var decoRango = Number(data.totalDecomisosEnRango != null ? data.totalDecomisosEnRango : 0);
+    if (data.diaOperativoCorteHora != null && isFinite(Number(data.diaOperativoCorteHora))) {
+      window.__DIA_OP_CORTE = Number(data.diaOperativoCorteHora);
+    }
+    // En cava = meta congelada del turno (no baja al despachar).
     var salidasMostrar =
-      data.consultaSIRT && pendientes > 0
-        ? pendientes
+      data.consultaSIRT
+        ? juegosEnCava > 0
+          ? juegosEnCava
+          : 0
         : juegosEnCava > 0
           ? juegosEnCava
           : filasCava > 0
@@ -1515,7 +1533,10 @@ function updateDashboard(data) {
       'dashCrudas',
       data.totalCrudas != null && data.totalCrudas !== undefined ? data.totalCrudas : '—'
     );
+    // Total a despachar: único que disminuye con cada salida.
     setText('dashDespachos', pendientes);
+    setText('dashDespachados', despachadosNum);
+    setText('dashTotalJuegos', juegosTotalesOperacion > 0 ? juegosTotalesOperacion : '—');
     if (data.turnoDespacho || data.turnoOperacion) {
       var turnoLbl = data.turnoDespacho || data.turnoOperacion;
       var fechaLbl = data.fechaConsulta ? String(data.fechaConsulta) : '';
@@ -1525,38 +1546,26 @@ function updateDashboard(data) {
       );
     }
 
-    // ── Barra progreso: solo salidas del día (no mezclar con stock en cava) ──
-    var progreso = data.progreso || 0;
-    if (data.consultaSIRT && filasSalidasDia === 0) progreso = 0;
+    // ── % contra meta en cava (congelada) ──
+    var progreso = Number(data.progreso || 0);
+    if (juegosTotalesOperacion > 0) {
+      progreso = Math.min(100, Math.round((despachadosNum / juegosTotalesOperacion) * 100));
+    }
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
     if (data.progresoMensaje) {
       var metaTxt = data.progresoMensaje;
       if (data.gestorBuild) metaTxt += ' · build ' + data.gestorBuild;
       setText('progresoMeta', metaTxt);
-    } else if (data.consultaSIRT) {
-      setText(
-        'progresoMeta',
-        'Servidor con código antiguo (sin programación por fecha). Haga git pull y restart en .137, luego Ctrl+F5.'
-      );
     } else {
-      var juegosTotalesOperacion =
-        data.juegosTotalesOperacion != null && data.juegosTotalesOperacion !== undefined
-          ? Number(data.juegosTotalesOperacion)
-          : Math.max(juegosEnCava, pendientes);
-      var despachados =
-        data.despachados != null && data.despachados !== undefined
-          ? Number(data.despachados)
-          : Math.max(0, juegosTotalesOperacion - pendientes);
       setText(
         'progresoMeta',
-        despachados +
+        despachadosNum +
           ' despachados de ' +
           juegosTotalesOperacion +
-          ' juegos totales — ' +
+          ' en cava — ' +
           pendientes +
-          ' pendientes' +
-          (data.consultaSIRT ? ' · Consulta SIRT.' : '')
+          ' por despachar'
       );
     }
 
@@ -2725,7 +2734,15 @@ function showSpinner(text){document.getElementById('spinnerText').textContent=te
 function hideSpinner(){document.getElementById('spinner').classList.remove('show');}
 function showAlert(id,type,msg){var el=document.getElementById(id);el.className='alert alert-'+type+' show';el.innerHTML=msg;if(type!=='error')setTimeout(function(){el.classList.remove('show');},7000);}
 function hideAlert(id){document.getElementById(id).classList.remove('show');}
-function fechaHoyISO(){var d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function fechaHoyISO(){
+  var d = new Date();
+  var corte = (typeof window !== 'undefined' && window.__DIA_OP_CORTE != null)
+    ? Number(window.__DIA_OP_CORTE)
+    : 4;
+  if (!isFinite(corte)) corte = 4;
+  if (d.getHours() < corte) d.setDate(d.getDate() - 1);
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
 function fechaISOaTexto(iso){if(!iso)return '—';var p=String(iso).split('-');if(p.length!==3)return iso;return p[2]+'/'+p[1]+'/'+p[0];}
 
 // ══════════════════════════════════════════════════════
