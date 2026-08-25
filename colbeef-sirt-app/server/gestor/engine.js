@@ -13,6 +13,7 @@ import {
   TIPOS_PRODUCTO,
   PUESTOS_EXCLUIDOS_DESP,
   PUESTOS_TEMPRANAS,
+  CAVA_DESPACHO_JUEGOS,
   OPL_DEFAULT,
   OPL_EXCEPCIONES_DEFAULT,
   OPL_MODELO,
@@ -614,6 +615,25 @@ function filasSalidasCavaDelDia(rows, fechaOpIso) {
   return (rows || []).filter((fila) => fechaOperativaDesdeCelda(fila[0]) === fechaOpIso);
 }
 
+/** Cava de origen en la matriz Despachos_Cavas. */
+const COL_CAVA_SALIDA = 6;
+
+/**
+ * Deja solo el pistoleo de salida de la cava de despacho. Cada cava de recepción
+ * mueve media parte del juego, así que sumar todas las cavas empareja las blancas
+ * y rojas de una con las cabezas y patas de la otra y fabrica juegos completos que
+ * nadie despachó.
+ */
+function filasSalidaDespachoReal(rows) {
+  const objetivo = String(process.env.GESTOR_CAVA_DESPACHO || CAVA_DESPACHO_JUEGOS)
+    .trim()
+    .toUpperCase();
+  if (!objetivo) return rows || [];
+  return (rows || []).filter(
+    (fila) => String(fila[COL_CAVA_SALIDA] ?? '').trim().toUpperCase() === objetivo
+  );
+}
+
 function hoyIsoLocal() {
   return fechaOperativaHoy();
 }
@@ -915,15 +935,17 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
+  // Solo el pistoleo de salida de la cava de despacho es un juego despachado.
+  const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
   // Meta: programación + salidas físicas del día operativo (crece, no baja).
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasTurno);
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
 
   // `despachosCavas` es la programación completa del turno e incluye piezas que ya
   // salieron: hay que restarlas o el mismo juego cuenta como pendiente y despachado.
   const programadosPendientes = despachosProgramadosSinSalidasDelDia(
     programadosBruto,
-    salidasTurno
+    salidasDespacho
   );
   const pendOpl = contarJuegosCompletosPorClave(
     programadosPendientes,
@@ -931,8 +953,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     claveOpl,
     ''
   );
-  // Despachados = solo salidas físicas del día operativo (fecha_salida SIRT hoy).
-  const despOpl = contarJuegosCompletosPorClave(salidasTurno, COLS_DESPACHO_CAVA, claveOpl, '');
+  const despOpl = contarJuegosCompletosPorClave(salidasDespacho, COLS_DESPACHO_CAVA, claveOpl, '');
 
   const opls = new Set([...Object.keys(totalsFrozen), ...Object.keys(pendOpl), ...Object.keys(despOpl)]);
   const todosOPL = [];
@@ -1330,7 +1351,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'salidas-fisicas-con-pendientes-netos-v8';
+export const GESTOR_BUILD = 'despacho-por-pistoleo-cava-paquete-v9';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1471,7 +1492,7 @@ export async function getDashboardData(range) {
         Number(oplLive.totalJuegos || 0),
         pendientes
       );
-      // Despachados = salidas físicas del día (no meta − pendientes: evita 99% sin salida real).
+      // Despachados = juegos pistoleados a la salida de la cava de despacho.
       const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
       const totalJuegosDespachar = pendientes;
       const juegosTotalesOperacion = Math.max(juegosEnCava, pendientes + despachados);
@@ -1489,7 +1510,7 @@ export async function getDashboardData(range) {
           pendientes +
           ' pendientes · ' +
           despachados +
-          ' despachados (fecha_salida SIRT hoy) · meta ' +
+          ' despachados (pistoleo de salida) · meta ' +
           juegosTotalesOperacion +
           ' · turno ' +
           turnoOp +

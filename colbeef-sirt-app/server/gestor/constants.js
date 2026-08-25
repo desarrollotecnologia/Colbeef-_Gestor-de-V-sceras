@@ -52,6 +52,14 @@ export const PUESTOS_EXCLUIDOS_DESP = [
 /** Códigos de puesto con salida temprana (referencia operativa / Apps Script). */
 export const PUESTOS_TEMPRANAS = ['NSF', '6505', 'ARIR', 'LHMV', 'WMERCAN'];
 
+/**
+ * Cava donde se arma el paquete visceral y cuyo pistoleo de salida cuenta como
+ * despacho real. Las cavas de recepción solo mueven mitades del juego (blancas y
+ * rojas en una, cabezas, patas y manos en otra), nunca un juego completo.
+ * Se puede cambiar sin tocar código con GESTOR_CAVA_DESPACHO.
+ */
+export const CAVA_DESPACHO_JUEGOS = 'Cava Paquete Visceral 2';
+
 /** Cuatro componentes necesarios para considerar completo un juego visceral. */
 export const TIPOS_PRODUCTO = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
