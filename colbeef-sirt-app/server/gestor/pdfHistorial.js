@@ -53,6 +53,28 @@ export async function ensurePdfHistorialTable() {
   `);
 }
 
+/**
+ * El historial guarda la fecha como `dd/MM/yyyy HH:mm` (fmtNow), formato que
+ * `new Date()` no interpreta y que MySQL rechazaría como created_at nulo.
+ */
+function parseFechaMeta(raw) {
+  if (raw instanceof Date) return Number.isNaN(raw.getTime()) ? new Date() : raw;
+  const texto = String(raw || '').trim();
+  if (!texto) return new Date();
+  const m = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T](\d{1,2}):(\d{2}))?/);
+  if (m) {
+    return new Date(
+      Number(m[3]),
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4] || 0),
+      Number(m[5] || 0)
+    );
+  }
+  const d = new Date(texto);
+  return Number.isNaN(d.getTime()) ? new Date() : d;
+}
+
 export async function insertPdfMetaMysql(row) {
   if (!isGestorMysqlReady()) return { ok: false, skipped: true };
   await ensurePdfHistorialTable();
@@ -72,7 +94,7 @@ export async function insertPdfMetaMysql(row) {
       row.tipo || null,
       Number(row.registros || 0),
       row.usuario || 'SISTEMA',
-      row.fecha ? new Date(row.fecha) : new Date(),
+      parseFechaMeta(row.fecha),
     ]
   );
   return { ok: true };
