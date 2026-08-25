@@ -1068,7 +1068,8 @@
 
     var logoClicks = 0;
     var logoTimer = null;
-    document.addEventListener('DOMContentLoaded', function () {
+
+    function onAuthUiReady() {
       if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
       var btnVolver = document.getElementById('btnVolverPortal');
       if (btnVolver) btnVolver.href = enlacePortalPrincipal();
@@ -1113,12 +1114,20 @@
         });
       }
 
+      // Marca auth lista y dispara sync SIRT (aunque DOMContentLoaded ya haya pasado).
       window.__colbeefAuthReady = true;
       if (typeof window.__colbeefPendingInit === 'function') {
-        window.__colbeefPendingInit();
+        var pending = window.__colbeefPendingInit;
         window.__colbeefPendingInit = null;
+        pending();
       }
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', onAuthUiReady);
+    } else {
+      onAuthUiReady();
+    }
   }
 })();
 </script>
@@ -1411,6 +1420,12 @@ function ejecutarSincronizacionAutomaticaSirt(opts) {
     })
     .withFailureHandler(function (e) {
       if (opts.useSpinner) hideSpinner();
+      console.error('SIRT sync:', e);
+      var msg = e && e.message ? String(e.message) : 'Error desconocido';
+      var meta = document.getElementById('progresoMeta');
+      if (meta) {
+        meta.textContent = 'No se pudo sincronizar SIRT: ' + msg + ' · Revise sesión (F5) y /api/health';
+      }
       syncFechaGlobalAModulos();
       loadDashboardData();
     })
