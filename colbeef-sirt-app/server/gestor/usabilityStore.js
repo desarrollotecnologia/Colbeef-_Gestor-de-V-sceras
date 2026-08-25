@@ -8,15 +8,21 @@ import fs from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import { isGestorMysqlReady, gestorQuery } from '../gestorDb.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(__dirname, '..', '..', '.env') });
+
 const DATA_PATH = path.join(__dirname, '..', 'data', 'usability-events.json');
 const MAX_EVENTS = 50000;
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
-const adminPassword = String(process.env.USABILITY_ADMIN_PASSWORD || '').trim();
 const adminTokens = new Map();
+
+function getAdminPassword() {
+  return String(process.env.USABILITY_ADMIN_PASSWORD || '').trim();
+}
 
 let cache = null;
 
@@ -107,7 +113,9 @@ export async function recordEvent(payload, reqMeta = {}) {
 }
 
 /** Valida la contraseña configurada y crea un token administrativo temporal. */
+/** Valida la contraseña configurada y crea un token administrativo temporal. */
 export function loginAdmin(password) {
+  const adminPassword = getAdminPassword();
   if (!adminPassword) {
     console.error('[usabilidad] Defina USABILITY_ADMIN_PASSWORD en .env');
     return null;

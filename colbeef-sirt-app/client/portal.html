@@ -19,8 +19,6 @@
     input:focus{outline:none;border-color:var(--vp);}
     .btn{width:100%;margin-top:1.2rem;padding:0.85rem;border:none;border-radius:12px;background:var(--vp);color:#fff;font-weight:700;font-size:1rem;cursor:pointer;}
     .btn:hover{filter:brightness(1.05);}
-    .btn:disabled{opacity:0.65;cursor:wait;}
-    .err{color:#dc2626;font-size:0.85rem;margin-top:0.75rem;display:none;}
   </style>
 </head>
 <body>
@@ -29,83 +27,38 @@
       <img src="/colbeef-icon.png" alt="Colbeef">
       <div>
         <h1>Gestor de Vísceras</h1>
-        <p>Usuario y contraseña para ingresar</p>
+        <p>Indique su nombre para continuar</p>
       </div>
     </div>
 
-    <form id="portalForm" autocomplete="on">
-      <label for="usuarioInput">Usuario</label>
-      <input id="usuarioInput" name="username" type="text" placeholder="Ej: sergio anaya" required autocomplete="username">
-      <label for="passwordInput">Contraseña</label>
-      <input id="passwordInput" name="password" type="password" placeholder="Contraseña" required autocomplete="current-password">
-      <button class="btn" id="loginBtn" type="submit">Entrar al gestor →</button>
-      <p class="err" id="loginErr"></p>
+    <form id="portalForm">
+      <label for="usuarioInput">Nombre del operador</label>
+      <input id="usuarioInput" type="text" placeholder="Ej: Sergio Anaya" required autocomplete="username">
+      <button class="btn" type="submit">Entrar al gestor →</button>
     </form>
   </div>
 
   <script src="/usabilidad-tracker.js"></script>
   <script>
     (function () {
-      var TOKEN_KEY = 'colbeef_auth_token';
       var input = document.getElementById('usuarioInput');
-      var pass = document.getElementById('passwordInput');
-      var err = document.getElementById('loginErr');
-      var btn = document.getElementById('loginBtn');
       var params = new URLSearchParams(location.search);
       var pre = params.get('usuario');
+      var stored = '';
+      try { stored = localStorage.getItem('colbeef_usuario') || ''; } catch (_) {}
       if (pre) input.value = pre;
-
-      function showErr(msg) {
-        err.textContent = msg || '';
-        err.style.display = msg ? 'block' : 'none';
-      }
-
-      // Si ya hay sesión válida, ir al gestor
-      var existing = sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
-      if (existing) {
-        fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + existing } })
-          .then(function (r) { return r.json(); })
-          .then(function (data) {
-            if (!data.success) return;
-            localStorage.setItem('colbeef_usuario', data.usuario);
-            location.replace('/gestor.html?usuario=' + encodeURIComponent(data.usuario));
-          })
-          .catch(function () {});
-      }
+      else if (stored && stored !== 'anonimo') input.value = stored;
 
       document.getElementById('portalForm').addEventListener('submit', function (e) {
         e.preventDefault();
         var user = input.value.trim();
-        var password = pass.value;
-        if (!user || !password) return;
-        showErr('');
-        btn.disabled = true;
-        fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ usuario: user, password: password }),
-        })
-          .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); })
-          .then(function (res) {
-            btn.disabled = false;
-            if (!res.ok || !res.d.success) {
-              showErr(res.d.message || 'No se pudo iniciar sesión');
-              return;
-            }
-            sessionStorage.setItem(TOKEN_KEY, res.d.token);
-            localStorage.setItem(TOKEN_KEY, res.d.token);
-            localStorage.setItem('colbeef_usuario', res.d.usuario);
-            localStorage.setItem('colbeef_rol', res.d.rol || 'operador');
-            if (window.ColbeefUsage) {
-              ColbeefUsage.setUsuario(res.d.usuario);
-              ColbeefUsage.track('portal_enter', 'portal', 'Login OK');
-            }
-            location.href = '/gestor.html?usuario=' + encodeURIComponent(res.d.usuario);
-          })
-          .catch(function () {
-            btn.disabled = false;
-            showErr('Error de red o servidor. ¿MySQL y el API están activos?');
-          });
+        if (!user) return;
+        localStorage.setItem('colbeef_usuario', user);
+        if (window.ColbeefUsage) {
+          ColbeefUsage.setUsuario(user);
+          ColbeefUsage.track('portal_enter', 'portal', 'Entrada con nombre');
+        }
+        location.href = '/gestor.html?usuario=' + encodeURIComponent(user);
       });
     })();
   </script>

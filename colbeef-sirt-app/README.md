@@ -60,25 +60,13 @@ Si el usuario `gestor` también tiene permiso `CREATE`, el Node puede crear la B
 Tablas: `usuarios`, `auditoria`, `usability_events`, `sesion_lock`, `gestor_state`, `schema_meta`.  
 Si MySQL no está disponible, el programa sigue con JSON local.
 
-### Login real (portal)
+### Acceso (solo nombre)
 
-El portal pide **usuario + contraseña** (tabla `usuarios` en MySQL). La API exige token Bearer.
+`/portal.html` pide el **nombre del operador** (sin contraseña) y abre el gestor.  
+Ese nombre se usa en usabilidad, auditoría y PDF.
 
-En `.env` (primera vez, crea el admin automáticamente):
-
-```env
-GESTOR_AUTH_REQUIRED=true
-GESTOR_ADMIN_USER=admin
-GESTOR_ADMIN_PASSWORD="su_clave_segura"
-```
-
-Crear más operadores:
-
-```bash
-npm run user:create -- --user=jperez --pass=clave123 --rol=operador
-```
-
-Roles: `operador` · `supervisor` · `admin`. Clic en el badge del usuario en el gestor cierra sesión.
+Panel usabilidad: **5 clics** en el logo + contraseña `USABILITY_ADMIN_PASSWORD` del `.env`.  
+También: `http://IP:3001/usabilidad.html`
 
 ---
 
@@ -122,6 +110,15 @@ npm run start:lan
 ```
 
 Abra `http://<IP-de-esta-PC>:3001/gestor.html` desde cualquier equipo en la LAN.
+
+### Actualizar cambios en el servidor 205
+
+Doble clic (o clic derecho → Ejecutar como administrador):
+
+- `colbeef-sirt-app\actualizar-y-reiniciar.bat`
+- o desde la raíz del repo: `actualizar-y-reiniciar.bat`
+
+Hace: `git pull` → `npm install` → `npm run build` → reinicia el servicio **Colbeef SIRT API**.
 
 O en un solo comando:
 

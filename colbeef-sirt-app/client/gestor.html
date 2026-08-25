@@ -987,163 +987,132 @@
 <script>
 (function () {
   var portalReturn = window.COLBEEF_PORTAL_RETURN || '/portal.html';
-  var TOKEN_KEY = 'colbeef_auth_token';
+  window.__colbeefAuthReady = true;
 
-  function authToken() {
-    try {
-      return sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY) || '';
-    } catch (_) {
-      return '';
-    }
+  var params = new URLSearchParams(location.search);
+  var fromUrl = params.get('usuario');
+  var stored = '';
+  try { stored = localStorage.getItem('colbeef_usuario') || ''; } catch (_) {}
+  if (fromUrl) {
+    try { localStorage.setItem('colbeef_usuario', fromUrl.trim()); } catch (_) {}
+    stored = fromUrl.trim();
   }
-
-  function clearAuth() {
-    try {
-      sessionStorage.removeItem(TOKEN_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-    } catch (_) {}
-  }
-
-  var token = authToken();
-  if (!token) {
+  if (!stored || stored === 'anonimo') {
     location.replace('/portal.html');
     return;
   }
 
-  fetch('/api/auth/me', { headers: { Authorization: 'Bearer ' + token } })
-    .then(function (r) {
-      return r.json().then(function (d) {
-        return { ok: r.ok, d: d };
-      });
-    })
-    .then(function (res) {
-      if (!res.ok || !res.d.success) {
-        clearAuth();
-        location.replace('/portal.html');
-        return;
+  function usuarioActual() {
+    return (
+      (window.ColbeefUsage && window.ColbeefUsage.usuario) ||
+      localStorage.getItem('colbeef_usuario') ||
+      stored ||
+      ''
+    );
+  }
+
+  function enlacePortalPrincipal() {
+    var url = portalReturn;
+    try {
+      var u = new URL(portalReturn, location.origin);
+      var user = usuarioActual();
+      if (user) u.searchParams.set('usuario', String(user).trim());
+      url = u.toString();
+    } catch (_) {}
+    return url;
+  }
+
+  window.volverPortalPrincipal = function (event) {
+    if (event && event.preventDefault) event.preventDefault();
+    try {
+      if (window.ColbeefUsage && window.ColbeefUsage.track) {
+        window.ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
       }
-      localStorage.setItem('colbeef_usuario', res.d.usuario);
-      localStorage.setItem('colbeef_rol', res.d.rol || 'operador');
-      bootGestor(res.d.usuario);
+    } catch (_) {}
+    location.assign(enlacePortalPrincipal());
+    return false;
+  };
+
+  window.cambiarOperador = function () {
+    try { localStorage.removeItem('colbeef_usuario'); } catch (_) {}
+    location.replace('/portal.html');
+  };
+
+  var logoClicks = 0;
+  var logoTimer = null;
+
+  function openUsabilidadAdmin() {
+    var pwd = prompt('Contraseña de administración (usabilidad):');
+    if (!pwd) return;
+    fetch('/api/usability/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pwd }),
     })
-    .catch(function () {
-      clearAuth();
-      location.replace('/portal.html');
-    });
-
-  function bootGestor(usuarioSesion) {
-    var params = new URLSearchParams(location.search);
-    var fromUrl = params.get('usuario') || usuarioSesion;
-    if (fromUrl) localStorage.setItem('colbeef_usuario', String(fromUrl).trim());
-
-    function usuarioActual() {
-      return (
-        (window.ColbeefUsage && window.ColbeefUsage.usuario) ||
-        localStorage.getItem('colbeef_usuario') ||
-        fromUrl ||
-        ''
-      );
-    }
-
-    function enlacePortalPrincipal() {
-      var usuario = usuarioActual();
-      var url = portalReturn;
-      try {
-        var u = new URL(portalReturn, location.origin);
-        if (usuario) u.searchParams.set('usuario', String(usuario).trim());
-        else if (!u.searchParams.has('usuario')) u.searchParams.set('usuario', '');
-        url = u.toString();
-      } catch (_) {
-        var sep = portalReturn.indexOf('?') >= 0 ? '&' : '?';
-        url = portalReturn + sep + 'usuario=' + encodeURIComponent(String(usuario).trim());
-      }
-      return url;
-    }
-
-    window.cerrarSesionGestor = function () {
-      var t = authToken();
-      fetch('/api/auth/logout', {
-        method: 'POST',
-        headers: t ? { Authorization: 'Bearer ' + t } : {},
-      }).finally(function () {
-        clearAuth();
-        location.replace('/portal.html');
-      });
-    };
-
-    window.volverPortalPrincipal = function (event) {
-      if (event && event.preventDefault) event.preventDefault();
-      try {
-        if (window.ColbeefUsage && window.ColbeefUsage.track) {
-          window.ColbeefUsage.track('portal_back', 'gestor', 'Volver al programa principal');
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.success) {
+          alert(data.message || 'Contraseña incorrecta');
+          return;
         }
-      } catch (_) {}
-      location.assign(enlacePortalPrincipal());
-      return false;
-    };
+        sessionStorage.setItem('colbeef_usabilidad_token', data.token);
+        if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
+        location.href = '/usabilidad.html';
+      })
+      .catch(function () {
+        alert('No se pudo verificar la contraseña. ¿El servicio está activo?');
+      });
+  }
 
-    var logoClicks = 0;
-    var logoTimer = null;
+  function onUiReady() {
+    if (window.ColbeefUsage) {
+      ColbeefUsage.setUsuario(usuarioActual());
+      ColbeefUsage.init({ page: 'gestor' });
+    }
+    var btnVolver = document.getElementById('btnVolverPortal');
+    if (btnVolver) btnVolver.href = enlacePortalPrincipal();
 
-    function onAuthUiReady() {
-      if (window.ColbeefUsage) ColbeefUsage.init({ page: 'gestor' });
-      var btnVolver = document.getElementById('btnVolverPortal');
-      if (btnVolver) btnVolver.href = enlacePortalPrincipal();
-
-      var badge = document.getElementById('usuarioBadge');
-      if (badge) {
-        var rol = localStorage.getItem('colbeef_rol') || '';
-        badge.textContent = (usuarioActual() || '') + (rol ? ' · ' + rol : '');
-        badge.style.display = 'inline-flex';
-        badge.title = 'Clic para cerrar sesión';
-        badge.style.cursor = 'pointer';
-        badge.addEventListener('click', function () {
-          if (confirm('¿Cerrar sesión?')) window.cerrarSesionGestor();
-        });
-      }
-
-      var logo = document.getElementById('logoIconGestor');
-      if (logo) {
-        logo.style.cursor = 'pointer';
-        logo.addEventListener('click', function () {
-          logoClicks++;
-          clearTimeout(logoTimer);
-          logoTimer = setTimeout(function () { logoClicks = 0; }, 900);
-          if (logoClicks >= 5) {
-            logoClicks = 0;
-            var pwd = prompt('Contraseña de administración:');
-            if (!pwd) return;
-            fetch('/api/usability/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ password: pwd }),
-            })
-              .then(function (r) { return r.json(); })
-              .then(function (data) {
-                if (!data.success) { alert('Contraseña incorrecta'); return; }
-                sessionStorage.setItem('colbeef_usabilidad_token', data.token);
-                if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
-                location.href = '/usabilidad.html';
-              })
-              .catch(function () { alert('No se pudo verificar la contraseña'); });
-          }
-        });
-      }
-
-      // Marca auth lista y dispara sync SIRT (aunque DOMContentLoaded ya haya pasado).
-      window.__colbeefAuthReady = true;
-      if (typeof window.__colbeefPendingInit === 'function') {
-        var pending = window.__colbeefPendingInit;
-        window.__colbeefPendingInit = null;
-        pending();
-      }
+    var badge = document.getElementById('usuarioBadge');
+    if (badge) {
+      badge.textContent = usuarioActual();
+      badge.style.display = 'inline-flex';
+      badge.title = 'Clic para cambiar de operador';
+      badge.style.cursor = 'pointer';
+      badge.onclick = function () {
+        if (confirm('¿Cambiar de operador?')) window.cambiarOperador();
+      };
     }
 
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', onAuthUiReady);
-    } else {
-      onAuthUiReady();
+    var logo = document.getElementById('logoIconGestor');
+    function onLogoClick(e) {
+      if (e) e.stopPropagation();
+      logoClicks++;
+      clearTimeout(logoTimer);
+      logoTimer = setTimeout(function () { logoClicks = 0; }, 1200);
+      if (logoClicks >= 5) {
+        logoClicks = 0;
+        openUsabilidadAdmin();
+      }
     }
+    if (logo) {
+      logo.style.cursor = 'pointer';
+      logo.title = 'Colbeef';
+      logo.addEventListener('click', onLogoClick);
+      var img = logo.querySelector('img');
+      if (img) img.addEventListener('click', onLogoClick);
+    }
+
+    if (typeof window.__colbeefPendingInit === 'function') {
+      var pending = window.__colbeefPendingInit;
+      window.__colbeefPendingInit = null;
+      pending();
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', onUiReady);
+  } else {
+    onUiReady();
   }
 })();
 </script>
@@ -2003,7 +1972,7 @@ function cargarCruceDecomisos(opts) {
 }
 function generarPDF() {
   showSpinner('Generando PDF...');
-  google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}showAlert('decAlert','success','✓ PDF generado. <button type="button" class="historial-link" style="display:inline;border:none;cursor:pointer;" onclick="abrirPdfHistorialAuth(\''+(res.id||'')+'\',\''+(String(res.nombre||'documento.pdf').replace(/'/g,''))+'\',false)">Abrir PDF</button>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
+  google.script.run.withSuccessHandler(function(res){hideSpinner();if(!res||!res.success){showAlert('decAlert','error','Error: '+(res?res.message:''));return;}var href=res.url||('/api/historial/pdf/'+encodeURIComponent(res.id||''));showAlert('decAlert','success','✓ PDF generado: <a href="'+href+'" target="_blank" rel="noopener" style="color:#065f46;font-weight:bold;">Abrir PDF</a>');}).withFailureHandler(function(e){hideSpinner();showAlert('decAlert','error',e.message);}).generarPDFDecomisos();
 }
 function renderTablaDecomisos(resultados) {
   var tbody=document.getElementById('tablaDecomisos');
@@ -2667,70 +2636,6 @@ function generarInforme(){
 // ══════════════════════════════════════════════════════
 // HISTORIAL
 // ══════════════════════════════════════════════════════
-function authHeadersGestor() {
-  var h = {};
-  try {
-    var t =
-      sessionStorage.getItem('colbeef_auth_token') ||
-      localStorage.getItem('colbeef_auth_token');
-    if (t) h.Authorization = 'Bearer ' + t;
-  } catch (_) {}
-  return h;
-}
-
-/** Abre o descarga PDF con token (una pestaña nueva no envía Authorization sola). */
-function abrirPdfHistorialAuth(id, nombre, download) {
-  if (!id) {
-    alert('PDF sin identificador');
-    return;
-  }
-  var url =
-    '/api/historial/pdf/' +
-    encodeURIComponent(id) +
-    (download ? '?download=1' : '');
-  fetch(url, { headers: authHeadersGestor() })
-    .then(function (r) {
-      if (r.status === 401) {
-        location.replace('/portal.html');
-        throw new Error('Sesión expirada');
-      }
-      if (!r.ok) throw new Error('No se pudo obtener el PDF (' + r.status + ')');
-      return r.blob();
-    })
-    .then(function (blob) {
-      var obj = URL.createObjectURL(blob);
-      if (download) {
-        var a = document.createElement('a');
-        a.href = obj;
-        a.download = nombre || 'documento.pdf';
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(function () {
-          URL.revokeObjectURL(obj);
-        }, 4000);
-      } else {
-        var w = window.open(obj, '_blank');
-        if (!w) {
-          var a2 = document.createElement('a');
-          a2.href = obj;
-          a2.target = '_blank';
-          a2.rel = 'noopener';
-          document.body.appendChild(a2);
-          a2.click();
-          a2.remove();
-        }
-        setTimeout(function () {
-          URL.revokeObjectURL(obj);
-        }, 120000);
-      }
-    })
-    .catch(function (e) {
-      alert(e.message || 'Error al abrir PDF');
-    });
-}
-window.abrirPdfHistorialAuth = abrirPdfHistorialAuth;
-
 function loadHistorial(filtro){
   document.getElementById('historialContainer').innerHTML='<p class="empty-state">Cargando...</p>';
   var opts = filtro || {};
@@ -2761,21 +2666,17 @@ function loadHistorial(filtro){
     c.innerHTML=res.historial.map(function(item){
       var id = (item.id || '').replace(/"/g, '');
       var nom = (item.nombre || 'documento.pdf').replace(/"/g, '');
+      var href = item.url || ('/api/historial/pdf/' + encodeURIComponent(id));
       var abrir = id
-        ? '<button type="button" class="historial-link" data-pdf-id="'+id+'" data-pdf-nombre="'+nom+'" data-pdf-dl="0">Abrir</button>'
-          + '<button type="button" class="historial-link" style="background:#374151;margin-left:0.35rem;" data-pdf-id="'+id+'" data-pdf-nombre="'+nom+'" data-pdf-dl="1">Descargar</button>'
+        ? '<a class="historial-link" href="'+href+'" target="_blank" rel="noopener">Abrir</a>'
+          + '<a class="historial-link" style="background:#374151;margin-left:0.35rem;" href="'+href+'?download=1" download="'+nom+'">Descargar</a>'
         : '<span style="font-size:0.8rem;color:#991b1b;">Sin enlace — regenere el PDF</span>';
       return '<div class="historial-item">'
         +'<div><div style="font-weight:600;color:var(--vp);">📄 '+(item.nombre||'Sin nombre')+'</div>'
-        +'<div style="font-size:0.8rem;color:var(--gris);">📅 '+(item.fecha||'—')+' | 🏷️ '+(item.tipo||'—')+' | 👤 '+(item.usuario||'—')+' | 📊 '+(item.registros||0)+' registros</div></div>'
+        +'<div style="font-size:0.8rem;color:var(--gris);">📅 '+(item.fecha||'—')+' | 🏷️ '+(item.tipo||'—')+' | 📊 '+(item.registros||0)+' registros</div></div>'
         + abrir
         +'</div>';
     }).join('');
-    c.querySelectorAll('[data-pdf-id]').forEach(function(btn){
-      btn.addEventListener('click', function(){
-        abrirPdfHistorialAuth(btn.getAttribute('data-pdf-id'), btn.getAttribute('data-pdf-nombre'), btn.getAttribute('data-pdf-dl')==='1');
-      });
-    });
   }).withFailureHandler(function(e){document.getElementById('historialContainer').innerHTML='<p class="empty-state" style="color:#991b1b;">Error: '+e.message+'</p>';}).getHistorialPDF(opts);
 }
 

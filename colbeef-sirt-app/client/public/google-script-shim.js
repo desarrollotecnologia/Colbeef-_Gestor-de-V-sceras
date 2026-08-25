@@ -29,10 +29,6 @@
               var h = { 'Content-Type': 'application/json' };
               try {
                 h['X-Colbeef-Usuario'] = localStorage.getItem('colbeef_usuario') || 'anonimo';
-                var t =
-                  sessionStorage.getItem('colbeef_auth_token') ||
-                  localStorage.getItem('colbeef_auth_token');
-                if (t) h.Authorization = 'Bearer ' + t;
               } catch (_) {
                 h['X-Colbeef-Usuario'] = 'anonimo';
               }
@@ -41,14 +37,6 @@
             body: JSON.stringify({ method: String(prop), args: args }),
           })
             .then(function (r) {
-              if (r.status === 401) {
-                try {
-                  sessionStorage.removeItem('colbeef_auth_token');
-                  localStorage.removeItem('colbeef_auth_token');
-                } catch (_) {}
-                location.replace('/portal.html');
-                throw new Error('Sesión expirada');
-              }
               return r.json();
             })
             .then(function (data) {

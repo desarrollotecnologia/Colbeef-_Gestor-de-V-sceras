@@ -175,5 +175,6 @@ export function tokenFromReq(req) {
 }
 
 export function isAuthRequired() {
-  return String(process.env.GESTOR_AUTH_REQUIRED || 'true').toLowerCase() !== 'false';
+  // Por defecto sin login. Active con GESTOR_AUTH_REQUIRED=true si se necesita.
+  return String(process.env.GESTOR_AUTH_REQUIRED || 'false').toLowerCase() === 'true';
 }

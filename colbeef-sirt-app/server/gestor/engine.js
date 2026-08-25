@@ -51,6 +51,7 @@ import {
   migratePdfHistorialJsonToMysql,
 } from './pdfHistorial.js';
 import { isGestorMysqlReady } from '../gestorDb.js';
+import { registerPdfFonts } from './pdfFonts.js';
 import {
   fetchEstadoCavasRows,
   fetchReporteDecomisosRows,
@@ -3236,14 +3237,23 @@ export async function generarPDFDecomisos(opts) {
 async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
   return await new Promise((resolve, reject) => {
     const doc = new PDFDocument({ margin: 36, size: 'LETTER' });
+    const fonts = registerPdfFonts(doc);
     const chunks = [];
     doc.on('data', (c) => chunks.push(c));
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
 
-    doc.font('Helvetica-Bold').fontSize(15).fillColor('#166534').text('LISTADO DE DECOMISOS VÍSCERAS CON SALIDA', { align: 'center' });
+    doc
+      .font(fonts.bold)
+      .fontSize(15)
+      .fillColor('#166534')
+      .text('LISTADO DE DECOMISOS VÍSCERAS CON SALIDA', { align: 'center' });
     doc.moveDown(0.35);
-    doc.font('Helvetica').fontSize(9).fillColor('#4b5563').text(`Fecha de generación: ${fecha}`, { align: 'center' });
+    doc
+      .font(fonts.regular)
+      .fontSize(9)
+      .fillColor('#4b5563')
+      .text(`Fecha de generación: ${fecha}`, { align: 'center' });
     doc.moveDown(0.9);
 
     drawThemedPdfTable(
@@ -3251,24 +3261,34 @@ async function generarPdfDecomisosBuffer(rows, resumenCrudas, fecha) {
       ['Código', 'Destino', 'Decomisos'],
       rows.map((r) => [r.id, r.destino, r.decomiso]),
       [98, 312, 130],
-      { theme: 'decomisos', wrapRows: true }
+      { theme: 'decomisos', wrapRows: true, fonts }
     );
 
     if (resumenCrudas.length) {
       doc.moveDown(0.85);
-      doc.font('Helvetica-Bold').fontSize(11).fillColor('#9a3412').text('RESUMEN DE CRUDAS - VÍSCERAS BLANCAS');
+      doc
+        .font(fonts.bold)
+        .fontSize(11)
+        .fillColor('#9a3412')
+        .text('RESUMEN DE CRUDAS - VÍSCERAS BLANCAS');
       doc.moveDown(0.35);
       drawThemedPdfTable(
         doc,
         ['PUESTO', 'CANTIDAD', 'OPL', 'CÓDIGOS'],
         resumenCrudas.map((x) => [x.puesto, x.cantidad, x.opl, x.codigos]),
         [198, 52, 72, 218],
-        { theme: 'crudas', wrapRows: true }
+        { theme: 'crudas', wrapRows: true, fonts }
       );
     }
 
     doc.moveDown(0.85);
-    doc.font('Helvetica').fontSize(8).fillColor('#6b7280').text(`Documento generado automáticamente · Gestor de Vísceras Colbeef · ${fecha}`, { align: 'center' });
+    doc
+      .font(fonts.regular)
+      .fontSize(8)
+      .fillColor('#6b7280')
+      .text(`Documento generado automáticamente | Gestor de Vísceras Colbeef | ${fecha}`, {
+        align: 'center',
+      });
     doc.end();
   });
 }
@@ -3304,6 +3324,7 @@ const PDF_TABLE_THEMES = {
 function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   const themeKey = opts.theme === 'crudas' ? 'crudas' : opts.theme === 'producto' ? 'producto' : 'decomisos';
   const t = PDF_TABLE_THEMES[themeKey];
+  const fonts = opts.fonts || { regular: 'Helvetica', bold: 'Helvetica-Bold' };
   const startX = doc.x;
   const minRowH = Number(opts.minRowH || 18);
   const wrapRows = Boolean(opts.wrapRows);
@@ -3312,7 +3333,7 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   const leftPad = 5;
 
   const textBlockHeight = (text, colW) => {
-    doc.font('Helvetica').fontSize(fontSize);
+    doc.font(fonts.regular).fontSize(fontSize);
     const inner = Math.max(8, colW - leftPad * 2);
     return doc.heightOfString(String(text ?? ''), { width: inner, align: 'left' });
   };
@@ -3324,7 +3345,7 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
   };
 
   const paintHeader = (y0, h) => {
-    doc.font('Helvetica-Bold').fontSize(fontSize);
+    doc.font(fonts.bold).fontSize(fontSize);
     headers.forEach((hText, i) => {
       const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
       doc.save();
@@ -3352,7 +3373,7 @@ function drawThemedPdfTable(doc, headers, rows, widths, opts = {}) {
       y += headerH;
     }
     const fill = rowIdx % 2 === 0 ? t.stripeA : t.stripeB;
-    doc.font('Helvetica').fontSize(fontSize);
+    doc.font(fonts.regular).fontSize(fontSize);
     r.forEach((v, i) => {
       const x = startX + widths.slice(0, i).reduce((a, b) => a + b, 0);
       doc.save();

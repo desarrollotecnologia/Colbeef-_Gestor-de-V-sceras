@@ -137,9 +137,10 @@ function auditRest(req, accion, modulo, detalle, meta = {}) {
   );
 }
 
-/** Exige sesión en casi toda la API; login/health/usabilidad-admin quedan públicos o con su propio token. */
+/** Auth desactivada por defecto: la API es abierta en LAN. */
 app.use(async (req, res, next) => {
   if (!req.path.startsWith('/api')) return next();
+  if (!isAuthRequired()) return next();
   if (PUBLIC_API_PATHS.has(req.path)) return next();
   if (req.path === '/api/usability/stats') return next();
   return requireAuth(req, res, next);
@@ -682,7 +683,7 @@ function noCacheGestor(_req, res, next) {
 
 /** Rutas del gestor antes de static: evita servir archivos v2 antiguos. */
 app.get('/', noCacheGestor, (_req, res) => {
-  res.sendFile(path.join(clientRoot, 'portal.html'));
+  res.redirect(302, '/portal.html');
 });
 
 app.get('/portal.html', noCacheGestor, (_req, res) => {
