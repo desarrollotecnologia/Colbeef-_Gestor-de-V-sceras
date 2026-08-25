@@ -57,18 +57,11 @@ if ($svc.Status -eq "Running") {
   Write-Host ("[ERROR] Estado del servicio: {0}" -f $svc.Status) -ForegroundColor Red
 }
 
-$listening = netstat -ano | Select-String ":$port " | Select-String "LISTENING"
-if ($listening) {
-  Write-Host "[OK] Puerto $port en escucha." -ForegroundColor Green
-  Log "Puerto $port OK"
-} else {
-  Write-Host "[AVISO] Puerto $port aun no responde." -ForegroundColor Yellow
-  Log "Puerto $port sin LISTENING"
-}
-
-# El puerto puede seguir ocupado por el proceso anterior: se consulta la API.
+# El socket tarda unos segundos mas que el servicio, y el puerto puede seguir
+# ocupado por el proceso anterior: el veredicto lo da la API, con reintentos.
+Write-Host "Esperando respuesta de la API..." -ForegroundColor Cyan
 $health = $null
-for ($i = 1; $i -le 6; $i++) {
+for ($i = 1; $i -le 8; $i++) {
   try {
     $health = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/health" -TimeoutSec 10
     break
@@ -78,10 +71,18 @@ for ($i = 1; $i -le 6; $i++) {
 }
 if ($health) {
   Write-Host ("[OK] API responde. db={0} sirt={1} mysql={2}" -f $health.db, $health.sirt, $health.gestorMysql.ready) -ForegroundColor Green
-  Log "API OK db=$($health.db) mysql=$($health.gestorMysql.ready)"
+  Log "API OK db=$($health.db) sirt=$($health.sirt) mysql=$($health.gestorMysql.ready)"
 } else {
   Write-Host "[ERROR] La API no responde en /api/health." -ForegroundColor Red
   Log "API sin respuesta"
+  $listening = netstat -ano | Select-String ":$port " | Select-String "LISTENING"
+  if ($listening) {
+    Write-Host "     El puerto $port si esta en escucha: revise server\data\server.log" -ForegroundColor Yellow
+    Log "Diagnostico: puerto $port en escucha pero API muda"
+  } else {
+    Write-Host "     Nadie escucha en el puerto ${port}: el servidor no llego a arrancar." -ForegroundColor Yellow
+    Log "Diagnostico: puerto $port sin LISTENING"
+  }
 }
 
 Write-Host ""
