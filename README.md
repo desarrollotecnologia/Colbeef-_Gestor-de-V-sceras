@@ -328,6 +328,30 @@ Valores admitidos para `SIRT_DESPACHOS_FUENTE`:
 - `erp`: información del despacho de desposte.
 - `riel`: salidas físicas que ya tienen `fecha_salida`.
 
+### MySQL propio del gestor (servidor 205)
+
+Independiente de SIRT. Guarda control interno (usuarios, auditoría, usabilidad, estado). Al arrancar crea BD/tablas si faltan.
+
+| Variable | Descripción | Default |
+|---|---|---|
+| `GESTOR_MYSQL_ENABLED` | Activa MySQL del gestor | `true` |
+| `GESTOR_MYSQL_HOST` | Host MySQL (mismo 205) | `127.0.0.1` |
+| `GESTOR_MYSQL_PORT` | Puerto | `3306` |
+| `GESTOR_MYSQL_DB` | Nombre de la base | `colbeef_gestor` |
+| `GESTOR_MYSQL_USER` | Usuario | `gestor` |
+| `GESTOR_MYSQL_PASSWORD` | Contraseña | (requerida) |
+
+```env
+GESTOR_MYSQL_ENABLED=true
+GESTOR_MYSQL_HOST=127.0.0.1
+GESTOR_MYSQL_PORT=3306
+GESTOR_MYSQL_DB=colbeef_gestor
+GESTOR_MYSQL_USER=gestor
+GESTOR_MYSQL_PASSWORD="cambiar_mysql"
+```
+
+En el 205: `npm run mysql:init` para validar. Si MySQL no responde, el gestor sigue con JSON local.
+
 ### Usabilidad
 
 | Variable | Descripción |

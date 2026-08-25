@@ -27,6 +27,39 @@ Variables requeridas:
 - `POSTGRES_PASSWORD`
 - `SERVER_PORT=3001`
 
+### MySQL propio (servidor 205)
+
+SIRT sigue en PostgreSQL (solo lectura). En el **mismo PC 205** instale MySQL y configure en `.env`:
+
+```env
+GESTOR_MYSQL_ENABLED=true
+GESTOR_MYSQL_HOST=127.0.0.1
+GESTOR_MYSQL_PORT=3306
+GESTOR_MYSQL_DB=colbeef_gestor
+GESTOR_MYSQL_USER=gestor
+GESTOR_MYSQL_PASSWORD="su_clave"
+```
+
+Al arrancar el gestor (`npm start` / servicio Windows) crea la base `colbeef_gestor` y las tablas si faltan. Para probar:
+
+```bash
+npm run mysql:init
+```
+
+**Una sola vez en el 205 (como root de MySQL):**
+
+```sql
+CREATE DATABASE IF NOT EXISTS colbeef_gestor
+  CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS 'gestor'@'localhost' IDENTIFIED BY 'su_clave';
+GRANT ALL PRIVILEGES ON colbeef_gestor.* TO 'gestor'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+Si el usuario `gestor` también tiene permiso `CREATE`, el Node puede crear la BD solo.  
+Tablas: `usuarios`, `auditoria`, `usability_events`, `sesion_lock`, `gestor_state`, `schema_meta`.  
+Si MySQL no está disponible, el programa sigue con JSON local.
+
 ---
 
 ## Cliente React

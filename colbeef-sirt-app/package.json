@@ -22,7 +22,8 @@
     "start": "cross-env NODE_ENV=production node server/index.js",
     "start:lan": "npm run build && cross-env NODE_ENV=production node server/index.js",
     "service:install": "node scripts/service-install.cjs",
-    "service:uninstall": "node scripts/service-uninstall.cjs"
+    "service:uninstall": "node scripts/service-uninstall.cjs",
+    "mysql:init": "node scripts/mysql-init.mjs"
   },
   "dependencies": {
     "chart.js": "^4.4.1",
@@ -32,6 +33,7 @@
     "express": "^4.21.0",
     "html2canvas": "^1.4.1",
     "multer": "^2.1.1",
+    "mysql2": "^3.14.0",
     "pdfkit": "^0.15.0",
     "pg": "^8.13.0"
   },

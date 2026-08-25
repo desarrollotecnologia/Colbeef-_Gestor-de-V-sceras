@@ -32,6 +32,13 @@ import {
   getUsageStats,
   buildGestorLink,
 } from './gestor/usabilityStore.js';
+import {
+  initGestorMysql,
+  closeGestorMysql,
+  getGestorMysqlStatus,
+  isGestorMysqlReady,
+} from './gestorDb.js';
+import { ensureGestorSchema } from './gestor/mysqlSchema.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
@@ -138,16 +145,32 @@ app.get('/api/usability/enlace', (req, res) => {
 });
 
 app.get('/api/health', async (_req, res) => {
+  const mysqlStatus = getGestorMysqlStatus();
   try {
     await query('SELECT 1 AS ok');
     res.json({
       ok: true,
       db: true,
+      sirt: true,
+      gestorMysql: {
+        enabled: mysqlStatus.enabled,
+        ready: mysqlStatus.ready,
+        database: mysqlStatus.database,
+        lastError: mysqlStatus.lastError,
+      },
       gestorBuild: GESTOR_BUILD,
       despachosFuente: process.env.SIRT_DESPACHOS_FUENTE || 'programado',
     });
   } catch (e) {
-    res.status(500).json({ ok: false, message: e.message });
+    res.status(500).json({
+      ok: false,
+      message: e.message,
+      gestorMysql: {
+        enabled: mysqlStatus.enabled,
+        ready: mysqlStatus.ready,
+        lastError: mysqlStatus.lastError,
+      },
+    });
   }
 });
 
@@ -569,25 +592,42 @@ function getLanAddresses() {
   return addrs;
 }
 
-app.listen(PORT, BIND_HOST, () => {
-  const lan = getLanAddresses();
-  const pref = String(process.env.LAN_SHARE_IP || '').trim();
-  const primary = pref && lan.includes(pref) ? pref : lan[0];
-  console.log(`Colbeef SIRT API escuchando en ${BIND_HOST}:${PORT} (${isProd ? 'producción' : 'desarrollo'})`);
-  console.log(`  API  http://127.0.0.1:${PORT}/api/health`);
-  console.log(`  Portal http://127.0.0.1:${PORT}/portal.html`);
-  console.log(`  Gestor http://127.0.0.1:${PORT}/gestor.html`);
-  for (const ip of lan) {
-    console.log(`  Portal (compartir) http://${ip}:${PORT}/portal.html`);
-    console.log(`  Gestor (compartir) http://${ip}:${PORT}/gestor.html?usuario=NOMBRE`);
+async function startServer() {
+  await initGestorMysql();
+  if (isGestorMysqlReady()) {
+    await ensureGestorSchema();
   }
-  if (!isProd) {
-    console.log(`  Gestor con recarga en vivo (Vite) http://127.0.0.1:${VITE_DEV_PORT}/gestor.html`);
-  }
-  if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor.html`);
+
+  app.listen(PORT, BIND_HOST, () => {
+    const lan = getLanAddresses();
+    const pref = String(process.env.LAN_SHARE_IP || '').trim();
+    const primary = pref && lan.includes(pref) ? pref : lan[0];
+    const mysql = getGestorMysqlStatus();
+    console.log(`Colbeef SIRT API escuchando en ${BIND_HOST}:${PORT} (${isProd ? 'producción' : 'desarrollo'})`);
+    console.log(`  API  http://127.0.0.1:${PORT}/api/health`);
+    console.log(`  Portal http://127.0.0.1:${PORT}/portal.html`);
+    console.log(`  Gestor http://127.0.0.1:${PORT}/gestor.html`);
+    console.log(
+      `  MySQL gestor: ${mysql.ready ? `OK ${mysql.host}/${mysql.database}` : mysql.enabled ? `NO (${mysql.lastError || 'sin conexión'})` : 'deshabilitado'}`
+    );
+    for (const ip of lan) {
+      console.log(`  Portal (compartir) http://${ip}:${PORT}/portal.html`);
+      console.log(`  Gestor (compartir) http://${ip}:${PORT}/gestor.html?usuario=NOMBRE`);
+    }
+    if (!isProd) {
+      console.log(`  Gestor con recarga en vivo (Vite) http://127.0.0.1:${VITE_DEV_PORT}/gestor.html`);
+    }
+    if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor.html`);
+  });
+}
+
+startServer().catch((e) => {
+  console.error('[start] Error al iniciar:', e);
+  process.exit(1);
 });
 
 process.on('SIGINT', async () => {
+  await closeGestorMysql();
   await pool.end();
   process.exit(0);
 });
