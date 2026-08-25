@@ -64,11 +64,28 @@ if errorlevel 1 (
 echo.
 
 echo [4/5] Reiniciando servicio "Colbeef SIRT API"...
-sc query "Colbeef SIRT API" >nul 2>&1
-if %errorlevel% EQU 0 (
+REM "sc query" busca por NOMBRE de servicio: el real es colbeefsirtapi.exe.
+REM "Colbeef SIRT API" es solo el nombre visible y no sirve para consultarlo.
+set "SVC_NAME="
+sc query "colbeefsirtapi.exe" >nul 2>&1
+if not errorlevel 1 set "SVC_NAME=colbeefsirtapi.exe"
+if not defined SVC_NAME (
+    sc query "Colbeef SIRT API" >nul 2>&1
+    if not errorlevel 1 set "SVC_NAME=Colbeef SIRT API"
+)
+if defined SVC_NAME (
+    echo Servicio detectado: %SVC_NAME%
     powershell -NoProfile -Command "Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File \"%~dp0scripts\deploy-restart-elevated.ps1\"' -Wait"
 ) else (
-    echo [INFO] Servicio no instalado. Reinicio por puerto %SERVER_PORT%...
+    echo [AVISO] No se encontro el servicio instalado.
+    echo         El modo alternativo MATA el proceso que ocupe el puerto %SERVER_PORT% y arranca
+    echo         un Node en una ventana suelta, sin arranque automatico. No usar en produccion.
+    choice /C SN /N /M "Continuar de todas formas? [S=si / N=no] "
+    if errorlevel 2 (
+        echo Cancelado. Instale el servicio con install-service.bat
+        pause
+        exit /b 1
+    )
     for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":%SERVER_PORT% " ^| findstr "LISTENING"') do (
         echo Deteniendo PID %%a...
         taskkill /PID %%a /F >nul 2>&1
@@ -80,13 +97,11 @@ echo.
 
 echo [5/5] Verificando...
 timeout /t 3 >nul
-sc query "Colbeef SIRT API" 2>nul | findstr /R "STATE"
-netstat -ano | findstr ":%SERVER_PORT% " | findstr "LISTENING" >nul 2>&1
-if %errorlevel% EQU 0 (
-    echo [OK] Puerto %SERVER_PORT% en escucha.
-) else (
-    echo [AVISO] El puerto %SERVER_PORT% aun no responde. Revise el servicio o server\data\server.log
+if defined SVC_NAME (
+    sc query "%SVC_NAME%" 2>nul | findstr /R "STATE ESTADO"
 )
+REM El puerto en escucha no prueba que el reinicio ocurriera: se consulta la API.
+powershell -NoProfile -Command "try { $h = Invoke-RestMethod -Uri 'http://127.0.0.1:%SERVER_PORT%/api/health' -TimeoutSec 25; Write-Host ('[OK] API responde. db=' + $h.db + ' sirt=' + $h.sirt + ' mysql=' + $h.gestorMysql.ready) } catch { Write-Host ('[AVISO] La API no responde: ' + $_.Exception.Message) }"
 
 echo.
 echo ============================================================
