@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Motor principal del Gestor de Vísceras.
  *
  * Orquesta la sincronización SIRT, conserva compatibilidad con las matrices del
@@ -1005,17 +1005,15 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Meta y despachados SOLO desde Cava Paquete Visceral (1/2/3) — sin inventar ni mezclar recepción.
+  // Despachados = pistoleo real solo desde Cava Paquete Visceral.
+  // Meta OPL = misma programación del turno que el tablero (no exigir cava paquete
+  // para armar barras: si no, queda "Sin despachos…" con cientos de juegos ya programados).
   const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
-  const programadosEnPaquete = programadosBruto.filter((fila) =>
-    esCavaDespachoReal(fila[COL_CAVA_SALIDA])
-  );
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosEnPaquete, salidasDespacho);
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
 
-  // Pendientes vivos = aún en paquete sin pistoleo (o programados en paquete sin salida).
   const programadosPendientes = despachosProgramadosSinSalidasDelDia(
-    programadosEnPaquete,
+    programadosBruto,
     salidasDespacho
   );
   const pendOpl = contarJuegosCompletosPorClave(
@@ -1143,7 +1141,14 @@ function computeProgresoOPLPreview(s, totalJuegosParam, opts = {}) {
     return { success: false, message: msg.trim(), progreso: [] };
   }
 
-  return { success: false, message: 'Sin despachos del turno para calcular OPL.', progreso: [] };
+  return {
+    success: false,
+    message:
+      Number(rd.totalJuegos || 0) > 0
+        ? `${rd.totalJuegos} juegos programados del turno ${turno || ''}; pulse Recalcular en OPL.`
+        : 'Sin despachos del turno para calcular OPL.',
+    progreso: [],
+  };
 }
 
 /** Carga vw_decomisos (animales) para cruce LIKE en piezas en cava programadas. */
@@ -1426,7 +1431,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'meta-paquete-incluye-incompletos-v15';
+export const GESTOR_BUILD = 'opl-meta-desde-programacion-v16';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1913,7 +1918,7 @@ export async function calcularProgresoOPL(_totalJuegosParam) {
     const nJuegos = Number(s.resumenDespachos?.totalJuegos || 0);
     const msg =
       nJuegos > 0
-        ? `${nJuegos} juegos programados del turno ${turnoLive}; sincronice despachos y recalcule OPL.`
+        ? `${nJuegos} juegos programados del turno ${turnoLive}, pero no se pudo armar el mapa propietario→OPL. Revise Configuración OPL y vuelva a recalcular.`
         : 'Sin juegos en cava para este turno. Sincronice despachos desde SIRT.';
     return { success: false, message: msg };
   }
