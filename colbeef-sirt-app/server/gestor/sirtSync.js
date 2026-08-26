@@ -488,13 +488,15 @@ export async function fetchDespachosCavaRielRows(range = {}) {
   const corte = getDiaOperativoCorteHora();
   const modo = String(process.env.SIRT_PROGRAMACION_MODO || 'fecha').toLowerCase();
   // Modo fecha: solo salidas de piezas programadas ese día (evita inflar con rezago ISODOW).
+  // El rezago va último: Postgres rechaza un parámetro que el SQL no referencia (42P18),
+  // así que en modo fecha simplemente no se envía.
   const whereProg =
     modo === 'isodow'
       ? `AND ($4::date IS NULL OR (
         ppel.fecha_programacion_despacho IS NOT NULL
         AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
             EXTRACT(ISODOW FROM $4::date)
-        AND ppel.fecha_programacion_despacho::date >= ($4::date - ($5::int * INTERVAL '1 day'))
+        AND ppel.fecha_programacion_despacho::date >= ($4::date - ($6::int * INTERVAL '1 day'))
       ))`
       : `AND ($4::date IS NULL OR (
         ppel.fecha_programacion_despacho IS NOT NULL
@@ -526,20 +528,15 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       AND ($2::date IS NULL OR ppcr.fecha_salida >= $2::timestamp)
       AND (
         $3::date IS NULL
-        OR ppcr.fecha_salida < ($3::date + INTERVAL '1 day' + make_interval(hours => $6))
+        OR ppcr.fecha_salida < ($3::date + INTERVAL '1 day' + make_interval(hours => $5))
       )
       ${whereProg}
     ORDER BY ppcr.fecha_salida DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [
-    SALIDAS_CAVA_LOOKBACK_DAYS,
-    from,
-    to,
-    fechaOp,
-    PROGRAMACION_REZAGO_DAYS,
-    corte,
-  ]);
+  const params = [SALIDAS_CAVA_LOOKBACK_DAYS, from, to, fechaOp, corte];
+  if (modo === 'isodow') params.push(PROGRAMACION_REZAGO_DAYS);
+  const { rows } = await query(sql, params);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r, { fechaSalida: true }));
 }
 
@@ -554,14 +551,16 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
   const fechaOp =
     normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
   const modo = String(process.env.SIRT_PROGRAMACION_MODO || 'fecha').toLowerCase();
+  // El rezago va último por la misma razón que en las salidas: en modo fecha no
+  // se referencia y Postgres rechaza el parámetro sin tipo (42P18).
   const whereFecha =
     modo === 'isodow'
       ? `ppel.fecha_programacion_despacho IS NOT NULL
       AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
-          EXTRACT(ISODOW FROM $2::date)
-      AND ppel.fecha_programacion_despacho::date >= ($2::date - ($1::int * INTERVAL '1 day'))`
+          EXTRACT(ISODOW FROM $1::date)
+      AND ppel.fecha_programacion_despacho::date >= ($1::date - ($2::int * INTERVAL '1 day'))`
       : `ppel.fecha_programacion_despacho IS NOT NULL
-      AND ppel.fecha_programacion_despacho::date = $2::date`;
+      AND ppel.fecha_programacion_despacho::date = $1::date`;
   const sql = `
     SELECT
       ppel.fecha_programacion_despacho AS fecha_programada,
@@ -607,7 +606,9 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
     ORDER BY ppel.fecha_programacion_despacho DESC, ppcr.fecha_ingreso DESC
     LIMIT 80000
   `;
-  const { rows } = await query(sql, [PROGRAMACION_REZAGO_DAYS, fechaOp]);
+  const params = [fechaOp];
+  if (modo === 'isodow') params.push(PROGRAMACION_REZAGO_DAYS);
+  const { rows } = await query(sql, params);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r));
 }
 
