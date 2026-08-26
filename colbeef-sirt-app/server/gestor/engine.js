@@ -106,6 +106,30 @@ function tieneJuegoCompleto(tipos) {
   return TIPOS_PRODUCTO.every((tipo) => tipos.has(tipo));
 }
 
+/** Animal con al menos un subproducto visceral (completo o incompleto). */
+function tienePiezaVisceral(tipos) {
+  return tipos && tipos.size > 0;
+}
+
+/** Bases de animal con cualquier pieza (incluye incompletos) por clave OPL. */
+function agruparAnimalesConPiezasPorClave(rows, cols, getClave, turno = '') {
+  const grupos = {};
+  (rows || []).forEach((fila) => {
+    const id = String(fila[cols.id] ?? '').trim();
+    const tipo = String(fila[cols.tipo] ?? '').trim();
+    const puesto = cols.puesto !== undefined ? String(fila[cols.puesto] ?? '').trim() : '';
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    if (turno && puesto && !puesto.includes(turno)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    const clave = String(getClave(fila) || '').trim();
+    if (!clave) return;
+    if (!grupos[clave]) grupos[clave] = new Set();
+    grupos[clave].add(base);
+  });
+  return grupos;
+}
+
 /** Filas de salida del turno con puesto normalizado (sufijo /turno/). */
 function filasDespachoTurno(despachosCavas, turno) {
   return filasDespachoTurnoOperacion(despachosCavas, turno);
@@ -241,17 +265,38 @@ function construirResumenDespachosDesdeFilas(
       const minVal = Math.min(...vals);
       const maxVal = Math.max(...vals);
       let juegos = 0;
+      let animalesIncompletos = 0;
+      const tiposFaltantesPorAnimal = [];
       Object.keys(meta.animales).forEach((base) => {
         const tipos = meta.animales[base];
-        if (tieneJuegoCompleto(tipos)) juegos++;
+        if (tieneJuegoCompleto(tipos)) {
+          juegos++;
+        } else if (tienePiezaVisceral(tipos)) {
+          animalesIncompletos++;
+          const faltan = TIPOS_PRODUCTO.filter((t) => !tipos.has(t));
+          tiposFaltantesPorAnimal.push({ animal: base, faltan });
+        }
       });
       r.Juegos = juegos;
+      r.animalesIncompletos = animalesIncompletos;
+      r.animalesTotal = juegos + animalesIncompletos;
       totalJuegos += juegos;
       r.animalesDecomiso = meta.basesConDecomiso.size;
       r.decomisoPorTipo = meta.decomisoPorTipo || {};
       r.incompletoPorDecomiso = meta.basesConDecomiso.size > 0;
-      r.incompletoCantidades = minVal !== maxVal;
+      // Incompleto: desbalance de columnas O falta de algún subproducto en un animal.
+      r.incompletoCantidades = minVal !== maxVal || animalesIncompletos > 0;
       r.incompleto = r.incompletoCantidades || r.incompletoPorDecomiso;
+      if (tiposFaltantesPorAnimal.length === 1) {
+        r.detalleIncompleto =
+          tiposFaltantesPorAnimal[0].animal +
+          ' sin ' +
+          tiposFaltantesPorAnimal[0].faltan.join(', ');
+      } else if (tiposFaltantesPorAnimal.length > 1) {
+        r.detalleIncompleto = animalesIncompletos + ' juegos incompletos';
+      } else {
+        r.detalleIncompleto = '';
+      }
       r.tieneCruda = Boolean(meta.tieneCruda);
       const juegosPorOpl = {};
       Object.keys(meta.animales).forEach((base) => {
@@ -283,6 +328,8 @@ function construirResumenDespachosDesdeFilas(
     turno,
     fechaStr: '',
     totalJuegos,
+    totalAnimalesIncompletos: resultado.reduce((s, r) => s + Number(r.animalesIncompletos || 0), 0),
+    totalAnimales: resultado.reduce((s, r) => s + Number(r.animalesTotal || 0), 0),
     resultado,
     historicoGuardadoFlag: '',
     totalConDecomiso: basesDecomisoProgramados.size,
@@ -619,19 +666,25 @@ function filasSalidasCavaDelDia(rows, fechaOpIso) {
 const COL_CAVA_SALIDA = 6;
 
 /**
- * Deja solo el pistoleo de salida de la cava de despacho. Cada cava de recepción
- * mueve media parte del juego, así que sumar todas las cavas empareja las blancas
- * y rojas de una con las cabezas y patas de la otra y fabrica juegos completos que
- * nadie despachó.
+ * Deja solo el pistoleo de salida de cavas de paquete visceral.
+ * Por defecto coincide con "Cava Paquete Visceral 1/2/…". Las de recepción
+ * mueven mitades del juego; mezclarlas inventa juegos que nadie despachó.
+ * GESTOR_CAVA_DESPACHO: prefijo o lista separada por comas.
  */
+function esCavaDespachoReal(nombreCava) {
+  const raw = String(process.env.GESTOR_CAVA_DESPACHO || CAVA_DESPACHO_JUEGOS).trim();
+  if (!raw) return true;
+  const cava = String(nombreCava || '').trim().toUpperCase();
+  if (!cava) return false;
+  return raw
+    .split(',')
+    .map((s) => s.trim().toUpperCase())
+    .filter(Boolean)
+    .some((t) => cava === t || cava.startsWith(t));
+}
+
 function filasSalidaDespachoReal(rows) {
-  const objetivo = String(process.env.GESTOR_CAVA_DESPACHO || CAVA_DESPACHO_JUEGOS)
-    .trim()
-    .toUpperCase();
-  if (!objetivo) return rows || [];
-  return (rows || []).filter(
-    (fila) => String(fila[COL_CAVA_SALIDA] ?? '').trim().toUpperCase() === objetivo
-  );
+  return (rows || []).filter((fila) => esCavaDespachoReal(fila[COL_CAVA_SALIDA]));
 }
 
 function hoyIsoLocal() {
@@ -713,13 +766,18 @@ function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
   const t = String(turno || s.resumenDespachos?.turno || '').trim();
   if (!dia) return;
-  if (String(s.oplBaselineFecha || '') !== dia || String(s.oplBaselineTurno || '') !== t) {
+  if (
+    String(s.oplBaselineFecha || '') !== dia ||
+    String(s.oplBaselineTurno || '') !== t ||
+    String(s.oplBaselineBuild || '') !== GESTOR_BUILD
+  ) {
     (s.oplConfig || []).forEach((r) => {
       r.total = 0;
     });
     limpiarOplTotalsJuego(s);
     s.oplBaselineFecha = dia;
     s.oplBaselineTurno = t;
+    s.oplBaselineBuild = GESTOR_BUILD;
   }
 }
 
@@ -736,14 +794,15 @@ function limpiarOplTotalsJuego(s) {
   delete s.oplTotalsSubproducto;
 }
 
-/** Congela el total OPL: crece si entra más programación y no baja al despachar. */
+/** Congela el total OPL (animales con pieza en Paquete Visceral, incl. incompletos). */
 function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelDia) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
   const totals = obtenerOplTotalsJuego(s);
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  const progSet = agruparJuegosCompletosPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
-  const salSet = agruparJuegosCompletosPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
+  // Meta incluye incompletos (animal con ≥1 pieza en Paquete Visceral).
+  const progSet = agruparAnimalesConPiezasPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salSet = agruparAnimalesConPiezasPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
 
   const opls = new Set([...Object.keys(progSet), ...Object.keys(salSet)]);
   opls.forEach((opl) => {
@@ -793,15 +852,22 @@ function asegurarBaselineDespachoKpis(s, fechaIso, turno) {
     s.despachoKpiBaseline = {
       fecha: '',
       turno: '',
+      build: '',
       juegosBases: [],
       decomisoBases: [],
       crudasBases: [],
     };
   }
-  if (s.despachoKpiBaseline.fecha !== dia || s.despachoKpiBaseline.turno !== t) {
+  // Reinicia meta inflada de builds anteriores (ej. 593 por mezclar recepción).
+  if (
+    s.despachoKpiBaseline.fecha !== dia ||
+    s.despachoKpiBaseline.turno !== t ||
+    String(s.despachoKpiBaseline.build || '') !== GESTOR_BUILD
+  ) {
     s.despachoKpiBaseline = {
       fecha: dia,
       turno: t,
+      build: GESTOR_BUILD,
       juegosBases: [],
       decomisoBases: [],
       crudasBases: [],
@@ -843,24 +909,28 @@ function extraerKpisProgramacionActuales(s, turno, opts = {}) {
     String(turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  const salidasTurno = filasDespachoTurnoOperacion(
-    filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
-    turnoOp
+  // Solo Cava Paquete Visceral (stock + pistoleo). No recepción, no números inventados.
+  const salidasDespacho = filasSalidaDespachoReal(
+    filasDespachoTurnoOperacion(filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp), turnoOp)
   );
-  const todasFilas = [...programadosTurno, ...salidasTurno];
+  const programadosEnPaquete = programadosTurno.filter((fila) =>
+    esCavaDespachoReal(fila[COL_CAVA_SALIDA])
+  );
+  const todasFilas = [...programadosEnPaquete, ...salidasDespacho];
   const activas = new Set();
   todasFilas.forEach((fila) => {
     const base = codigoBase(String(fila[3] ?? '').trim());
     if (base) activas.add(base);
   });
-  const juegosPorClave = agruparJuegosCompletosPorClave(
+  // En cava = animales con cualquier pieza en Paquete Visceral (incluye incompletos).
+  const animalesPorClave = agruparAnimalesConPiezasPorClave(
     todasFilas,
     COLS_DESPACHO_CAVA,
     () => '_',
     ''
   );
   const juegosBases = new Set();
-  Object.values(juegosPorClave).forEach((set) => set.forEach((b) => juegosBases.add(b)));
+  Object.values(animalesPorClave).forEach((set) => set.forEach((b) => juegosBases.add(b)));
   const estadoNeto = aplicarEstadoEnCavaNeto(
     s.estadoFromRow12 || [],
     s.despachosCavas || []
@@ -935,16 +1005,17 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     turnoOp
   );
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Solo el pistoleo de salida de la cava de despacho es un juego despachado.
+  // Meta y despachados SOLO desde Cava Paquete Visceral (1/2/3) — sin inventar ni mezclar recepción.
   const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
-  // Meta: programación + salidas físicas del día operativo (crece, no baja).
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
+  const programadosEnPaquete = programadosBruto.filter((fila) =>
+    esCavaDespachoReal(fila[COL_CAVA_SALIDA])
+  );
+  actualizarBaselineOplJuegosSync(s, turnoOp, programadosEnPaquete, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
 
-  // `despachosCavas` es la programación completa del turno e incluye piezas que ya
-  // salieron: hay que restarlas o el mismo juego cuenta como pendiente y despachado.
+  // Pendientes vivos = aún en paquete sin pistoleo (o programados en paquete sin salida).
   const programadosPendientes = despachosProgramadosSinSalidasDelDia(
-    programadosBruto,
+    programadosEnPaquete,
     salidasDespacho
   );
   const pendOpl = contarJuegosCompletosPorClave(
@@ -960,10 +1031,14 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const pendientes = Number(pendOpl[opl] || 0);
     const despachados = Number(despOpl[opl] || 0);
-    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendientes + despachados);
+    const pendLive = Number(pendOpl[opl] || 0);
+    // TOTAL = meta congelada del OPL (crece con más programación; NO baja al despachar).
+    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendLive + despachados);
     if (totalMeta <= 0) return;
+    totalsFrozen[opl] = totalMeta;
+    // PENDIENTES = TOTAL − DESPACHADOS (siempre cuadran: desp + pend = total).
+    const pendientes = Math.max(0, totalMeta - despachados);
     let pct = Math.round((despachados / totalMeta) * 100);
     if (pendientes > 0) pct = Math.min(99, pct);
     else pct = 100;
@@ -1351,7 +1426,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'despacho-por-pistoleo-cava-paquete-v9';
+export const GESTOR_BUILD = 'meta-paquete-incluye-incompletos-v15';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1373,7 +1448,12 @@ function isoToDdMmYyyy(iso) {
 /** Filas de puesto para operación en vivo, sin agrupar por zona comercial. */
 function mapearOperacionPuestos(resultado) {
   return (resultado || [])
-    .filter((r) => Number(r.Juegos || 0) > 0)
+    .filter(
+      (r) =>
+        Number(r.Juegos || 0) > 0 ||
+        Number(r.animalesIncompletos || 0) > 0 ||
+        Number(r.animalesTotal || 0) > 0
+    )
     .map((r) => {
       const po = parsePuestoOperacion(r.puesto);
       return {
@@ -1382,9 +1462,12 @@ function mapearOperacionPuestos(resultado) {
         zona: String(r.zonaPuesto || po.zona),
         sucursal: String(r.sucursalPuesto || po.codigo),
         ruta: String(r.rutaPuesto || po.ruta),
-        juegos: Number(r.Juegos || 0),
+        juegos: Number(r.animalesTotal || r.Juegos || 0),
+        juegosCompletos: Number(r.Juegos || 0),
+        animalesIncompletos: Number(r.animalesIncompletos || 0),
         opl: String(r.opl || ''),
         incompleto: Boolean(r.incompleto),
+        detalleIncompleto: String(r.detalleIncompleto || ''),
         animalesDecomiso: Number(r.animalesDecomiso || 0),
       };
     })
@@ -1445,6 +1528,7 @@ export async function getDashboardData(range) {
             : {},
         oplBaselineFecha: persisted.oplBaselineFecha || '',
         oplBaselineTurno: persisted.oplBaselineTurno || '',
+        oplBaselineBuild: persisted.oplBaselineBuild || '',
         resumenDespachos: {
           turno: '',
           fechaStr: '',
@@ -1473,6 +1557,7 @@ export async function getDashboardData(range) {
       persisted.oplTotalsJuego = sWork.oplTotalsJuego;
       persisted.oplBaselineFecha = sWork.oplBaselineFecha;
       persisted.oplBaselineTurno = sWork.oplBaselineTurno;
+      persisted.oplBaselineBuild = sWork.oplBaselineBuild;
       await saveState(persisted);
       const preview = computeProgresoOPLPreview(sWork, oplLive.totalJuegos || rd.totalJuegos, {
         consultaSirt: true,
@@ -1481,21 +1566,19 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      // Pendientes = juegos completos aún sin fecha_salida en SIRT (consulta programado).
-      const pendientes = Number(
-        oplLive.totalPendientes != null ? oplLive.totalPendientes : rd.totalJuegos || 0
-      );
-      // En cava congelado: máximo visto del turno; no baja al despachar.
+      // Despachados = pistoleo paquete visceral de programados del día.
+      const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
+      // Meta = programados del día (congelada). No mezclar recepción ni rezago.
       const juegosEnCava = Math.max(
         Number(kpiFrozen.totalJuegos || 0),
         Number(rd.totalJuegos || 0),
         Number(oplLive.totalJuegos || 0),
-        pendientes
+        despachados
       );
-      // Despachados = juegos pistoleados a la salida de la cava de despacho.
-      const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
+      // Total a despachar = lo que falta = meta − despachados.
+      const pendientes = Math.max(0, juegosEnCava - despachados);
       const totalJuegosDespachar = pendientes;
-      const juegosTotalesOperacion = Math.max(juegosEnCava, pendientes + despachados);
+      const juegosTotalesOperacion = juegosEnCava;
       const filasSalidasFisicas = (salidasDia || []).length;
       const filasProgramacion = desp.length;
       const turnoDespacho = String(rd.turno || '');
@@ -1507,12 +1590,15 @@ export async function getDashboardData(range) {
         if (pendientes > 0) progreso = Math.min(99, progreso);
         else progreso = 100;
         progresoMensaje =
-          pendientes +
-          ' pendientes · ' +
-          despachados +
-          ' despachados (pistoleo de salida) · meta ' +
+          'Meta real paquete visceral ' +
           juegosTotalesOperacion +
-          ' · turno ' +
+          ' · ' +
+          despachados +
+          ' despachados · ' +
+          pendientes +
+          ' por despachar · ' +
+          progreso +
+          '% · turno ' +
           turnoOp +
           ' · ' +
           isoToDdMmYyyy(fechaIso);
@@ -1699,6 +1785,8 @@ export async function getResumenDespachoActual() {
     turno: rd.turno,
     fechaUltima: rd.fechaStr,
     totalJuegos: rd.totalJuegos,
+    totalAnimales: rd.totalAnimales != null ? rd.totalAnimales : rd.totalJuegos,
+    totalAnimalesIncompletos: rd.totalAnimalesIncompletos || 0,
     totalPuestos: rd.resultado.length,
     tipos: TIPOS_PRODUCTO,
     resultado: rd.resultado,

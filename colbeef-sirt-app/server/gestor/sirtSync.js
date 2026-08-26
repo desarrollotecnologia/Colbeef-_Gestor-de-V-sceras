@@ -486,6 +486,20 @@ export async function fetchDespachosCavaRielRows(range = {}) {
   const to = normDate(range.to);
   const fechaOp = from || to;
   const corte = getDiaOperativoCorteHora();
+  const modo = String(process.env.SIRT_PROGRAMACION_MODO || 'fecha').toLowerCase();
+  // Modo fecha: solo salidas de piezas programadas ese día (evita inflar con rezago ISODOW).
+  const whereProg =
+    modo === 'isodow'
+      ? `AND ($4::date IS NULL OR (
+        ppel.fecha_programacion_despacho IS NOT NULL
+        AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
+            EXTRACT(ISODOW FROM $4::date)
+        AND ppel.fecha_programacion_despacho::date >= ($4::date - ($5::int * INTERVAL '1 day'))
+      ))`
+      : `AND ($4::date IS NULL OR (
+        ppel.fecha_programacion_despacho IS NOT NULL
+        AND ppel.fecha_programacion_despacho::date = $4::date
+      ))`;
   const sql = `
     SELECT
       ppcr.fecha_salida AS fecha_salida,
@@ -514,12 +528,7 @@ export async function fetchDespachosCavaRielRows(range = {}) {
         $3::date IS NULL
         OR ppcr.fecha_salida < ($3::date + INTERVAL '1 day' + make_interval(hours => $6))
       )
-      AND ($4::date IS NULL OR (
-        ppel.fecha_programacion_despacho IS NOT NULL
-        AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
-            EXTRACT(ISODOW FROM $4::date)
-        AND ppel.fecha_programacion_despacho::date >= ($4::date - ($5::int * INTERVAL '1 day'))
-      ))
+      ${whereProg}
     ORDER BY ppcr.fecha_salida DESC
     LIMIT 80000
   `;
@@ -535,13 +544,24 @@ export async function fetchDespachosCavaRielRows(range = {}) {
 }
 
 /**
- * Opción B — En cava ahora + programación del mismo turno (ISODOW) que la fecha operación.
- * Incluye rezago: piezas programadas en martes anteriores (MxM) que siguen sin salida de cava.
- * Turno y sufijo /LxM/… se toman de la fecha del encabezado, no de una fecha fija en SQL.
+ * Programación del día operativo (fecha_programacion_despacho = fecha).
+ * Solo piezas aún en cava (fecha_salida IS NULL). Al pistolear, salen de esta
+ * consulta y "Total a despachar" baja. Meta del día se congela en el motor.
+ *
+ * Modo legacy ISODOW+rezago: SIRT_PROGRAMACION_MODO=isodow
  */
 async function fetchDespachosProgramadosCavaRows(range = {}) {
   const fechaOp =
     normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
+  const modo = String(process.env.SIRT_PROGRAMACION_MODO || 'fecha').toLowerCase();
+  const whereFecha =
+    modo === 'isodow'
+      ? `ppel.fecha_programacion_despacho IS NOT NULL
+      AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
+          EXTRACT(ISODOW FROM $2::date)
+      AND ppel.fecha_programacion_despacho::date >= ($2::date - ($1::int * INTERVAL '1 day'))`
+      : `ppel.fecha_programacion_despacho IS NOT NULL
+      AND ppel.fecha_programacion_despacho::date = $2::date`;
   const sql = `
     SELECT
       ppel.fecha_programacion_despacho AS fecha_programada,
@@ -583,10 +603,7 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
     LEFT JOIN trazabilidad_proceso.cava c
       ON c.id = ppcr.id_cava
     WHERE ppcr.fecha_salida IS NULL
-      AND ppel.fecha_programacion_despacho IS NOT NULL
-      AND EXTRACT(ISODOW FROM ppel.fecha_programacion_despacho) =
-          EXTRACT(ISODOW FROM $2::date)
-      AND ppel.fecha_programacion_despacho::date >= ($2::date - ($1::int * INTERVAL '1 day'))
+      AND ${whereFecha}
     ORDER BY ppel.fecha_programacion_despacho DESC, ppcr.fecha_ingreso DESC
     LIMIT 80000
   `;

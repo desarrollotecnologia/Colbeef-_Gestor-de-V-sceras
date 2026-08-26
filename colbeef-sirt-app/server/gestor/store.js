@@ -57,6 +57,7 @@ export function defaultState() {
     oplConfig: defaultOplConfig(),
     oplBaselineFecha: '',
     oplBaselineTurno: '',
+    oplBaselineBuild: '',
     /** Totales congelados del tablero (En cava / Decomisos / Crudas) por fecha+turno. */
     despachoKpiBaseline: {
       fecha: '',
