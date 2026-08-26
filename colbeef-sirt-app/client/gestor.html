@@ -35,7 +35,7 @@
     .planilla-row-temprana{background:#fef2f2 !important;border-left:3px solid #dc2626;}
     .planilla-row-temprana td:first-child{color:#dc2626;font-weight:700;}
     .planilla-row-temprana td:last-child{color:#dc2626;font-weight:700;}
-    .badge-temp-puesto{display:inline-block;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle;line-height:1.35;}
+    .badge-temp-puesto{display:inline-block;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:middle;line-height:1.35;}
     .planilla-aviso-temp{width:100%;max-width:720px;margin:0 auto 0.85rem;padding:0.55rem 0.9rem;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-weight:700;font-size:0.88rem;text-align:center;}
     .tarjeta-resumen{background:var(--blanco);border-radius:var(--radio);padding:1.5rem;box-shadow:var(--sombra);border:1px solid rgba(116,198,157,0.2);transition:transform 0.2s;position:relative;overflow:hidden;}
     .tarjeta-resumen:hover{transform:translateY(-4px);}
@@ -3282,8 +3282,22 @@ function setPlanillaVista(modo) {
   if (_planillaUltimoDato) renderPlanilla(_planillaUltimoDato);
 }
 
-function badgeTempHtml() {
-  return ' <span class="badge-temp-puesto">TEMP</span>';
+function badgeTempHtml(label, observacion) {
+  var text = String(label || 'TEMP').trim() || 'TEMP';
+  var title = String(observacion || '').trim();
+  return (
+    '<span class="badge-temp-puesto"' +
+    (title ? ' title="' + escapeHtml(title) + '"' : '') +
+    '>' +
+    escapeHtml(text) +
+    '</span>'
+  );
+}
+
+function celdaPuestoPlanillaHtml(p, sucursalLabel) {
+  var label = sucursalLabel || p.puesto || p.sucursal || '';
+  if (!p.temprana) return escapeHtml(label);
+  return badgeTempHtml(p.marcadorTemp || 'TEMP', p.observacion || '') + escapeHtml(label);
 }
 
 function renderPlanilla(res) {
@@ -3316,7 +3330,7 @@ function renderPlanilla(res) {
     (res.turno ? ' · turno ' + res.turno : '');
 
   var avisoTemp = res.tieneTempranas
-    ? '<div class="planilla-aviso-temp">⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) con badge TEMP — ' +
+    ? '<div class="planilla-aviso-temp">⚠ Tempranas: badge TEMP al frente (no es zona). Pase el mouse para ver observación — ' +
       (res.totalTempranas || 0) +
       ' juegos</div>'
     : '';
@@ -3337,8 +3351,7 @@ function renderPlanilla(res) {
           (temp ? ' class="planilla-row-temprana"' : '') +
           '>' +
           '<td style="padding:6px 10px;font-weight:600;">' +
-          escapeHtml(p.sucursal || p.etiqueta || p.puesto) +
-          (temp ? badgeTempHtml() : '') +
+          celdaPuestoPlanillaHtml(p, p.sucursal || p.etiqueta || p.puesto) +
           '</td>' +
           '<td style="' + zonaStyle + '">' +
           escapeHtml(p.zona || '—') +
@@ -3377,8 +3390,8 @@ function renderPlanilla(res) {
       return '<tr style="border-bottom:1px solid ' + rowBorder + ';' + (pTemp ? 'background:#fef2f2;' : '') + '"' +
         (pTemp ? ' class="planilla-row-temprana"' : '') +
         '>' +
-        '<td style="padding:4px 8px;text-align:left;font-weight:500;font-size:0.8rem;">' + escapeHtml(p.puesto) +
-        (pTemp ? badgeTempHtml() : '') +
+        '<td style="padding:4px 8px;text-align:left;font-weight:500;font-size:0.8rem;">' +
+        celdaPuestoPlanillaHtml(p, p.puesto) +
         '</td>' +
         '<td style="padding:4px 8px;text-align:center;font-weight:700;color:' + (pTemp ? '#dc2626' : cantColor) + ';font-size:0.82rem;">' + p.cantidad + '</td>' +
         '</tr>';

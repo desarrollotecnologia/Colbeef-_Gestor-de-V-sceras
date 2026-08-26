@@ -2331,31 +2331,48 @@ const ZONA_POR_SEGMENTO_RUTA = [
 ];
 
 function inferirZonaDesdeRuta(puestoFull) {
-  const u = String(puestoFull || '').toUpperCase();
-  for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
-    if (u.includes(needle)) return zona;
-  }
   const parts = String(puestoFull || '')
-    .split('/')
+    .split(/\s*\/\s*/)
     .map((p) => p.trim())
     .filter(Boolean);
-  if (parts.length >= 2) {
-    const seg = parts[1].toUpperCase();
-    for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
-      if (seg.includes(needle)) return zona;
+  for (const part of parts) {
+    if (esDestinoMarcadorTemprana(part)) continue;
+    const u = part.toUpperCase();
+    const sinPrefijoNum = u.replace(/^\d+\s+/, '').trim();
+    for (const candidato of [sinPrefijoNum, u]) {
+      if (!candidato) continue;
+      for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
+        if (candidato.includes(needle)) return zona;
+      }
     }
   }
   return '';
 }
 
+/** Destinos SIRT tipo TEMP1 / TEMPRANA = marcador logístico, no zona comercial. */
+function esDestinoMarcadorTemprana(zona) {
+  const u = String(zona || '')
+    .trim()
+    .toUpperCase()
+    .replace(/\s+/g, ' ');
+  if (!u) return false;
+  const compact = u.replace(/\s+/g, '');
+  if (/^TEMP\d*$/.test(compact)) return true;
+  if (u.includes('TEMPRANA') && !u.includes('PROVENZA')) return true;
+  return false;
+}
+
 function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
-  const z = String(zonaExplicita || '').trim();
+  let z = String(zonaExplicita || '').trim();
+  if (esDestinoMarcadorTemprana(z)) z = '';
   if (z) return z;
   const po = parsePuestoOperacion(puestoFull);
-  if (po.zona) return po.zona;
+  if (po.zona && !esDestinoMarcadorTemprana(po.zona)) return po.zona;
   const codigo = po.codigo || codigoPuestoPlanilla(puestoFull);
   const claves = [codigo, String(puestoFull || '').split('/')[0].trim()].filter(Boolean);
   for (const k of claves) {
+    const kFmt = formatearCodigoSucursal(k);
+    if (mapaPlazas[kFmt]) return mapaPlazas[kFmt];
     if (mapaPlazas[k]) return mapaPlazas[k];
     const sinCeros = k.replace(/^0+/, '') || k;
     if (sinCeros !== k && mapaPlazas[sinCeros]) return mapaPlazas[sinCeros];
@@ -2367,7 +2384,7 @@ function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
   }
   const fromRoute = inferirZonaDesdeRuta(puestoFull);
   if (fromRoute) return fromRoute;
-  if (po.zona) {
+  if (po.zona && !esDestinoMarcadorTemprana(po.zona)) {
     for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
       if (po.zona.includes(needle)) return zona;
     }
@@ -2415,11 +2432,60 @@ function esPuestoTemprana(sucursalOrPuesto, puestoFull = '') {
   return esIndicacionTemprana(pk, puestoFull);
 }
 
-const HTML_BADGE_TEMPRANA =
-  ' <span style="display:inline-block;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle;line-height:1.35;">TEMP</span>';
+/** Extrae "TEMP 1" desde ruta SIRT (TEMP1, TEMP 1…); no es nombre de zona. */
+function extraerEtiquetaMarcadorTemprana(...textos) {
+  for (const t of textos) {
+    const u = String(t || '');
+    const m = u.match(/\bTEMP\s*(\d+)\b/i) || u.match(/\bTEMP(\d+)\b/i);
+    if (m) return `TEMP ${m[1]}`;
+  }
+  return '';
+}
 
-function htmlFilaPlanillaTemprana(puesto, cantStr, border) {
-  return `<tr style='background:#fef2f2;border-left:3px solid #dc2626;'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;font-size:0.75rem;color:#dc2626;'>${puesto}${HTML_BADGE_TEMPRANA}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:#dc2626;font-size:0.75rem;'>${cantStr}</td></tr>`;
+function etiquetaMarcadorTempranaPuesto(puestoFull, destinoSirt, esTemprana) {
+  const marca = extraerEtiquetaMarcadorTemprana(puestoFull, destinoSirt);
+  if (marca) return marca;
+  return esTemprana ? 'TEMP' : '';
+}
+
+function htmlBadgeTemprana(etiqueta, observacion = '') {
+  const label = String(etiqueta || 'TEMP').trim() || 'TEMP';
+  const title = String(observacion || '').trim();
+  const titleAttr = title ? ` title="${title.replace(/"/g, '&quot;')}"` : '';
+  return `<span style="display:inline-block;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:5px;vertical-align:middle;line-height:1.35;"${titleAttr}>${label}</span>`;
+}
+
+function htmlCeldaPuestoPlanilla(puesto, esTemprana, marcador, observacion) {
+  if (!esTemprana) return String(puesto || '');
+  const badge = htmlBadgeTemprana(marcador || 'TEMP', observacion);
+  return `${badge}${puesto}`;
+}
+
+function construirMetaPuestosPlanilla(despachos, turno, plazasMap) {
+  const meta = {};
+  filasDespachoTurnoOperacion(despachos || [], turno).forEach((fila) => {
+    const log = parseLogisticaDespacho(fila);
+    const suc = formatearCodigoSucursal(log.sucursal);
+    const zona = resolverZonaPlanilla(log.puestoFull, plazasMap, log.zona);
+    const pk = suc && zona ? `${suc}|${zona.toUpperCase()}` : suc || log.puestoFull;
+    if (!pk) return;
+    const obs = String(fila[12] ?? '').trim();
+    const prev = meta[pk] || {
+      puestoFull: log.puestoFull,
+      destinoSirt: String(fila[8] ?? '').trim(),
+      observacion: '',
+    };
+    if (obs) prev.observacion = obs;
+    if (log.puestoFull) prev.puestoFull = log.puestoFull;
+    if (fila[8]) prev.destinoSirt = String(fila[8] ?? '').trim();
+    meta[pk] = prev;
+  });
+  return meta;
+}
+
+function htmlFilaPlanillaTemprana(puesto, cantStr, border, marcador, observacion) {
+  const celda = htmlCeldaPuestoPlanilla(puesto, true, marcador, observacion);
+  return `<tr style='background:#fef2f2;border-left:3px solid #dc2626;'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;font-size:0.75rem;color:#dc2626;'>${celda}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:#dc2626;font-size:0.75rem;'>${cantStr}</td></tr>`;
 }
 
 function htmlFilaPlanillaNormal(puesto, cantStr, border) {
@@ -2473,9 +2539,13 @@ function construirConsolidadoPlanillaSync(s) {
         zona: log.zona,
         sucursal: log.sucursal,
         direccion: log.direccion,
+        destinoSirt: String(fila[8] ?? '').trim(),
+        observacion: String(fila[12] ?? '').trim(),
         animales: {},
       };
     }
+    const obs = String(fila[12] ?? '').trim();
+    if (obs) grupos[gk].observacion = obs;
     if (!grupos[gk].animales[base]) grupos[gk].animales[base] = new Set();
     grupos[gk].animales[base].add(tipo);
   });
@@ -2487,9 +2557,7 @@ function construirConsolidadoPlanillaSync(s) {
     });
     if (juegos <= 0) return;
     const sucursal = formatearCodigoSucursal(g.sucursal || codigoPuestoPlanilla(g.puestoFull));
-    const zona =
-      g.zona ||
-      resolverZonaPlanilla(g.puestoFull, s.plazasMap, g.zona);
+    const zona = resolverZonaPlanilla(g.puestoFull, s.plazasMap, g.zona);
     totalJuegos += juegos;
     consolidado.push([
       sucursal,
@@ -2516,9 +2584,7 @@ function construirConsolidadoPlanillaSync(s) {
         extraerPuesto(puestoFull) ||
         codigoPuestoPlanilla(puestoFull)
     );
-    const zona =
-      String(r.zonaPuesto || '').trim() ||
-      resolverZonaPlanilla(puestoFull, s.plazasMap, r.zonaPuesto);
+    const zona = resolverZonaPlanilla(puestoFull, s.plazasMap, r.zonaPuesto);
     const porOpl =
       r.juegosPorOpl && Object.keys(r.juegosPorOpl).length
         ? r.juegosPorOpl
@@ -2648,6 +2714,7 @@ export async function getListaOPLsParaPlanilla() {
 
 export async function generarPlanillaPuntos(opl) {
   const s = await loadState();
+  asegurarPlazasMap(s);
   const pack = construirConsolidadoPlanillaSync(s);
   if (pack) {
     s.consolidado = pack.consolidado;
@@ -2660,6 +2727,14 @@ export async function generarPlanillaPuntos(opl) {
   let totalGlobal = 0;
   let turno = '';
   let fechaPlanilla = fmtDateOnly();
+  const turnoPlanilla =
+    String(pack?.turno || s.resumenDespachos?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  const metaPuesto = construirMetaPuestosPlanilla(
+    s.despachosCavas,
+    turnoPlanilla,
+    s.plazasMap || {}
+  );
   s.consolidado.forEach((fila) => {
     const oplReg = String(fila[6] ?? '').trim();
     const zona = String(fila[5] ?? 'SIN ZONA').trim();
@@ -2686,10 +2761,19 @@ export async function generarPlanillaPuntos(opl) {
       const puestosArray = Object.keys(zonasMap[zona].puestosMap)
         .map((pk) => {
           const etiqueta = zonasMap[zona].puestosMap[pk].etiqueta;
+          const info = metaPuesto[pk] || {};
+          const tempr = esPuestoTemprana(etiqueta, info.puestoFull || pk);
+          const marcador = etiquetaMarcadorTempranaPuesto(
+            info.puestoFull,
+            info.destinoSirt,
+            tempr
+          );
           return {
             puesto: etiqueta,
             cantidad: Math.round(zonasMap[zona].puestosMap[pk].cantidad * 100) / 100,
-            temprana: esPuestoTemprana(etiqueta, pk),
+            temprana: tempr,
+            marcadorTemp: marcador,
+            observacion: info.observacion || '',
           };
         })
         .sort((a, b) => Number(b.temprana) - Number(a.temprana) || a.puesto.localeCompare(b.puesto, 'es'));
@@ -2714,7 +2798,14 @@ export async function generarPlanillaPuntos(opl) {
     if (!puestoFull || cantidad <= 0) return;
     const po = parsePuestoOperacion(puestoFull);
     const sucursal = formatearCodigoSucursal(String(fila[0] ?? '').trim() || po.codigo);
-    const zonaFila = String(fila[5] ?? '').trim() || po.zona;
+    const zonaFila = resolverZonaPlanilla(
+      puestoFull,
+      s.plazasMap || {},
+      String(fila[5] ?? '').trim() || po.zona
+    );
+    const pkMeta = sucursal && zonaFila ? `${sucursal}|${zonaFila.toUpperCase()}` : sucursal;
+    const info = metaPuesto[pkMeta] || {};
+    const tempr = esPuestoTemprana(sucursal, info.puestoFull || puestoFull);
     puestosFlat.push({
       puesto: puestoFull,
       etiqueta: sucursal && zonaFila ? `${sucursal} · ${zonaFila}` : po.etiqueta,
@@ -2722,7 +2813,13 @@ export async function generarPlanillaPuntos(opl) {
       zona: zonaFila,
       cantidad: Math.round(cantidad * 100) / 100,
       opl: oplReg,
-      temprana: esPuestoTemprana(sucursal, puestoFull),
+      temprana: tempr,
+      marcadorTemp: etiquetaMarcadorTempranaPuesto(
+        info.puestoFull || puestoFull,
+        info.destinoSirt,
+        tempr
+      ),
+      observacion: info.observacion || '',
     });
   });
   puestosFlat.sort(
@@ -2831,14 +2928,20 @@ export async function generarHTMLPlanillaPDF(opl) {
       .map((p) => {
         const cantStr = p.cantidad % 1 === 0 ? String(p.cantidad) : p.cantidad.toFixed(2);
         return p.temprana
-          ? htmlFilaPlanillaTemprana(p.puesto, cantStr, border)
+          ? htmlFilaPlanillaTemprana(
+              p.puesto,
+              cantStr,
+              border,
+              p.marcadorTemp || 'TEMP',
+              p.observacion || ''
+            )
           : htmlFilaPlanillaNormal(p.puesto, cantStr, border);
       })
       .join('');
     zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   });
   const avisoTemp = datos.tieneTempranas
-    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) con badge TEMP (${datos.totalTempranas} juegos)</p>`
+    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Tempranas: badge TEMP al frente (no es zona). Zona real del catálogo. (${datos.totalTempranas} juegos)</p>`
     : '';
   const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p>${avisoTemp}<div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
   return { success: true, html };
