@@ -258,16 +258,23 @@ export function esCruda(valor) {
 
 const TURNOS_EN_RUTA = ['DxL', 'LxM', 'MxM', 'MxJ', 'JxV', 'VxS', 'SxD'];
 
+/** Sucursal numérica sin cero inicial (01022 → 1022, 06505 → 6505). Alfabéticos intactos. */
+export function formatearCodigoSucursal(codigo) {
+  const raw = String(codigo ?? '').trim();
+  if (!raw) return '';
+  if (/^\d+$/.test(raw)) {
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) ? String(n) : raw;
+  }
+  return raw;
+}
+
 /** Descompone una ruta SIRT en sucursal, destino, dirección y turno. */
 export function parsePuestoOperacion(puestoFull) {
   const raw = String(puestoFull || '').trim();
   const parts = raw.split('/').map((p) => p.trim()).filter(Boolean);
   const sinTurno = parts.filter((p) => !TURNOS_EN_RUTA.includes(p));
-  let codigo = sinTurno[0] || '';
-  if (/^\d+$/.test(codigo)) {
-    const n = parseInt(codigo, 10);
-    if (Number.isFinite(n)) codigo = String(n);
-  }
+  let codigo = formatearCodigoSucursal(sinTurno[0] || '');
   const zona = sinTurno[1] ? String(sinTurno[1]).trim() : '';
   const direccion = sinTurno[2] || '';
   const turno = parts.find((p) => TURNOS_EN_RUTA.includes(p)) || '';
@@ -296,7 +303,7 @@ export function parseLogisticaDespacho(fila) {
   const direccion = String(fila[11] ?? '').trim();
   const puestoFull = String(fila[9] ?? '').trim();
   const po = parsePuestoOperacion(puestoFull);
-  const suc = sucursal || po.codigo;
+  const suc = formatearCodigoSucursal(sucursal || po.codigo);
   const z = zona || po.zona;
   return {
     zona: z,

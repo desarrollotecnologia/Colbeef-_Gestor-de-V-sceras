@@ -29,6 +29,12 @@ function esIndicacionTemprana(...textos) {
   });
 }
 
+function esPuestoTemprana(sucursalOrPuesto, puestoFull = '') {
+  const suc = String(sucursalOrPuesto || '').trim();
+  const pk = suc.includes('|') ? suc.split('|')[0] : suc;
+  return esIndicacionTemprana(pk, puestoFull);
+}
+
 const cases = [
   ['NSF/SAN FRANCISCO/DxL', true],
   ['6505/PROVENZA/MxM', true],
@@ -37,6 +43,8 @@ const cases = [
   ['WMERCAN/NORTE', true],
   ['01305/TEMP1/DxL', false],
   ['SAN FRANCISCO', false],
+  ['TEMP1 TEMPRANA 1', false],
+  ['PROVENZA', false],
   ['NSF', true],
   ['6505', true],
 ];
@@ -47,5 +55,19 @@ for (const [input, expected] of cases) {
   const ok = got === expected;
   if (!ok) fail++;
   console.log(ok ? 'OK' : 'FAIL', input, 'expected', expected, 'got', got);
+}
+
+// Solo puesto, no zona
+if (esPuestoTemprana('6505', '6505|PROVENZA') !== true) {
+  fail++;
+  console.log('FAIL esPuestoTemprana 6505');
+} else {
+  console.log('OK esPuestoTemprana 6505');
+}
+if (esPuestoTemprana('PROVENZA', '02012|PROVENZA') !== false) {
+  fail++;
+  console.log('FAIL esPuestoTemprana PROVENZA zona');
+} else {
+  console.log('OK esPuestoTemprana no marca zona');
 }
 process.exit(fail ? 1 : 0);

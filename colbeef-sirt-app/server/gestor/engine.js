@@ -45,6 +45,7 @@ import {
   fechaOperativaHoy,
   fechaOperativaDesdeCelda,
   getDiaOperativoCorteHora,
+  formatearCodigoSucursal,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -320,7 +321,9 @@ function construirResumenDespachosDesdeFilas(
           ? `${meta.sucursalNombre} · ${meta.zonaLogistica}`
           : po.etiqueta;
       r.rutaPuesto = po.ruta;
-      r.codigoPuesto = meta.sucursalNombre || po.codigo || codigoPuestoPlanilla(meta.puesto);
+      r.codigoPuesto = formatearCodigoSucursal(
+        meta.sucursalNombre || po.codigo || codigoPuestoPlanilla(meta.puesto)
+      );
       resultado.push(r);
     });
 
@@ -2192,10 +2195,10 @@ function resolverPuestoFilaCruda(fila, puestoPorBase, turno) {
 
 /** Solo código de puesto para Crudas (sucursal o primer segmento de ruta SIRT). */
 function codigoPuestoCrudas(puestoResuelto, sucursalFila) {
-  const suc = String(sucursalFila ?? '').trim();
+  const suc = formatearCodigoSucursal(sucursalFila);
   if (suc) return suc;
   const first = String(puestoResuelto || '').split('/')[0].trim();
-  return first || String(puestoResuelto || '').trim() || 'SIN PUESTO';
+  return formatearCodigoSucursal(first) || String(puestoResuelto || '').trim() || 'SIN PUESTO';
 }
 
 /**
@@ -2307,12 +2310,7 @@ export async function eliminarPlaza(filaIdx) {
 /** Código de puesto: primer segmento de ruta; normaliza valores numéricos. */
 function codigoPuestoPlanilla(puestoFull) {
   const first = String(puestoFull || '').split('/')[0].trim();
-  if (!first) return '';
-  if (/^\d+$/.test(first)) {
-    const n = parseInt(first, 10);
-    return Number.isFinite(n) ? String(n) : first;
-  }
-  return first;
+  return formatearCodigoSucursal(first);
 }
 
 const ZONA_POR_SEGMENTO_RUTA = [
@@ -2410,6 +2408,24 @@ function esIndicacionTemprana(...textos) {
   });
 }
 
+/** Temprana = código de sucursal/puesto (NSF, 6505…), nunca el nombre de zona. */
+function esPuestoTemprana(sucursalOrPuesto, puestoFull = '') {
+  const suc = String(sucursalOrPuesto || '').trim();
+  const pk = suc.includes('|') ? suc.split('|')[0] : suc;
+  return esIndicacionTemprana(pk, puestoFull);
+}
+
+const HTML_BADGE_TEMPRANA =
+  ' <span style="display:inline-block;background:#dc2626;color:#fff;font-size:0.62rem;font-weight:700;padding:1px 5px;border-radius:3px;margin-left:4px;vertical-align:middle;line-height:1.35;">TEMP</span>';
+
+function htmlFilaPlanillaTemprana(puesto, cantStr, border) {
+  return `<tr style='background:#fef2f2;border-left:3px solid #dc2626;'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;font-size:0.75rem;color:#dc2626;'>${puesto}${HTML_BADGE_TEMPRANA}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:#dc2626;font-size:0.75rem;'>${cantStr}</td></tr>`;
+}
+
+function htmlFilaPlanillaNormal(puesto, cantStr, border) {
+  return `<tr><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:500;font-size:0.75rem;'>${puesto}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:#259c39;font-size:0.75rem;'>${cantStr}</td></tr>`;
+}
+
 function construirMapaPuestoOpl(despachosCavas, turno, mapaOPL) {
   const mapa = {};
   filasDespachoTurnoOperacion(despachosCavas || [], turno).forEach((fila) => {
@@ -2470,7 +2486,7 @@ function construirConsolidadoPlanillaSync(s) {
       if (tieneJuegoCompleto(tipos)) juegos++;
     });
     if (juegos <= 0) return;
-    const sucursal = g.sucursal || codigoPuestoPlanilla(g.puestoFull);
+    const sucursal = formatearCodigoSucursal(g.sucursal || codigoPuestoPlanilla(g.puestoFull));
     const zona =
       g.zona ||
       resolverZonaPlanilla(g.puestoFull, s.plazasMap, g.zona);
@@ -2495,10 +2511,11 @@ function construirConsolidadoPlanillaSync(s) {
   resultado.forEach((r) => {
     const puestoFull = String(r.puesto || '').trim();
     if (!puestoFull) return;
-    const sucursal =
+    const sucursal = formatearCodigoSucursal(
       String(r.sucursalPuesto || r.codigoPuesto || '').trim() ||
-      extraerPuesto(puestoFull) ||
-      codigoPuestoPlanilla(puestoFull);
+        extraerPuesto(puestoFull) ||
+        codigoPuestoPlanilla(puestoFull)
+    );
     const zona =
       String(r.zonaPuesto || '').trim() ||
       resolverZonaPlanilla(puestoFull, s.plazasMap, r.zonaPuesto);
@@ -2648,7 +2665,7 @@ export async function generarPlanillaPuntos(opl) {
     const zona = String(fila[5] ?? 'SIN ZONA').trim();
     const puestoFull = String(fila[3] ?? '').trim();
     const po = parsePuestoOperacion(puestoFull);
-    const sucursal = String(fila[0] ?? '').trim() || po.codigo;
+    const sucursal = formatearCodigoSucursal(String(fila[0] ?? '').trim() || po.codigo);
     let cantidad = Number(fila[7] ?? 0);
     if (Number.isNaN(cantidad)) cantidad = 0;
     if (!turno && fila[9]) turno = String(fila[9]);
@@ -2672,19 +2689,21 @@ export async function generarPlanillaPuntos(opl) {
           return {
             puesto: etiqueta,
             cantidad: Math.round(zonasMap[zona].puestosMap[pk].cantidad * 100) / 100,
-            temprana: esIndicacionTemprana(zona, etiqueta, pk),
+            temprana: esPuestoTemprana(etiqueta, pk),
           };
         })
         .sort((a, b) => Number(b.temprana) - Number(a.temprana) || a.puesto.localeCompare(b.puesto, 'es'));
-      const temprana = esIndicacionTemprana(zona) || puestosArray.some((p) => p.temprana);
       return {
         nombre: zona,
         total: Math.round(zonasMap[zona].total * 100) / 100,
         puestos: puestosArray,
-        temprana,
       };
     })
-    .sort((a, b) => Number(b.temprana) - Number(a.temprana) || b.total - a.total);
+    .sort(
+      (a, b) =>
+        Number(b.puestos.some((p) => p.temprana)) - Number(a.puestos.some((p) => p.temprana)) ||
+        b.total - a.total
+    );
   const pct = totalGlobal > 0 ? ((totalOPL / totalGlobal) * 100).toFixed(1) : '0.0';
   const puestosFlat = [];
   s.consolidado.forEach((fila) => {
@@ -2694,7 +2713,7 @@ export async function generarPlanillaPuntos(opl) {
     const cantidad = Number(fila[7] ?? 0);
     if (!puestoFull || cantidad <= 0) return;
     const po = parsePuestoOperacion(puestoFull);
-    const sucursal = String(fila[0] ?? '').trim() || po.codigo;
+    const sucursal = formatearCodigoSucursal(String(fila[0] ?? '').trim() || po.codigo);
     const zonaFila = String(fila[5] ?? '').trim() || po.zona;
     puestosFlat.push({
       puesto: puestoFull,
@@ -2703,7 +2722,7 @@ export async function generarPlanillaPuntos(opl) {
       zona: zonaFila,
       cantidad: Math.round(cantidad * 100) / 100,
       opl: oplReg,
-      temprana: esIndicacionTemprana(zonaFila, sucursal, puestoFull),
+      temprana: esPuestoTemprana(sucursal, puestoFull),
     });
   });
   puestosFlat.sort(
@@ -2720,7 +2739,7 @@ export async function generarPlanillaPuntos(opl) {
     totalOPL: Math.round(totalOPL * 100) / 100,
     totalGlobal: Math.round(totalGlobal * 100) / 100,
     totalTempranas: Math.round(totalTempranas * 100) / 100,
-    tieneTempranas: totalTempranas > 0 || zonasArray.some((z) => z.temprana),
+    tieneTempranas: totalTempranas > 0,
     porcentaje: pct,
     turno,
     fecha: fechaPlanilla,
@@ -2805,25 +2824,21 @@ export async function generarHTMLPlanillaPDF(opl) {
   if (!datos.success) return { success: false, message: datos.message };
   let zonasHtml = '';
   datos.zonas.forEach((z) => {
-    const tempr = Boolean(z.temprana);
-    const headBg = tempr ? '#dc2626' : '#259c39';
-    const border = tempr ? '#fecaca' : '#b7e4c7';
-    const thBg = tempr ? '#fee2e2' : '#e8f5e9';
-    const cantColor = tempr ? '#dc2626' : '#259c39';
+    const headBg = '#259c39';
+    const border = '#b7e4c7';
+    const thBg = '#e8f5e9';
     const filas = z.puestos
       .map((p) => {
         const cantStr = p.cantidad % 1 === 0 ? String(p.cantidad) : p.cantidad.toFixed(2);
-        const rowBg = p.temprana ? 'background:#fef2f2;' : '';
-        return `<tr style='${rowBg}'><td style='text-align:left;padding:5px 8px;border-bottom:1px solid ${border};font-weight:500;font-size:0.75rem;'>${p.puesto}${p.temprana ? ' <span style="color:#dc2626;font-weight:700;">TEMPRANA</span>' : ''}</td><td style='text-align:center;padding:5px 8px;border-bottom:1px solid ${border};font-weight:700;color:${cantColor};font-size:0.75rem;'>${cantStr}</td></tr>`;
+        return p.temprana
+          ? htmlFilaPlanillaTemprana(p.puesto, cantStr, border)
+          : htmlFilaPlanillaNormal(p.puesto, cantStr, border);
       })
       .join('');
-    const badge = tempr
-      ? ` <span style='background:rgba(255,255,255,0.25);padding:2px 6px;border-radius:20px;font-size:0.65rem;'>TEMPRANA</span>`
-      : '';
-    zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre}${badge} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   });
   const avisoTemp = datos.tieneTempranas
-    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) resaltados en rojo (${datos.totalTempranas} juegos)</p>`
+    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Puestos tempranas (NSF, 6505, ARIR, LHMV, WMERCAN) con badge TEMP (${datos.totalTempranas} juegos)</p>`
     : '';
   const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p>${avisoTemp}<div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
   return { success: true, html };

@@ -19,6 +19,7 @@ import {
   getDiaOperativoCorteHora,
   fechaOperativaHoy,
   fechaIsoLocalDesdeDate,
+  formatearCodigoSucursal,
 } from './engineUtils.js';
 import {
   detectarTurnoPorFechaISO,
@@ -194,7 +195,7 @@ function mapFilaDespachoCavaMatrix(r, opts = {}) {
   row[7] = r.subproducto || r.descripcion || '';
   row[8] = String(r.destino || '').trim();
   row[9] = String(r.puesto_turno || r.puesto_ruta || buildPuestoDespacho(r)).trim();
-  row[10] = String(r.sucursal_origen || r.sucursal || '').trim();
+  row[10] = formatearCodigoSucursal(String(r.sucursal_origen || r.sucursal || '').trim());
   row[11] = String(r.direccion_entrega || r.direccion || '').trim();
   row[12] = r.observaciones || '';
   return row;
