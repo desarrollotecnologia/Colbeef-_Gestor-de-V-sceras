@@ -792,27 +792,54 @@ function obtenerOplTotalsJuego(s) {
   return s.oplTotalsJuego;
 }
 
+/** Meta congelada de juegos completos (4 subproductos) por OPL. */
+function obtenerOplTotalsJuegoCompleto(s) {
+  if (!s.oplTotalsJuegoCompleto || typeof s.oplTotalsJuegoCompleto !== 'object') {
+    s.oplTotalsJuegoCompleto = {};
+  }
+  return s.oplTotalsJuegoCompleto;
+}
+
 function limpiarOplTotalsJuego(s) {
   s.oplTotalsJuego = {};
+  s.oplTotalsJuegoCompleto = {};
   delete s.oplTotalsSubproducto;
 }
 
-/** Congela el total OPL (animales con pieza en Paquete Visceral, incl. incompletos). */
+/**
+ * Congela meta OPL del turno:
+ * - total: animales con ≥1 pieza en Paquete Visceral (incluye incompletos)
+ * - completo: juegos con las 4 piezas (base para despachados reales)
+ */
 function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelDia) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
   const totals = obtenerOplTotalsJuego(s);
+  const totalsComplete = obtenerOplTotalsJuegoCompleto(s);
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  // Meta incluye incompletos (animal con ≥1 pieza en Paquete Visceral).
-  const progSet = agruparAnimalesConPiezasPorClave(programadosTurno, COLS_DESPACHO_CAVA, claveOpl, '');
-  const salSet = agruparAnimalesConPiezasPorClave(salidasDelDia, COLS_DESPACHO_CAVA, claveOpl, '');
+  const progPaquete = filasSalidaDespachoReal(programadosTurno || []);
+  const salPaquete = filasSalidaDespachoReal(salidasDelDia || []);
+  const progSet = agruparAnimalesConPiezasPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salSet = agruparAnimalesConPiezasPorClave(salPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const progComplete = agruparJuegosCompletosPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salComplete = agruparJuegosCompletosPorClave(salPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
 
-  const opls = new Set([...Object.keys(progSet), ...Object.keys(salSet)]);
+  const opls = new Set([
+    ...Object.keys(progSet),
+    ...Object.keys(salSet),
+    ...Object.keys(progComplete),
+    ...Object.keys(salComplete),
+    ...Object.keys(totals),
+    ...Object.keys(totalsComplete),
+  ]);
   opls.forEach((opl) => {
-    const union = new Set([...(progSet[opl] || []), ...(salSet[opl] || [])]);
-    const n = union.size;
-    if (n > 0) {
-      totals[opl] = Math.max(Number(totals[opl] || 0), n);
+    const unionAny = new Set([...(progSet[opl] || []), ...(salSet[opl] || [])]);
+    if (unionAny.size > 0) {
+      totals[opl] = Math.max(Number(totals[opl] || 0), unionAny.size);
+    }
+    const unionComplete = new Set([...(progComplete[opl] || []), ...(salComplete[opl] || [])]);
+    if (unionComplete.size > 0) {
+      totalsComplete[opl] = Math.max(Number(totalsComplete[opl] || 0), unionComplete.size);
     }
   });
 }
@@ -1003,42 +1030,43 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     String(turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
 
+  const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
+  const programadosEnPaquete = filasSalidaDespachoReal(programadosBruto);
   const salidasTurno = filasDespachoTurnoOperacion(
     filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
     turnoOp
   );
-  const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Despachados = pistoleo real solo desde Cava Paquete Visceral.
-  // Meta OPL = misma programación del turno que el tablero (no exigir cava paquete
-  // para armar barras: si no, queda "Sin despachos…" con cientos de juegos ya programados).
+  // Salidas del día solo para congelar meta; NO definen despachados por sí solas.
   const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
+  const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
 
-  const programadosPendientes = despachosProgramadosSinSalidasDelDia(
-    programadosBruto,
-    salidasDespacho
-  );
-  const pendOpl = contarJuegosCompletosPorClave(
-    programadosPendientes,
+  // Pendientes = juegos completos que AÚN están en cava (programados, fecha_salida NULL en SIRT).
+  const pendCompleteOpl = contarJuegosCompletosPorClave(
+    programadosEnPaquete,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
-  const despOpl = contarJuegosCompletosPorClave(salidasDespacho, COLS_DESPACHO_CAVA, claveOpl, '');
 
-  const opls = new Set([...Object.keys(totalsFrozen), ...Object.keys(pendOpl), ...Object.keys(despOpl)]);
+  const opls = new Set([
+    ...Object.keys(totalsFrozen),
+    ...Object.keys(totalsCompleteFrozen),
+    ...Object.keys(pendCompleteOpl),
+  ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const despachados = Number(despOpl[opl] || 0);
-    const pendLive = Number(pendOpl[opl] || 0);
-    // TOTAL = meta congelada del OPL (crece con más programación; NO baja al despachar).
-    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendLive + despachados);
+    const pendComplete = Number(pendCompleteOpl[opl] || 0);
+    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendComplete);
+    const completeMeta = Math.max(Number(totalsCompleteFrozen[opl] || 0), pendComplete);
     if (totalMeta <= 0) return;
     totalsFrozen[opl] = totalMeta;
-    // PENDIENTES = TOTAL − DESPACHADOS (siempre cuadran: desp + pend = total).
+    totalsCompleteFrozen[opl] = completeMeta;
+    // Despachados = juegos completos que ya no están en cava (salieron al pistolear).
+    const despachados = Math.max(0, completeMeta - pendComplete);
     const pendientes = Math.max(0, totalMeta - despachados);
     let pct = Math.round((despachados / totalMeta) * 100);
     if (pendientes > 0) pct = Math.min(99, pct);
@@ -1434,7 +1462,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'opl-meta-desde-programacion-v16';
+export const GESTOR_BUILD = 'opl-despachados-solo-sin-cava-v17';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1534,6 +1562,10 @@ export async function getDashboardData(range) {
           persisted.oplTotalsJuego && typeof persisted.oplTotalsJuego === 'object'
             ? { ...persisted.oplTotalsJuego }
             : {},
+        oplTotalsJuegoCompleto:
+          persisted.oplTotalsJuegoCompleto && typeof persisted.oplTotalsJuegoCompleto === 'object'
+            ? { ...persisted.oplTotalsJuegoCompleto }
+            : {},
         oplBaselineFecha: persisted.oplBaselineFecha || '',
         oplBaselineTurno: persisted.oplBaselineTurno || '',
         oplBaselineBuild: persisted.oplBaselineBuild || '',
@@ -1563,6 +1595,7 @@ export async function getDashboardData(range) {
 
       const oplLive = construirProgresoOplDesdeDespachos(sWork, turnoOp, fmtNow());
       persisted.oplTotalsJuego = sWork.oplTotalsJuego;
+      persisted.oplTotalsJuegoCompleto = sWork.oplTotalsJuegoCompleto;
       persisted.oplBaselineFecha = sWork.oplBaselineFecha;
       persisted.oplBaselineTurno = sWork.oplBaselineTurno;
       persisted.oplBaselineBuild = sWork.oplBaselineBuild;
@@ -1574,7 +1607,7 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      // Despachados = pistoleo paquete visceral de programados del día.
+      // Despachados = juegos completos que ya no están en cava (pistoleo real).
       const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
       // Meta = programados del día (congelada). No mezclar recepción ni rezago.
       const juegosEnCava = Math.max(
@@ -1889,8 +1922,8 @@ export async function limpiarResumen() {
 /**
  * Refresca programación y salidas físicas antes de calcular el progreso OPL.
  *
- * Los despachados provienen de `fecha_salida`; no se infieren restando el
- * inventario. Al finalizar todos los OPL se guarda una entrada histórica.
+ * Despachados = juegos completos que ya no están en cava (dejaron de aparecer
+ * en programados tras el pistoleo). La fecha de programación solo define la meta.
  */
 export async function calcularProgresoOPL(_totalJuegosParam) {
   const s = await loadState();

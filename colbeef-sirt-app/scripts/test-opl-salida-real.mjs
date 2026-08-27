@@ -1,5 +1,5 @@
 /**
- * OPL: pendientes = programados turno sin salida; despachados = salidas físicas del día.
+ * OPL: pendientes = juegos completos aún en cava; despachados = meta completa − en cava.
  * node scripts/test-opl-salida-real.mjs
  */
 import assert from 'assert';
@@ -72,7 +72,8 @@ const packSinSalidaReal = construirProgresoOplDesdeDespachos(
     lastSyncRange: { from: '2026-08-25', to: '2026-08-25' },
     despachosCavas: enCava,
     salidasCavaDia: [],
-    oplTotalsJuego: { [opl]: 103 }, // meta ya vista
+    oplTotalsJuego: { [opl]: 103 },
+    oplTotalsJuegoCompleto: { [opl]: 103 }, // meta ya vista
     oplBaselineFecha: '2026-08-25',
     oplBaselineTurno: turno,
     oplBaselineBuild: GESTOR_BUILD,
@@ -85,9 +86,9 @@ const packSinSalidaReal = construirProgresoOplDesdeDespachos(
 const row3 = packSinSalidaReal.todosOPL.find((p) => p.opl === opl);
 assert.ok(row3);
 assert.strictEqual(row3.total, 103, 'TOTAL se mantiene en 103');
-assert.strictEqual(row3.despachados, 0);
-assert.strictEqual(row3.pendientes, 103, 'pendientes = 103 − 0');
-assert.strictEqual(row3.progreso, 0);
+assert.strictEqual(row3.despachados, 102, '102 ya salieron de cava; 1 sigue');
+assert.strictEqual(row3.pendientes, 1);
+assert.strictEqual(row3.progreso, 99);
 
 // Con despachados parciales: TOTAL fijo, pendientes = total − desp
 const salidas25 = juego(animalSalido).map((f) => {
@@ -102,6 +103,7 @@ const packParcial = construirProgresoOplDesdeDespachos(
     despachosCavas: enCava, // 1 pendiente vivo
     salidasCavaDia: salidas25, // 1 despachado del mismo día
     oplTotalsJuego: { [opl]: 103 },
+    oplTotalsJuegoCompleto: { [opl]: 103 },
     oplBaselineFecha: '2026-08-25',
     oplBaselineTurno: turno,
     oplBaselineBuild: GESTOR_BUILD,
@@ -114,9 +116,32 @@ const packParcial = construirProgresoOplDesdeDespachos(
 const rowP = packParcial.todosOPL.find((p) => p.opl === opl);
 assert.ok(rowP);
 assert.strictEqual(rowP.total, 103);
-assert.strictEqual(rowP.despachados, 1);
-assert.strictEqual(rowP.pendientes, 102, '103 − 1 = 102');
+assert.strictEqual(rowP.despachados, 102, 'meta completa 103 − 1 en cava = 102 despachados');
+assert.strictEqual(rowP.pendientes, 1, '1 juego sigue en cava');
 assert.strictEqual(rowP.despachados + rowP.pendientes, rowP.total);
+
+// Salida en SIRT pero el juego sigue en programados → NO cuenta como despachado.
+const packFantasma = construirProgresoOplDesdeDespachos(
+  {
+    lastSyncRange: { from: '2026-08-27', to: '2026-08-27' },
+    despachosCavas: [...enCava, ...salidas],
+    salidasCavaDia: salidas,
+    oplTotalsJuego: { [opl]: 2 },
+    oplTotalsJuegoCompleto: { [opl]: 2 },
+    oplBaselineFecha: '2026-08-27',
+    oplBaselineTurno: turno,
+    oplBaselineBuild: GESTOR_BUILD,
+    oplConfig: [{ propietario: prop, opl, total: 0 }],
+    resumenDespachos: { turno, resultado: [] },
+  },
+  turno,
+  '27/08/2026 15:00'
+);
+const rowF = packFantasma.todosOPL.find((p) => p.opl === opl);
+assert.ok(rowF);
+assert.strictEqual(rowF.despachados, 0, 'no despachar si sigue en cava aunque haya fecha_salida');
+assert.strictEqual(rowF.pendientes, 2);
+assert.strictEqual(rowF.progreso, 0);
 
 const packSoloPend = construirProgresoOplDesdeDespachos(
   {

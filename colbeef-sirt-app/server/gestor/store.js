@@ -68,6 +68,7 @@ export function defaultState() {
     },
     /** Total fijo de juegos a despachar por OPL (baseline del día). */
     oplTotalsJuego: {},
+    oplTotalsJuegoCompleto: {},
     oplProgreso: [],
     historicoOpl: [],
     consolidado: [],
@@ -85,6 +86,7 @@ function normalizeState(raw) {
   if (!s.oplConfig || !s.oplConfig.length) s.oplConfig = defaultOplConfig();
   else asegurarOplExcepcionesEnConfig(s);
   if (!s.oplTotalsJuego) s.oplTotalsJuego = {};
+  if (!s.oplTotalsJuegoCompleto) s.oplTotalsJuegoCompleto = {};
   if (!s.despachoKpiBaseline || typeof s.despachoKpiBaseline !== 'object') {
     s.despachoKpiBaseline = defaultState().despachoKpiBaseline;
   }
