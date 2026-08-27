@@ -3329,12 +3329,6 @@ function renderPlanilla(res) {
     '% del total' +
     (res.turno ? ' · turno ' + res.turno : '');
 
-  var avisoTemp = res.tieneTempranas
-    ? '<div class="planilla-aviso-temp">⚠ Tempranas: badge TEMP al frente (no es zona). Pase el mouse para ver observación — ' +
-      (res.totalTempranas || 0) +
-      ' juegos</div>'
-    : '';
-
   if (_planillaVista === 'puestos' && res.puestos && res.puestos.length > 0) {
     var filasP = res.puestos
       .map(function (p) {
@@ -3363,7 +3357,6 @@ function renderPlanilla(res) {
       })
       .join('');
     document.getElementById('planillaGrid').innerHTML =
-      avisoTemp +
       '<div style="width:100%;max-width:720px;margin:0 auto;background:white;border-radius:12px;border:1px solid #b7e4c7;overflow:hidden;">' +
       '<table style="width:100%;border-collapse:collapse;font-size:0.85rem;">' +
       '<thead><tr style="background:#259c39;color:white;">' +
@@ -3413,7 +3406,7 @@ function renderPlanilla(res) {
       + '</table></div>';
   }).join('');
 
-  document.getElementById('planillaGrid').innerHTML = avisoTemp + html;
+  document.getElementById('planillaGrid').innerHTML = html;
   }
 
   // Resumen

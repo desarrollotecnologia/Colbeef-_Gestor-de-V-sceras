@@ -34,6 +34,7 @@ import {
   construirMapaDecomisosPorAnimal,
   decomisoInfoDesdeMapa,
   decomisoInfoUnificado,
+  mapTipoProductoNombre,
   construirIndiceDecomisosVw,
   claveAgrupacionPuesto,
   parseLogisticaDespacho,
@@ -134,6 +135,48 @@ function agruparAnimalesConPiezasPorClave(rows, cols, getClave, turno = '') {
 /** Filas de salida del turno con puesto normalizado (sufijo /turno/). */
 function filasDespachoTurno(despachosCavas, turno) {
   return filasDespachoTurnoOperacion(despachosCavas, turno);
+}
+
+/** Suma en columnas piezas decomisadas que no aparecen en programación (p. ej. Cabeza). */
+function contabilizarPiezasDecomisoEnMeta(meta, base, dec) {
+  if (!dec?.tipos?.size) return;
+  if (!meta.animales[base]) meta.animales[base] = new Set();
+  dec.tipos.forEach((tDec) => {
+    if (!TIPOS_PRODUCTO.includes(tDec)) return;
+    meta.decomisoPorTipo[tDec] = (meta.decomisoPorTipo[tDec] || 0) + 1;
+    if (!meta.animales[base].has(tDec)) {
+      meta[tDec] = (meta[tDec] || 0) + 1;
+      meta.animales[base].add(tDec);
+    }
+  });
+}
+
+function decomisoDetallePorTipo(dec, tipo) {
+  if (!dec || !dec.tipos?.has(tipo)) {
+    return { sub: '', parte: '', producto: '', causa: '' };
+  }
+  const subs = (dec.subproductos || []).filter(
+    (s) => mapTipoProductoNombre(s) === tipo || s === tipo
+  );
+  const partes = (dec.partes || []).filter((p) => mapTipoProductoNombre(p) === tipo);
+  const producto = partes.length ? partes.join(', ') : subs.join(', ');
+  return {
+    sub: subs.join(', '),
+    parte: partes.join(', '),
+    producto,
+    causa: (dec.causas || []).join(', '),
+  };
+}
+
+function idPiezaDecomisoDesdeReporte(reporte, base, tipo) {
+  for (const fila of reporte || []) {
+    const id = String(fila[0] ?? '').trim();
+    if (codigoBase(id) !== base) continue;
+    const sub = String(fila[2] ?? '').trim();
+    const parte = String(fila[6] ?? '').trim();
+    if (mapTipoProductoNombre(sub || parte) === tipo) return id;
+  }
+  return '';
 }
 
 /**
@@ -246,9 +289,7 @@ function construirResumenDespachosDesdeFilas(
       if (fuentes.includes('vw_decomisos')) basesDecomisoVw.add(base);
       if (fuentes.includes('sai')) basesDecomisoSai.add(base);
       if (!fuentes.length) basesDecomisoSai.add(base);
-      dec.tipos.forEach((tDec) => {
-        puestoMeta[clave].decomisoPorTipo[tDec] = (puestoMeta[clave].decomisoPorTipo[tDec] || 0) + 1;
-      });
+      contabilizarPiezasDecomisoEnMeta(puestoMeta[clave], base, dec);
     }
   });
 
@@ -287,7 +328,7 @@ function construirResumenDespachosDesdeFilas(
       r.incompletoPorDecomiso = meta.basesConDecomiso.size > 0;
       // Incompleto: desbalance de columnas O falta de algún subproducto en un animal.
       r.incompletoCantidades = minVal !== maxVal || animalesIncompletos > 0;
-      r.incompleto = r.incompletoCantidades || r.incompletoPorDecomiso;
+      r.incompleto = r.incompletoCantidades;
       if (tiposFaltantesPorAnimal.length === 1) {
         r.detalleIncompleto =
           tiposFaltantesPorAnimal[0].animal +
@@ -397,7 +438,7 @@ function agruparJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
   return sets;
 }
 
-export { contarJuegosCompletosPorClave };
+export { contarJuegosCompletosPorClave, construirResumenDespachosDesdeFilas };
 
 /** Agrupa subproductos únicos (animal+tipo) por clave OPL / propietario. */
 function agruparSubproductosPorClave(rows, cols, getClave, turno = '') {
@@ -1462,7 +1503,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'opl-despachados-solo-sin-cava-v17';
+export const GESTOR_BUILD = 'decomiso-cabeza-columna-v18';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1846,6 +1887,7 @@ export async function getDetallesPuesto(puesto) {
   const clavePuesto = claveAgrupacionPuesto(puesto);
   const salidasTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turno);
   const filas = [];
+  const porAnimal = new Map();
   salidasTurno.forEach((fila) => {
     const id = String(fila[3] ?? '').trim();
     const prop = String(fila[4] ?? '').trim();
@@ -1857,6 +1899,8 @@ export async function getDetallesPuesto(puesto) {
     if (claveAgrupacionPuesto(pFila) !== clavePuesto) return;
     const base = codigoBase(id);
     const dec = decomisoInfoUnificado(mapaDec, indiceVw, id);
+    const det = decomisoDetallePorTipo(dec, tipo);
+    const decomisoTipo = Boolean(dec && dec.tipos.has(tipo));
     filas.push({
       id,
       codigoBase: base,
@@ -1864,11 +1908,42 @@ export async function getDetallesPuesto(puesto) {
       tipo,
       enCava: Boolean(base && basesEnCava.has(base)),
       cruda: tipo === 'Visceras Blancas' && Boolean(base && crudaBases.has(base)),
-      decomiso: Boolean(dec),
-      subproductosDecomiso: (dec?.subproductos || []).join(', '),
-      partesDecomiso: (dec?.partes || []).join(', '),
-      causaDecomiso: (dec?.causas || []).join(', '),
-      productoDecomiso: (dec?.partes?.length ? dec.partes : dec?.subproductos || dec?.productos || []).join(', '),
+      decomiso: decomisoTipo,
+      subproductosDecomiso: det.sub,
+      partesDecomiso: det.parte,
+      causaDecomiso: det.causa,
+      productoDecomiso: det.producto,
+    });
+    if (base) {
+      if (!porAnimal.has(base)) porAnimal.set(base, { prop, tipos: new Set(), dec: null });
+      const info = porAnimal.get(base);
+      info.tipos.add(tipo);
+      if (prop) info.prop = prop;
+      if (dec) info.dec = dec;
+    }
+  });
+  porAnimal.forEach((info, base) => {
+    const dec = info.dec || decomisoInfoUnificado(mapaDec, indiceVw, base);
+    if (!dec) return;
+    dec.tipos.forEach((tDec) => {
+      if (!TIPOS_PRODUCTO.includes(tDec)) return;
+      if (info.tipos.has(tDec)) return;
+      const det = decomisoDetallePorTipo(dec, tDec);
+      const idDec =
+        idPiezaDecomisoDesdeReporte(s.reporteDecomisos, base, tDec) || `${base}-DEC`;
+      filas.push({
+        id: idDec,
+        codigoBase: base,
+        propietario: info.prop,
+        tipo: tDec,
+        enCava: false,
+        cruda: false,
+        decomiso: true,
+        subproductosDecomiso: det.sub,
+        partesDecomiso: det.parte,
+        causaDecomiso: det.causa,
+        productoDecomiso: det.producto,
+      });
     });
   });
   filas.sort((a, b) => a.tipo.localeCompare(b.tipo) || a.id.localeCompare(b.id));
@@ -2395,31 +2470,47 @@ function esDestinoMarcadorTemprana(zona) {
   return false;
 }
 
+/** Etiqueta comercial de zona para la planilla (catálogo / destino real). */
+function etiquetaZonaPlanilla(zona) {
+  const u = String(zona || '').trim().toUpperCase();
+  if (u === 'CUMBRE') return 'LA CUMBRE';
+  return String(zona || '').trim();
+}
+
+function zonaDesdeCatalogoPlazas(puestoFull, mapaPlazas) {
+  const po = parsePuestoOperacion(puestoFull);
+  const codigo = po.codigo || codigoPuestoPlanilla(puestoFull);
+  const claves = [codigo, String(puestoFull || '').split('/')[0].trim()].filter(Boolean);
+  for (const k of claves) {
+    const kFmt = formatearCodigoSucursal(k);
+    if (mapaPlazas[kFmt]) return etiquetaZonaPlanilla(mapaPlazas[kFmt]);
+    if (mapaPlazas[k]) return etiquetaZonaPlanilla(mapaPlazas[k]);
+    const sinCeros = k.replace(/^0+/, '') || k;
+    if (sinCeros !== k && mapaPlazas[sinCeros]) return etiquetaZonaPlanilla(mapaPlazas[sinCeros]);
+  }
+  for (const k of Object.keys(mapaPlazas)) {
+    const ku = k.toUpperCase();
+    const u = puestoFull.toUpperCase();
+    if (u.startsWith(`${ku}/`) || u.includes(`/${ku}/`)) return etiquetaZonaPlanilla(mapaPlazas[k]);
+  }
+  return '';
+}
+
 function resolverZonaPlanilla(puestoFull, mapaPlazas, zonaExplicita = '') {
+  // Catálogo plazas (8204→CUMBRE, 6505→PROVENZA) tiene prioridad sobre marcadores SIRT (TEMP2, Temp 2 Florida…).
+  const desdeCatalogo = zonaDesdeCatalogoPlazas(puestoFull, mapaPlazas);
+  if (desdeCatalogo) return desdeCatalogo;
+
   let z = String(zonaExplicita || '').trim();
   if (esDestinoMarcadorTemprana(z)) z = '';
   if (z) return z;
   const po = parsePuestoOperacion(puestoFull);
   if (po.zona && !esDestinoMarcadorTemprana(po.zona)) return po.zona;
-  const codigo = po.codigo || codigoPuestoPlanilla(puestoFull);
-  const claves = [codigo, String(puestoFull || '').split('/')[0].trim()].filter(Boolean);
-  for (const k of claves) {
-    const kFmt = formatearCodigoSucursal(k);
-    if (mapaPlazas[kFmt]) return mapaPlazas[kFmt];
-    if (mapaPlazas[k]) return mapaPlazas[k];
-    const sinCeros = k.replace(/^0+/, '') || k;
-    if (sinCeros !== k && mapaPlazas[sinCeros]) return mapaPlazas[sinCeros];
-  }
-  for (const k of Object.keys(mapaPlazas)) {
-    const ku = k.toUpperCase();
-    const u = puestoFull.toUpperCase();
-    if (u.startsWith(`${ku}/`) || u.includes(`/${ku}/`)) return mapaPlazas[k];
-  }
   const fromRoute = inferirZonaDesdeRuta(puestoFull);
-  if (fromRoute) return fromRoute;
+  if (fromRoute) return etiquetaZonaPlanilla(fromRoute);
   if (po.zona && !esDestinoMarcadorTemprana(po.zona)) {
     for (const [needle, zona] of ZONA_POR_SEGMENTO_RUTA) {
-      if (po.zona.includes(needle)) return zona;
+      if (po.zona.includes(needle)) return etiquetaZonaPlanilla(zona);
     }
     return po.zona;
   }
@@ -2973,10 +3064,7 @@ export async function generarHTMLPlanillaPDF(opl) {
       .join('');
     zonasHtml += `<div style='background:white;border-radius:8px;border:1px solid ${border};overflow:hidden;min-width:160px;max-width:200px;flex:0 0 auto;page-break-inside:avoid;'><div style='background:${headBg};color:white;font-weight:700;padding:6px 8px;text-align:center;font-size:0.8rem;white-space:nowrap;-webkit-print-color-adjust:exact;print-color-adjust:exact;'>${z.nombre} <span style='background:rgba(255,255,255,0.2);padding:2px 6px;border-radius:20px;font-size:0.7rem;'>${z.total}</span></div><table style='width:100%;border-collapse:collapse;font-size:0.7rem;'><thead><tr><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:left;font-size:0.7rem;'>Puesto</th><th style='background:${thBg};padding:5px 6px;font-weight:700;text-align:center;font-size:0.7rem;'>Cant</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   });
-  const avisoTemp = datos.tieneTempranas
-    ? `<p style='text-align:center;color:#dc2626;font-weight:700;font-size:0.9rem;'>⚠ Tempranas: badge TEMP al frente (no es zona). Zona real del catálogo. (${datos.totalTempranas} juegos)</p>`
-    : '';
-  const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p>${avisoTemp}<div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
+  const html = `<!DOCTYPE html><html lang='es'><head><meta charset='UTF-8'><title>Planilla ${opl}</title></head><body style='font-family:Segoe UI,Arial,sans-serif;'><h2 style='color:#259c39;text-align:center;'>LISTA DE PUESTOS: VISCERAS DE SALIDA DE CAVA</h2><p style='text-align:center;color:#6b7280;'>OPL: <strong>${datos.opl}</strong> | Total: ${datos.totalOPL} | ${datos.porcentaje}%</p><div style='display:flex;flex-wrap:wrap;gap:0.5rem;'>${zonasHtml}</div></body></html>`;
   return { success: true, html };
 }
 
