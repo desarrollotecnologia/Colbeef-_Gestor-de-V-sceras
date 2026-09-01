@@ -9,6 +9,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { OPL_EXCEPCIONES_DEFAULT } from './constants.js';
+import { fechaOperativaHoy } from './engineUtils.js';
 import { gestorQuery, isGestorMysqlReady } from '../gestorDb.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -95,6 +96,71 @@ function normalizeState(raw) {
   return s;
 }
 
+/**
+ * Datos que pertenecen a una jornada concreta. Al cambiar el día operativo
+ * dejan de ser válidos: se descartan para que nadie vea, imprima o acumule
+ * la operación de ayer como si fuera la de hoy.
+ */
+const CAMPOS_DE_JORNADA = [
+  'estadoFromRow12',
+  'reporteDecomisos',
+  'decomisosVwFilas',
+  'decomisoVwStats',
+  'decomisoVinculoStats',
+  'resumenRows',
+  'resumenDecomisoMeta',
+  'resumenFechaProc',
+  'despachosCavas',
+  'salidasCavaDia',
+  'resumenDespachos',
+  'oplProgreso',
+  'consolidado',
+  'informe',
+  'fechaInicioOperacion',
+  'oplBaselineFecha',
+  'oplBaselineTurno',
+  'oplBaselineBuild',
+  'despachoKpiBaseline',
+  'oplTotalsJuego',
+  'oplTotalsJuegoCompleto',
+];
+
+/**
+ * Descarta la jornada guardada si es de otro día operativo.
+ * Conserva la configuración: OPL, plazas, histórico e historial de PDF.
+ * Exportada para poder probarla con estados sintéticos.
+ */
+export function descartarJornadaDeOtroDia(s, hoyIso = fechaOperativaHoy()) {
+  const dia = String(s?.lastSyncRange?.from || s?.oplBaselineFecha || '').trim();
+  if (!dia || dia === hoyIso) return null;
+
+  const base = defaultState();
+  for (const campo of CAMPOS_DE_JORNADA) s[campo] = base[campo];
+  delete s.lastSyncRange;
+  (s.oplConfig || []).forEach((r) => {
+    r.total = 0;
+  });
+  return { descartado: dia, hoy: hoyIso };
+}
+
+/** Deja el estado listo para servir: sin jornada ajena y en caché. */
+async function prepararEstadoCargado(s) {
+  const limpieza = descartarJornadaDeOtroDia(s);
+  cache = s;
+  if (limpieza) {
+    console.log(
+      `[gestor-state] Jornada del ${limpieza.descartado} descartada: hoy es ${limpieza.hoy}. ` +
+        'Se conservan OPL, plazas e histórico.'
+    );
+    try {
+      await saveState(s, { updatedBy: 'cambio-de-dia' });
+    } catch (e) {
+      console.warn('[gestor-state] No se pudo persistir el cambio de día:', e.message);
+    }
+  }
+  return cache;
+}
+
 function parseMysqlPayload(payload) {
   if (payload == null) return null;
   if (typeof payload === 'object') return payload;
@@ -152,31 +218,27 @@ export async function loadState() {
   if (isGestorMysqlReady()) {
     try {
       const fromMysql = await readStateFromMysql();
-      if (fromMysql) {
-        cache = fromMysql;
-        return cache;
-      }
+      if (fromMysql) return prepararEstadoCargado(fromMysql);
+
       const fromJson = await readStateFromJsonFile();
       if (fromJson) {
-        cache = fromJson;
+        const s = await prepararEstadoCargado(fromJson);
         try {
-          await writeStateToMysql(cache, 'migracion-json');
+          await writeStateToMysql(s, 'migracion-json');
           console.log('[gestor-state] JSON migrado a MySQL (gestor_state)');
         } catch (e) {
           console.warn('[gestor-state] No se pudo migrar JSON → MySQL:', e.message);
         }
-        return cache;
+        return s;
       }
-      cache = defaultState();
-      return cache;
+      return prepararEstadoCargado(defaultState());
     } catch (e) {
       console.warn('[gestor-state] Lectura MySQL falló, usando JSON:', e.message);
     }
   }
 
   const fromJson = await readStateFromJsonFile();
-  cache = fromJson || defaultState();
-  return cache;
+  return prepararEstadoCargado(fromJson || defaultState());
 }
 
 /**
@@ -234,6 +296,27 @@ export async function migrateGestorStateJsonToMysql() {
     console.warn('[gestor-state] Migración JSON → MySQL falló:', e.message);
     return { ok: false, error: e.message };
   }
+}
+
+/**
+ * Sube a MySQL el estado que se está usando en memoria.
+ *
+ * Al recuperar la conexión, lo trabajado sin base de datos es más reciente que
+ * la fila guardada: manda la memoria, no al contrario.
+ */
+export async function volcarEstadoEnMemoriaAMysql(updatedBy = 'reconexion-mysql') {
+  if (!isGestorMysqlReady()) return { ok: false, skipped: true };
+
+  const s = cache || (await readStateFromJsonFile());
+  if (!s) return { ok: true, imported: false, reason: 'sin-estado' };
+
+  await writeStateToMysql(s, updatedBy);
+  if (!cache) cache = s;
+  return {
+    ok: true,
+    imported: true,
+    dia: String(s.lastSyncRange?.from || s.oplBaselineFecha || '') || null,
+  };
 }
 
 /** Acceso de diagnóstico a la referencia actualmente almacenada en memoria. */

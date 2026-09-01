@@ -35,11 +35,13 @@ import {
   migrateUsabilityJsonToMysql,
 } from './gestor/usabilityStore.js';
 import {
-  initGestorMysql,
+  initGestorMysqlConEspera,
   closeGestorMysql,
   getGestorMysqlStatus,
   isGestorMysqlReady,
+  isGestorMysqlEnabled,
 } from './gestorDb.js';
+import { iniciarVigilanteMysql } from './gestor/mysqlVigilante.js';
 import { ensureGestorSchema, recordAuditoria } from './gestor/mysqlSchema.js';
 import { migrateGestorStateJsonToMysql } from './gestor/store.js';
 import { seedPlazasCatalogIfNeeded } from './gestor/plazasCatalog.js';
@@ -749,8 +751,34 @@ function getLanAddresses() {
   return addrs;
 }
 
+/**
+ * Espera de MySQL al arrancar. Windows marca MySQL80 como iniciado antes de que
+ * acepte conexiones, así que sin espera el gestor arranca sin base de datos.
+ */
+const MYSQL_ESPERA_MS = Math.max(0, Number(process.env.GESTOR_MYSQL_ESPERA_SEGUNDOS || 90) * 1000);
+/**
+ * Con GESTOR_MYSQL_OBLIGATORIO=true (por defecto) el gestor no arranca sin
+ * base de datos: es preferible no arrancar a trabajar una jornada entera sobre
+ * el JSON local sin que nadie se entere. Poner en false es la salida de
+ * emergencia para operar sin MySQL.
+ */
+const MYSQL_OBLIGATORIO =
+  String(process.env.GESTOR_MYSQL_OBLIGATORIO || 'true').toLowerCase() !== 'false';
+
 async function startServer() {
-  await initGestorMysql();
+  await initGestorMysqlConEspera({ ventanaMs: MYSQL_ESPERA_MS });
+
+  if (isGestorMysqlEnabled() && !isGestorMysqlReady() && MYSQL_OBLIGATORIO) {
+    const st = getGestorMysqlStatus();
+    console.error('');
+    console.error('[FATAL] El gestor no arranca sin MySQL.');
+    console.error(`        ${st.host}:${st.port}/${st.database} → ${st.lastError || 'sin conexión'}`);
+    console.error('        Revise el servicio MySQL80 y GESTOR_MYSQL_* en .env.');
+    console.error('        Para operar sin base de datos: GESTOR_MYSQL_OBLIGATORIO=false');
+    console.error('');
+    process.exit(1);
+  }
+
   if (isGestorMysqlReady()) {
     await ensureGestorSchema();
     await migrateUsabilityJsonToMysql();
@@ -785,6 +813,8 @@ async function startServer() {
     }
     if (primary) console.log(`  Enlace recomendado: http://${primary}:${PORT}/gestor.html`);
   });
+
+  iniciarVigilanteMysql();
 }
 
 startServer().catch((e) => {

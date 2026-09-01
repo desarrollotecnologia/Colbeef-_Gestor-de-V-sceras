@@ -1562,9 +1562,13 @@ export async function getDashboardData(range) {
   if (!filtroSirtValido(filtro)) {
     const persisted = await loadState();
     const fallback = normalizarRangoFechas(persisted.lastSyncRange || {});
-    filtro = filtroSirtValido(fallback)
-      ? fallback
-      : { from: hoyIsoLocal(), to: hoyIsoLocal() };
+    const hoy = hoyIsoLocal();
+    // El tablero sin fecha es el de hoy. Heredar la última sincronización
+    // mostraba la jornada de ayer como si fuera la de hoy tras un reinicio.
+    filtro =
+      filtroSirtValido(fallback) && String(fallback.from || '') === hoy
+        ? fallback
+        : { from: hoy, to: hoy };
   }
   if (filtroSirtValido(filtro)) {
     try {

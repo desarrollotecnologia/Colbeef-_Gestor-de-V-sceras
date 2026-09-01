@@ -72,26 +72,29 @@ async function createPool(database) {
 /**
  * Crea la base si no existe y deja el pool apuntando a GESTOR_MYSQL_DB.
  * Requiere privilegio CREATE DATABASE (o que la BD ya exista).
+ *
+ * `silencioso` evita repetir el diagnóstico en cada reintento; quien reintenta
+ * ya informa del intento y del error.
  */
-export async function initGestorMysql() {
+export async function initGestorMysql({ silencioso = false } = {}) {
   if (!enabled) {
     console.log('[gestor-mysql] Deshabilitado (GESTOR_MYSQL_ENABLED=false). Se usa JSON local.');
     return { ok: false, skipped: true };
   }
 
-  if (!cfg.password && cfg.user !== 'root') {
+  if (!cfg.password && cfg.user !== 'root' && !silencioso) {
     console.warn(
       '[gestor-mysql] GESTOR_MYSQL_PASSWORD vacío. Defínalo en .env antes de producción.'
     );
   }
 
+  let boot = null;
   try {
-    const boot = await createPool(null);
+    boot = await createPool(null);
     await boot.query(
       `CREATE DATABASE IF NOT EXISTS \`${cfg.database.replace(/`/g, '')}\`
        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`
     );
-    await boot.end();
 
     pool = await createPool(cfg.database);
     await pool.query('SELECT 1 AS ok');
@@ -105,11 +108,52 @@ export async function initGestorMysql() {
     ready = false;
     lastError = e;
     pool = null;
-    console.error('[gestor-mysql] No se pudo conectar:', e.message);
-    console.error(
-      '[gestor-mysql] Instale MySQL en el 205 y revise GESTOR_MYSQL_* en .env. El gestor sigue con JSON.'
-    );
+    if (!silencioso) {
+      console.error('[gestor-mysql] No se pudo conectar:', e.message);
+      console.error(
+        '[gestor-mysql] Instale MySQL en el 205 y revise GESTOR_MYSQL_* en .env.'
+      );
+    }
     return { ok: false, error: e.message };
+  } finally {
+    // Sin esto cada reintento deja un pool colgando.
+    if (boot) await boot.end().catch(() => {});
+  }
+}
+
+const dormir = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Reintenta la conexión hasta agotar la ventana.
+ *
+ * Al encender el servidor Windows marca MySQL80 como iniciado antes de que
+ * acepte conexiones: el primer intento falla con ECONNREFUSED y, sin reintento,
+ * el gestor se queda toda la jornada sin base de datos.
+ */
+export async function initGestorMysqlConEspera({ ventanaMs = 90000, esperaMs = 5000 } = {}) {
+  if (!enabled) return initGestorMysql();
+
+  const limite = Date.now() + Math.max(0, ventanaMs);
+  let intento = 0;
+  for (;;) {
+    intento += 1;
+    const r = await initGestorMysql({ silencioso: intento > 1 });
+    if (r.ok) {
+      if (intento > 1) {
+        console.log(`[gestor-mysql] Conectado en el intento ${intento}.`);
+      }
+      return { ...r, intentos: intento };
+    }
+    if (Date.now() >= limite) {
+      console.error(
+        `[gestor-mysql] Sin conexión tras ${intento} intento(s): ${r.error || 'sin detalle'}`
+      );
+      return { ...r, intentos: intento, agotado: true };
+    }
+    console.warn(
+      `[gestor-mysql] Intento ${intento} falló (${r.error}). Reintento en ${Math.round(esperaMs / 1000)}s...`
+    );
+    await dormir(esperaMs);
   }
 }
 
