@@ -77,6 +77,12 @@ export function defaultState() {
     informe: null,
     historialPdf: [],
     fechaInicioOperacion: null,
+    /**
+     * Día operativo en que se guardó este estado. No usar lastSyncRange para
+     * esto: ese campo es la última fecha consultada y el operador puede
+     * ponerlo en un día pasado al revisar historial.
+     */
+    diaGuardado: '',
   };
 }
 
@@ -128,10 +134,15 @@ const CAMPOS_DE_JORNADA = [
 /**
  * Descarta la jornada guardada si es de otro día operativo.
  * Conserva la configuración: OPL, plazas, histórico e historial de PDF.
+ *
+ * Se guía por `diaGuardado`. Solo si falta (estado anterior a este campo) cae
+ * a la última fecha sincronizada como aproximación.
  * Exportada para poder probarla con estados sintéticos.
  */
 export function descartarJornadaDeOtroDia(s, hoyIso = fechaOperativaHoy()) {
-  const dia = String(s?.lastSyncRange?.from || s?.oplBaselineFecha || '').trim();
+  const dia = String(
+    s?.diaGuardado || s?.lastSyncRange?.from || s?.oplBaselineFecha || ''
+  ).trim();
   if (!dia || dia === hoyIso) return null;
 
   const base = defaultState();
@@ -213,7 +224,9 @@ async function writeStateToMysql(s, updatedBy = null) {
  * Prioridad: MySQL → JSON → sesión vacía.
  */
 export async function loadState() {
-  if (cache) return cache;
+  // También con el estado en memoria: el servicio puede seguir vivo cuando
+  // cambia el día operativo y no debe arrastrar la jornada anterior.
+  if (cache) return prepararEstadoCargado(cache);
 
   if (isGestorMysqlReady()) {
     try {
@@ -248,6 +261,7 @@ export async function loadState() {
  */
 export async function saveState(s, opts = {}) {
   cache = s;
+  s.diaGuardado = fechaOperativaHoy();
   const updatedBy = opts.updatedBy || null;
 
   let mysqlOk = false;

@@ -28,6 +28,7 @@ function comprobar(nombre, condicion, detalle = '') {
 
 function estadoDeJornada(dia) {
   const s = defaultState();
+  s.diaGuardado = dia;
   s.lastSyncRange = { from: dia, to: dia };
   s.oplBaselineFecha = dia;
   s.oplBaselineTurno = 'MxM';
@@ -81,18 +82,38 @@ console.log('=== 2) guarda de día: misma jornada (reinicio a media operación) 
 }
 
 console.log('');
-console.log('=== 3) guarda de día: estado sin jornada ===');
+console.log('=== 3) guarda de día: consultar un día pasado NO borra la jornada de hoy ===');
 {
-  const s = defaultState();
-  comprobar('no toca un estado vacío', descartarJornadaDeOtroDia(s, '2026-09-01') === null);
-  const soloBaseline = defaultState();
-  soloBaseline.oplBaselineFecha = '2026-08-30';
-  const r = descartarJornadaDeOtroDia(soloBaseline, '2026-09-01');
-  comprobar('usa oplBaselineFecha si no hay lastSyncRange', r && r.descartado === '2026-08-30');
+  // El operador revisa la planilla de ayer: lastSyncRange queda en ayer, pero
+  // el estado se sigue guardando hoy. Borrar aquí costaría la operación en curso.
+  const s = estadoDeJornada('2026-09-01');
+  s.lastSyncRange = { from: '2026-08-25', to: '2026-08-25' };
+  const r = descartarJornadaDeOtroDia(s, '2026-09-01');
+  comprobar('no descarta nada', r === null, JSON.stringify(r));
+  comprobar('mantiene la programación de hoy', s.despachosCavas.length === 2);
+  comprobar('mantiene la meta congelada', s.oplTotalsJuegoCompleto['CAVA WO'] === 38);
 }
 
 console.log('');
-console.log('=== 4) espera de MySQL contra un puerto muerto (ventana 12s) ===');
+console.log('=== 4) guarda de día: estados sin marca de día ===');
+{
+  const s = defaultState();
+  comprobar('no toca un estado vacío', descartarJornadaDeOtroDia(s, '2026-09-01') === null);
+
+  // Estado anterior a diaGuardado: se aproxima con la última sincronización.
+  const viejo = defaultState();
+  viejo.lastSyncRange = { from: '2026-08-31', to: '2026-08-31' };
+  const r1 = descartarJornadaDeOtroDia(viejo, '2026-09-01');
+  comprobar('cae a lastSyncRange si no hay diaGuardado', r1 && r1.descartado === '2026-08-31');
+
+  const soloBaseline = defaultState();
+  soloBaseline.oplBaselineFecha = '2026-08-30';
+  const r2 = descartarJornadaDeOtroDia(soloBaseline, '2026-09-01');
+  comprobar('cae a oplBaselineFecha como último recurso', r2 && r2.descartado === '2026-08-30');
+}
+
+console.log('');
+console.log('=== 5) espera de MySQL contra un puerto muerto (ventana 12s) ===');
 {
   const t0 = Date.now();
   const r = await initGestorMysqlConEspera({ ventanaMs: 12000, esperaMs: 4000 });
