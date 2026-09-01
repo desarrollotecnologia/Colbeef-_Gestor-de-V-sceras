@@ -61,7 +61,5 @@ Write-Host ("     usuario  : " + $t.Principal.UserId + " (nivel " + $t.Principal
 Write-Host ("     disparo  : al encender, " + $RetardoSeg + "s despues")
 Write-Host ("     script   : " + $script)
 Write-Host ''
-Write-Host 'Probarla sin reiniciar:  Start-ScheduledTask -TaskName "' -NoNewline
-Write-Host $Nombre -NoNewline
-Write-Host '"'
+Write-Host ('Probarla sin reiniciar:  Start-ScheduledTask -TaskName "{0}"' -f $Nombre)
 exit 0
