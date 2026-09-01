@@ -120,6 +120,35 @@ Doble clic (o clic derecho → Ejecutar como administrador):
 
 Hace: `git pull` → `npm install` → `npm run build` → reinicia el servicio **Colbeef SIRT API**.
 
+### Arranque atado a MySQL
+
+El gestor **no arranca sin su MySQL**: es preferible que no esté a que se trabaje
+una jornada sobre el JSON local sin que nadie lo note. Al arrancar espera a la
+base hasta `GESTOR_MYSQL_ESPERA_SEGUNDOS` (90 por defecto), porque Windows marca
+`MySQL80` como iniciado antes de que acepte conexiones. Si MySQL se cae con la
+operación en marcha el gestor sigue sobre el JSON y reconecta solo, subiendo a
+la base lo trabajado mientras estuvo caída.
+
+Salida de emergencia para operar sin base de datos: `GESTOR_MYSQL_OBLIGATORIO=false`.
+
+Si MySQL tarda más de lo que aguantan los reintentos del servicio, este se queda
+abajo. Para cubrirlo, una vez por máquina (clic derecho → Ejecutar como
+administrador):
+
+- `instalar-tarea-arranque.bat` — registra la tarea **Colbeef Gestor Visceras -
+  Arranque**, que al encender espera a que MySQL acepte consultas y entonces deja
+  el gestor arriba. Corre como SYSTEM: sin ventanas ni permisos que aceptar.
+- `iniciar-gestor.bat` — lo mismo, a mano.
+
+Registro de esos arranques: `server\data\arranque-gestor.log`.
+
+También conviene que el servicio dependa de MySQL80, para que Windows respete el
+orden:
+
+```bat
+sc config colbeefsirtapi.exe depend= MySQL80
+```
+
 O en un solo comando:
 
 ```bash
