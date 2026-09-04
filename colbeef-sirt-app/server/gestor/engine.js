@@ -137,17 +137,12 @@ function filasDespachoTurno(despachosCavas, turno) {
   return filasDespachoTurnoOperacion(despachosCavas, turno);
 }
 
-/** Suma en columnas piezas decomisadas que no aparecen en programación (p. ej. Cabeza). */
-function contabilizarPiezasDecomisoEnMeta(meta, base, dec) {
+/** Marca decomiso por tipo; no suma a columnas (solo programados cuentan). */
+function marcarDecomisoPorTipoEnMeta(meta, dec) {
   if (!dec?.tipos?.size) return;
-  if (!meta.animales[base]) meta.animales[base] = new Set();
   dec.tipos.forEach((tDec) => {
     if (!TIPOS_PRODUCTO.includes(tDec)) return;
     meta.decomisoPorTipo[tDec] = (meta.decomisoPorTipo[tDec] || 0) + 1;
-    if (!meta.animales[base].has(tDec)) {
-      meta[tDec] = (meta[tDec] || 0) + 1;
-      meta.animales[base].add(tDec);
-    }
   });
 }
 
@@ -249,6 +244,7 @@ function construirResumenDespachosDesdeFilas(
         animales: {},
         basesConDecomiso: new Set(),
         basesDecContados: new Set(),
+        decomisoInfoPorBase: {},
         decomisoPorTipo: {},
         tieneCruda: false,
         props: {},
@@ -289,8 +285,15 @@ function construirResumenDespachosDesdeFilas(
       if (fuentes.includes('vw_decomisos')) basesDecomisoVw.add(base);
       if (fuentes.includes('sai')) basesDecomisoSai.add(base);
       if (!fuentes.length) basesDecomisoSai.add(base);
-      contabilizarPiezasDecomisoEnMeta(puestoMeta[clave], base, dec);
+      // Guardar decomiso; solo se marca por tipo (no infla columnas).
+      puestoMeta[clave].decomisoInfoPorBase[base] = dec;
     }
+  });
+
+  Object.values(puestoMeta).forEach((meta) => {
+    Object.values(meta.decomisoInfoPorBase || {}).forEach((dec) => {
+      marcarDecomisoPorTipoEnMeta(meta, dec);
+    });
   });
 
   const resultado = [];
@@ -1503,7 +1506,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'decomiso-cabeza-columna-v18';
+export const GESTOR_BUILD = 'decomiso-solo-marca-v20';
 
 function metaRespuestaOpl(extra = {}) {
   return {
