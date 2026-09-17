@@ -430,6 +430,11 @@
               <div class="split-valor" id="dashCrudas" style="font-size:1.4rem;color:#d97706;">—</div>
               <div class="split-sub">VB cruda en despacho del turno</div>
             </div>
+            <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
+              <div class="split-label" style="font-size:0.7rem;color:#1e3a5f;">➕ Adicionales</div>
+              <div class="split-valor" id="dashAdicionales" style="font-size:1.4rem;color:#1e3a5f;">—</div>
+              <div class="split-sub" id="dashAdicionalesSub">Juegos pistoleados ≥ 15:20</div>
+            </div>
           </div>
         </div>
       </div>
@@ -1595,6 +1600,17 @@ function updateDashboard(data) {
       'dashCrudas',
       data.totalCrudas != null && data.totalCrudas !== undefined ? data.totalCrudas : '—'
     );
+    var adiJuegos = Number(data.totalJuegosAdicionales != null ? data.totalJuegosAdicionales : 0);
+    setText('dashAdicionales', data.totalJuegosAdicionales != null ? adiJuegos : '—');
+    var adiSub = document.getElementById('dashAdicionalesSub');
+    if (adiSub) {
+      var corte = data.corteAdicional || '15:20';
+      var piezasAdi = Number(data.totalPiezasAdicionales || 0);
+      adiSub.textContent =
+        piezasAdi > 0
+          ? 'Juegos ≥ ' + corte + (piezasAdi ? ' · ' + piezasAdi + ' piezas' : '')
+          : 'Juegos pistoleados ≥ ' + corte;
+    }
     // Total a despachar: único que disminuye con cada salida.
     setText('dashDespachos', pendientes);
     setText('dashDespachados', despachadosNum);

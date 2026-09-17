@@ -48,6 +48,7 @@ import {
   getDiaOperativoCorteHora,
   formatearCodigoSucursal,
   getSalidaAdicionalCorteLabel,
+  esSalidaAdicionalPorHora,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -661,6 +662,32 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
 }
 
 const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
+
+/**
+ * Juegos completos con pistoleo ≥ 15:20 (adicionales), solo cava paquete visceral.
+ * No cambia pendientes: solo métrica visual del tablero.
+ */
+function contarJuegosAdicionalesSalidas(salidasRows, turno = '') {
+  const conHora = (salidasRows || []).filter((fila) => esSalidaAdicionalPorHora(fila[0]));
+  if (!conHora.length) {
+    return { juegos: 0, piezas: 0, corte: getSalidaAdicionalCorteLabel() };
+  }
+  const paquete = filasSalidaDespachoReal(conHora);
+  const delTurno = turno
+    ? filasDespachoTurnoOperacion(paquete, turno)
+    : paquete;
+  const juegos =
+    Number(
+      contarJuegosCompletosPorClave(delTurno, COLS_DESPACHO_CAVA, () => '__TOTAL__', '')[
+        '__TOTAL__'
+      ] || 0
+    ) || 0;
+  return {
+    juegos,
+    piezas: delTurno.length,
+    corte: getSalidaAdicionalCorteLabel(),
+  };
+}
 
 /** Propietarios únicos con juegos del turno (desde filas Despachos_Cavas). */
 function propietariosConJuegosDesdeDespachos(despachos, turno) {
@@ -1507,7 +1534,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'salidas-adicionales-1520-v21';
+export const GESTOR_BUILD = 'dash-juegos-adicionales-v22';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1714,6 +1741,7 @@ export async function getDashboardData(range) {
         Number(decomisoVinculoStats?.decomisosUnicos) ||
         Number(decomisoVinculoStats?.filasEnRango) ||
         reporte.length;
+      const adi = contarJuegosAdicionalesSalidas(salidasDia || [], turnoOp);
 
       const progresoOPL = preview.success
         ? preview.operacionFinalizada
@@ -1734,6 +1762,9 @@ export async function getDashboardData(range) {
         totalDecomisosPiezas: contarCruceDecomisosSync(estado, reporte, desp),
         totalDecomisosSinVinculo: Math.max(0, totalDecomisosEnRango - totalDecomisos),
         totalCrudas: cr.total,
+        totalJuegosAdicionales: adi.juegos,
+        totalPiezasAdicionales: adi.piezas,
+        corteAdicional: adi.corte,
         totalJuegosDespachar,
         despachados,
         faltan: pendientes,
