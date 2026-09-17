@@ -206,6 +206,15 @@
     .badge-incompleto{display:inline-block;font-size:0.62rem;background:#ef4444;color:#fff;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
     .badge-decomiso{display:inline-block;font-size:0.62rem;background:#9a3412;color:#fff;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
     .badge-cruda{display:inline-block;font-size:0.62rem;background:#fef3c7;color:#92400e;border:1px solid #fcd34d;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
+    .badge-adicional{display:inline-block;font-size:0.62rem;background:#1e3a5f;color:#fff;border-radius:3px;padding:0 5px;margin-left:0.35rem;vertical-align:middle;white-space:nowrap;line-height:1.35;}
+    .fila-adicional{background:#eff6ff;}
+    .adicionales-panel{border:1px solid #bfdbfe;background:#f8fbff;border-radius:8px;padding:0.85rem 1rem;margin:0.75rem 0 1rem;}
+    .adicionales-panel h4{margin:0 0 0.35rem;color:#1e3a5f;font-size:0.92rem;}
+    .adicionales-kpis{display:flex;flex-wrap:wrap;gap:1rem 1.5rem;font-size:0.82rem;margin-bottom:0.65rem;}
+    .adicionales-kpis strong{font-size:1.05rem;}
+    .adicionales-filtros{display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.55rem;}
+    .adicionales-filtros button{padding:0.28rem 0.7rem;font-size:0.78rem;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;}
+    .adicionales-filtros button.active{background:#1e3a5f;color:#fff;border-color:#1e3a5f;}
     /* Modal detalle puesto (despachos) */
     #modalDetalle .modal-box{max-width:min(1040px,96vw);}
     #modalDetalle .table-wrap{max-height:min(58vh,520px);overflow:auto;}
@@ -585,8 +594,48 @@
       </div>
       <span class="search-count" id="searchCount"></span>
     </div>
+    <details class="ux-collapsible" open>
+      <summary>Salidas físicas — normales vs adicionales (≥ 15:20)</summary>
+      <div class="ux-collapsible-body">
+        <div class="adicionales-panel">
+          <h4>Pistoleo del día · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
+          <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
+            Hasta las <strong>15:19</strong> = salida normal · desde las <strong>15:20</strong> = adicional.
+            En pendientes / OPL se cuentan igual: la etiqueta solo sirve para diferenciar cuáles salieron tarde.
+          </p>
+          <div class="adicionales-kpis">
+            <div>Normales<br><strong id="kpiSalNormales">—</strong></div>
+            <div>Adicionales<br><strong id="kpiSalAdicionales" style="color:#1e3a5f;">—</strong></div>
+            <div>Total<br><strong id="kpiSalTotal">—</strong></div>
+          </div>
+          <div class="adicionales-filtros">
+            <button type="button" class="active" id="filtroSalTodas" onclick="filtrarSalidasFisicas('todas')">Todas</button>
+            <button type="button" id="filtroSalNormales" onclick="filtrarSalidasFisicas('normales')">Normales</button>
+            <button type="button" id="filtroSalAdicionales" onclick="filtrarSalidasFisicas('adicionales')">Solo adicionales</button>
+            <button type="button" class="btn btn-secondary" style="padding:0.28rem 0.7rem;font-size:0.78rem;" onclick="cargarVistaSalidasFisicas()">🔄 Actualizar</button>
+          </div>
+          <div class="table-wrap" style="max-height:260px;margin-top:0;">
+            <table style="font-size:0.82rem;">
+              <thead>
+                <tr>
+                  <th>Fecha/hora salida</th>
+                  <th>Código</th>
+                  <th>Subproducto</th>
+                  <th>Puesto</th>
+                  <th>Cava</th>
+                  <th>Tipo</th>
+                </tr>
+              </thead>
+              <tbody id="tablaSalidasFisicas">
+                <tr><td colspan="6" class="empty-state">Se cargará al abrir el módulo.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </details>
     <details class="ux-collapsible">
-      <summary>Detalle línea a línea — Salidas SIRT (diagnóstico)</summary>
+      <summary>Detalle línea a línea — Programación SIRT (diagnóstico)</summary>
       <div class="ux-collapsible-body">
         <p style="font-size:0.8rem;color:var(--gris);margin:0 0 0.65rem;">Detalle línea a línea desde SIRT (programación, cava, riel). La tabla principal agrupa <strong>un puesto por fila</strong> con juegos completos.</p>
         <div class="ux-toolbar">
@@ -1235,7 +1284,10 @@ function cargarDespachosDesdeSirt(opts) {
   opts = opts || {};
   if (state.dashboardVista === 'sesion') {
     cargarDespachosGuardados();
-    if (!opts.silent) cargarVistaSalidasCava();
+    if (!opts.silent) {
+      cargarVistaSalidasCava();
+      cargarVistaSalidasFisicas();
+    }
     return;
   }
   var filtro = leerFechaGlobal();
@@ -1290,7 +1342,10 @@ function cargarDespachosDesdeSirt(opts) {
         );
       }
       loadDashboardData();
-      if (!opts.silent) cargarVistaSalidasCava();
+      if (!opts.silent) {
+      cargarVistaSalidasCava();
+      cargarVistaSalidasFisicas();
+    }
     })
     .withFailureHandler(function (e) {
       hideSpinner();
@@ -1848,6 +1903,116 @@ function cargarVistaSalidasCava() {
     .consultarSalidasCavaDesdeSIRT(leerFechaGlobal());
 }
 
+window._salidasFisicasCache = { filas: [], filtro: 'todas', corte: '15:20' };
+
+function filtrarSalidasFisicas(modo) {
+  window._salidasFisicasCache.filtro = modo || 'todas';
+  ['filtroSalTodas', 'filtroSalNormales', 'filtroSalAdicionales'].forEach(function (id) {
+    var el = document.getElementById(id);
+    if (el) el.classList.remove('active');
+  });
+  var map = { todas: 'filtroSalTodas', normales: 'filtroSalNormales', adicionales: 'filtroSalAdicionales' };
+  var btn = document.getElementById(map[modo] || 'filtroSalTodas');
+  if (btn) btn.classList.add('active');
+  renderTablaSalidasFisicas();
+}
+
+function renderTablaSalidasFisicas() {
+  var tbody = document.getElementById('tablaSalidasFisicas');
+  if (!tbody) return;
+  var cache = window._salidasFisicasCache || { filas: [], filtro: 'todas' };
+  var filas = cache.filas || [];
+  var filtro = cache.filtro || 'todas';
+  if (filtro === 'normales') filas = filas.filter(function (f) { return !f.adicional; });
+  if (filtro === 'adicionales') filas = filas.filter(function (f) { return f.adicional; });
+  if (!filas.length) {
+    tbody.innerHTML =
+      '<tr><td colspan="6" class="empty-state">' +
+      (filtro === 'adicionales'
+        ? 'Sin salidas adicionales (≥ ' + (cache.corte || '15:20') + ').'
+        : 'Sin salidas físicas para la fecha.') +
+      '</td></tr>';
+    return;
+  }
+  var slice = filas.slice(0, SIRT_PREVIEW_MAX);
+  tbody.innerHTML = slice
+    .map(function (f) {
+      var badge = f.adicional
+        ? '<span class="badge-adicional" title="Salida ≥ ' +
+          escapeHtml(cache.corte || '15:20') +
+          '">adicional</span>'
+        : '<span style="color:#64748b;font-size:0.72rem;">normal</span>';
+      return (
+        '<tr class="' +
+        (f.adicional ? 'fila-adicional' : '') +
+        '"><td>' +
+        escapeHtml(f.fechaSalida || '') +
+        '</td><td>' +
+        escapeHtml(f.codigo || '') +
+        '</td><td>' +
+        escapeHtml(f.descripcion || f.tipoProducto || '') +
+        '</td><td style="max-width:200px;font-size:0.78rem;word-break:break-word;">' +
+        escapeHtml(f.puesto || f.destino || '') +
+        '</td><td>' +
+        escapeHtml(f.cava || '—') +
+        '</td><td>' +
+        badge +
+        '</td></tr>'
+      );
+    })
+    .join('');
+  if (filas.length > slice.length) {
+    tbody.innerHTML +=
+      '<tr><td colspan="6" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      slice.length +
+      ' de ' +
+      filas.length +
+      '.</td></tr>';
+  }
+}
+
+function cargarVistaSalidasFisicas() {
+  var tbody = document.getElementById('tablaSalidasFisicas');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Consultando pistoleo…</td></tr>';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res || !res.success) {
+        if (tbody) {
+          tbody.innerHTML =
+            '<tr><td colspan="6" class="empty-state">' +
+            escapeHtml((res && res.message) || 'Error al consultar salidas físicas') +
+            '</td></tr>';
+        }
+        return;
+      }
+      var corte = res.corteAdicional || '15:20';
+      window._salidasFisicasCache = {
+        filas: res.filas || [],
+        filtro: (window._salidasFisicasCache && window._salidasFisicasCache.filtro) || 'todas',
+        corte: corte,
+      };
+      var lbl = document.getElementById('corteAdicionalLbl');
+      if (lbl) lbl.textContent = corte;
+      var setKpi = function (id, v) {
+        var el = document.getElementById(id);
+        if (el) el.textContent = v;
+      };
+      setKpi('kpiSalNormales', res.totalNormales != null ? res.totalNormales : 0);
+      setKpi('kpiSalAdicionales', res.totalAdicionales != null ? res.totalAdicionales : 0);
+      setKpi('kpiSalTotal', res.totalFilas != null ? res.totalFilas : 0);
+      renderTablaSalidasFisicas();
+    })
+    .withFailureHandler(function (e) {
+      if (tbody) {
+        tbody.innerHTML =
+          '<tr><td colspan="6" class="empty-state" style="color:#991b1b;">' +
+          escapeHtml(e && e.message ? e.message : String(e)) +
+          '</td></tr>';
+      }
+    })
+    .consultarSalidasFisicasDesdeSIRT(leerFechaGlobal());
+}
+
 function uxBuscarDecomisosSirt(q) {
   var n = uxFilterTable('tablaDecomisosSirt', q, [0, 1, 2, 3, 4, 5]);
   var m = document.getElementById('decomisosSirtPreviewMeta');
@@ -2011,20 +2176,31 @@ function cargarVistaSalidasDecomiso() {
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success || !res.filas || !res.filas.length) {
-        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Sin salidas para la fecha.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Sin salidas físicas para la fecha.</td></tr>';
         return;
       }
       tbody.innerHTML = res.filas.slice(0, 80).map(function (f) {
+        var tipo = f.adicional
+          ? ' <span class="badge-adicional">adicional</span>'
+          : '';
         return (
-          '<tr><td>' + escapeHtml(f.fechaSalida || '') + '</td><td>' + escapeHtml(f.codigo || '') + '</td><td>' +
-          escapeHtml(f.descripcion || f.tipoProducto || '') + '</td><td>' + escapeHtml(f.destino || f.puesto || '') + '</td></tr>'
+          '<tr class="' + (f.adicional ? 'fila-adicional' : '') + '"><td>' +
+          escapeHtml(f.fechaSalida || '') +
+          '</td><td>' +
+          escapeHtml(f.codigo || '') +
+          tipo +
+          '</td><td>' +
+          escapeHtml(f.descripcion || f.tipoProducto || '') +
+          '</td><td>' +
+          escapeHtml(f.destino || f.puesto || '') +
+          '</td></tr>'
         );
       }).join('');
     })
     .withFailureHandler(function () {
       tbody.innerHTML = '<tr><td colspan="4" class="empty-state">Error al cargar salidas.</td></tr>';
     })
-    .consultarSalidasCavaDesdeSIRT(leerFechaGlobal());
+    .consultarSalidasFisicasDesdeSIRT(leerFechaGlobal());
 }
 
 // ══════════════════════════════════════════════════════

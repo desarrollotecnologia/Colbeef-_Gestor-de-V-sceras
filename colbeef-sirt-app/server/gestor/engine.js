@@ -47,6 +47,7 @@ import {
   fechaOperativaDesdeCelda,
   getDiaOperativoCorteHora,
   formatearCodigoSucursal,
+  getSalidaAdicionalCorteLabel,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -1506,7 +1507,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'decomiso-solo-marca-v20';
+export const GESTOR_BUILD = 'salidas-adicionales-1520-v21';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -3262,6 +3263,52 @@ export async function consultarSalidasCavaDesdeSIRT(range) {
     turno: detectarTurnoDesdeDatos(filas),
     totalFilas: filas.length,
     filas: filas.map(despachoCavaRowToDto),
+  };
+}
+
+/**
+ * Salidas físicas (fecha_salida) del día: normales vs adicionales (≥ 15:20).
+ */
+export async function consultarSalidasFisicasDesdeSIRT(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  const useRange = filtroSirtValido(filtro)
+    ? filtro
+    : { from: hoyIsoLocal(), to: hoyIsoLocal() };
+  const matriz = await fetchDespachosCavaRielRows(useRange);
+  const filas = matriz.map(despachoCavaRowToDto);
+  const normales = filas.filter((f) => !f.adicional);
+  const adicionales = filas.filter((f) => f.adicional);
+  const corte = getSalidaAdicionalCorteLabel();
+  return {
+    success: true,
+    modo: 'salidas-fisicas',
+    desde: useRange.from || null,
+    hasta: useRange.to || null,
+    corteAdicional: corte,
+    totalFilas: filas.length,
+    totalNormales: normales.length,
+    totalAdicionales: adicionales.length,
+    filas,
+    filasNormales: normales,
+    filasAdicionales: adicionales,
+  };
+}
+
+/** Resumen de salidas adicionales del día (pistoleo ≥ corte horario). */
+export async function getResumenAdicionales(range) {
+  const out = await consultarSalidasFisicasDesdeSIRT(range || {});
+  if (!out.success) return out;
+  return {
+    success: true,
+    corteAdicional: out.corteAdicional,
+    total: out.totalAdicionales,
+    totalNormales: out.totalNormales,
+    totalSalidas: out.totalFilas,
+    filas: out.filasAdicionales,
+    mensaje:
+      out.totalAdicionales > 0
+        ? `${out.totalAdicionales} salida(s) adicional(es) desde las ${out.corteAdicional}.`
+        : `Sin salidas adicionales (≥ ${out.corteAdicional}).`,
   };
 }
 

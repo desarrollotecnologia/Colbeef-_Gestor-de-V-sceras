@@ -20,6 +20,8 @@ import {
   fechaOperativaHoy,
   fechaIsoLocalDesdeDate,
   formatearCodigoSucursal,
+  esSalidaAdicionalPorHora,
+  getSalidaAdicionalCorteLabel,
 } from './engineUtils.js';
 import {
   detectarTurnoPorFechaISO,
@@ -248,8 +250,10 @@ export function estadoCavaRowToDto(fila) {
 /** Matriz 13 columnas (Despachos_Cavas / salidas de cava). */
 export function despachoCavaRowToDto(fila) {
   const tipo = String(fila[7] ?? '').trim();
+  const fechaSalida = String(fila[0] ?? '').trim();
+  const adicional = esSalidaAdicionalPorHora(fechaSalida);
   return {
-    fechaSalida: String(fila[0] ?? '').trim(),
+    fechaSalida,
     fechaIngreso: String(fila[1] ?? '').trim(),
     codigo: String(fila[3] ?? '').trim(),
     descripcion: tipo,
@@ -262,6 +266,9 @@ export function despachoCavaRowToDto(fila) {
     cava: String(fila[6] ?? '').trim(),
     riel: String(fila[2] ?? '').trim(),
     observaciones: String(fila[12] ?? '').trim(),
+    adicional,
+    tipoSalida: adicional ? 'adicional' : 'normal',
+    corteAdicional: getSalidaAdicionalCorteLabel(),
   };
 }
 

@@ -55,6 +55,7 @@ const handlers = {
   sincronizarSesionDesdeSirtPorFecha: engine.sincronizarSesionDesdeSirtPorFecha,
   consultarEnCavaDesdeSIRT: engine.consultarEnCavaDesdeSIRT,
   consultarSalidasCavaDesdeSIRT: engine.consultarSalidasCavaDesdeSIRT,
+  consultarSalidasFisicasDesdeSIRT: engine.consultarSalidasFisicasDesdeSIRT,
   consultarDecomisosDesdeSIRT: engine.consultarDecomisosDesdeSIRT,
   consultarCruceDecomisosPreview: engine.consultarCruceDecomisosPreview,
   consultarDespachosPreview: engine.consultarDespachosPreview,

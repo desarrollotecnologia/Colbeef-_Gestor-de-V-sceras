@@ -449,6 +449,49 @@ export function addDaysIsoLocal(iso, delta) {
   return fechaIsoLocalDesdeDate(d);
 }
 
+/** Hora/minuto desde los que una salida física cuenta como adicional (15:20 por defecto). */
+export function getSalidaAdicionalCorte() {
+  const horaDef = 15;
+  const minDef = 20;
+  let hora = Number(process.env.GESTOR_SALIDA_ADICIONAL_HORA);
+  let minuto = Number(process.env.GESTOR_SALIDA_ADICIONAL_MINUTO);
+  if (!Number.isFinite(hora)) hora = horaDef;
+  if (!Number.isFinite(minuto)) minuto = minDef;
+  return {
+    hora: Math.min(23, Math.max(0, Math.floor(hora))),
+    minuto: Math.min(59, Math.max(0, Math.floor(minuto))),
+  };
+}
+
+export function getSalidaAdicionalCorteLabel() {
+  const { hora, minuto } = getSalidaAdicionalCorte();
+  return `${pad2(hora)}:${pad2(minuto)}`;
+}
+
+/** Extrae {h,m} de celda fecha/hora; null si no hay hora. */
+export function parseHoraDesdeCelda(celda) {
+  const s = String(celda || '').trim();
+  if (!s) return null;
+  const iso = s.match(/(?:^|[T\s])(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (iso) return { h: Number(iso[1]), m: Number(iso[2]) };
+  const d = celda instanceof Date ? celda : new Date(s);
+  if (!Number.isNaN(d.getTime()) && /T|\d{1,2}:\d{2}/.test(s)) {
+    return { h: d.getHours(), m: d.getMinutes() };
+  }
+  return null;
+}
+
+/**
+ * Salida física adicional: fecha_salida con hora >= corte (por defecto 15:20).
+ * Sin hora en la celda → no se marca adicional.
+ */
+export function esSalidaAdicionalPorHora(celda, corte = getSalidaAdicionalCorte()) {
+  const hm = parseHoraDesdeCelda(celda);
+  if (!hm) return false;
+  const mins = hm.h * 60 + hm.m;
+  return mins >= Number(corte.hora) * 60 + Number(corte.minuto);
+}
+
 /**
  * Día operativo Colbeef: antes de la hora de corte sigue contando como el día anterior.
  * Ej. mar 02:30 con corte 4 → lunes.

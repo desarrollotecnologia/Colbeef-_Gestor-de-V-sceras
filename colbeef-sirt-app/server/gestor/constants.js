@@ -74,6 +74,13 @@ export const PREFIJOS_TURNO = [
 export const ESTADO_COMPLETO = 'Completo';
 export const ESTADO_PENDIENTE = 'Cerrado con pendientes';
 
+/**
+ * Hora desde la cual una salida física (fecha_salida) se considera adicional/extra.
+ * Override: GESTOR_SALIDA_ADICIONAL_HORA / GESTOR_SALIDA_ADICIONAL_MINUTO.
+ */
+export const SALIDA_ADICIONAL_DESDE_HORA = 15;
+export const SALIDA_ADICIONAL_DESDE_MINUTO = 20;
+
 /** Textos históricos de observación que identifican una VB como cruda. */
 export const CRUDAS_VALORES = [
   'CRUDAS',
