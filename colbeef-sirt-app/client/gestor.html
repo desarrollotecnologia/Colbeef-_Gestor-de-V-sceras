@@ -3933,8 +3933,9 @@ function descargarExcelParticulares() {
       var cd = r.headers.get('Content-Disposition') || '';
       var m = cd.match(/filename="?([^"]+)"?/i);
       var fname = (m && m[1]) || 'Particulares_pendientes_' + fecha + '.xlsx';
+      var total = Number(r.headers.get('X-Particulares-Total') || -1);
       return r.blob().then(function (blob) {
-        return { blob: blob, fname: fname };
+        return { blob: blob, fname: fname, total: total };
       });
     })
     .then(function (pack) {
@@ -3948,7 +3949,17 @@ function descargarExcelParticulares() {
       setTimeout(function () {
         URL.revokeObjectURL(a.href);
       }, 2000);
-      showParticularesAlert('success', '📥 Excel descargado');
+      if (pack.total === 0) {
+        showParticularesAlert(
+          'warn',
+          'Excel generado sin filas para los OPL marcados. Revise configuración OPL (propietario→OPL) o que haya pendientes del turno.'
+        );
+      } else {
+        showParticularesAlert(
+          'success',
+          '📥 Excel descargado' + (pack.total > 0 ? ' · ' + pack.total + ' fila(s)' : '')
+        );
+      }
       if (window.ColbeefUsage) {
         ColbeefUsage.track('excel_download', 'planilla', 'Excel particulares');
       }

@@ -1673,7 +1673,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'particulares-planilla-v26';
+export const GESTOR_BUILD = 'particulares-planilla-v27';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -3061,7 +3061,9 @@ export async function setOplsParticulares(opls) {
 }
 
 /**
- * Filas programadas en Paquete Visceral aún sin fecha_salida (pendientes).
+ * Filas programadas del turno aún sin pistoleo (fecha_salida).
+ * Misma base que la planilla: no exige Cava Paquete Visceral (hoy el
+ * programado SIRT suele venir en Recepción VB/VR / Cabezas-Patas).
  */
 function filasPendientesParticularesSync(s) {
   const fechaOp =
@@ -3069,17 +3071,17 @@ function filasPendientesParticularesSync(s) {
   const turnoOp =
     String(s.resumenDespachos?.turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
-  const programados = filasSalidaDespachoReal(
-    filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp)
+  const programados = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp).filter(
+    (fila) => {
+      const id = String(fila[3] ?? '').trim();
+      const tipo = String(fila[7] ?? '').trim();
+      const puesto = String(fila[9] ?? '').trim();
+      return id && puesto && TIPOS_PRODUCTO.includes(tipo);
+    }
   );
-  const salidas = filasSalidaDespachoReal(
-    filasDespachoTurnoOperacion(
-      filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
-      turnoOp
-    )
-  );
-  const pendientes = despachosProgramadosSinSalidasDelDia(programados, salidas);
-  return { pendientes, fechaOp, turnoOp };
+  const salidasDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
+  const pendientes = despachosProgramadosSinSalidasDelDia(programados, salidasDia);
+  return { pendientes, fechaOp, turnoOp, totalProgramados: programados.length };
 }
 
 function filaPendienteADtoParticular(fila) {
@@ -3120,7 +3122,7 @@ export async function generarExcelParticulares(range = {}) {
     };
   }
 
-  const { pendientes, fechaOp, turnoOp } = filasPendientesParticularesSync(s);
+  const { pendientes, fechaOp, turnoOp, totalProgramados } = filasPendientesParticularesSync(s);
   const mapaOPL = cargarMapaOPL(s);
   const seleccionUp = new Map(seleccion.map((o) => [o.toUpperCase(), o]));
   const porOpl = {};
@@ -3128,10 +3130,14 @@ export async function generarExcelParticulares(range = {}) {
     porOpl[o] = [];
   });
 
+  let sinMatchOpl = 0;
   for (const fila of pendientes) {
     const opl = claveOplDesdeFila(fila, mapaOPL);
     const canon = seleccionUp.get(String(opl).toUpperCase());
-    if (!canon) continue;
+    if (!canon) {
+      sinMatchOpl += 1;
+      continue;
+    }
     porOpl[canon].push(filaPendienteADtoParticular(fila));
   }
 
@@ -3160,6 +3166,9 @@ export async function generarExcelParticulares(range = {}) {
       turno: turnoOp,
       opls: seleccion,
       totalFilas,
+      totalProgramados,
+      totalPendientes: pendientes.length,
+      sinMatchOpl,
       porOpl: Object.fromEntries(
         Object.entries(porOpl).map(([k, v]) => [k, v.length])
       ),

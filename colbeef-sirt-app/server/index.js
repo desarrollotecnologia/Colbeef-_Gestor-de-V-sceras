@@ -645,6 +645,11 @@ app.get('/api/planilla/excel-particulares', async (req, res) => {
       'Content-Disposition',
       `attachment; filename="${out.filename || 'Particulares_pendientes.xlsx'}"`
     );
+    if (out.meta) {
+      res.setHeader('X-Particulares-Total', String(out.meta.totalFilas || 0));
+      res.setHeader('X-Particulares-Pendientes', String(out.meta.totalPendientes || 0));
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Particulares-Total, X-Particulares-Pendientes');
+    }
     res.send(out.buffer);
   } catch (e) {
     apiError(res, e);
