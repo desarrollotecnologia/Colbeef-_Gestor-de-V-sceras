@@ -871,6 +871,21 @@ function filasSalidaDespachoReal(rows) {
   return (rows || []).filter((fila) => esCavaDespachoReal(fila[COL_CAVA_SALIDA]));
 }
 
+/**
+ * Filas usadas para progreso OPL / baseline.
+ * Con fuente `programado` SIRT entrega piezas en Recepción (no Paquete Visceral);
+ * filtrar solo Paquete dejaba 0 OPL con meta > 0 en el tablero.
+ * Con `riel` se mantiene el filtro de cava de despacho real.
+ */
+function filasParaProgresoOpl(rows) {
+  const tipadas = (rows || []).filter((fila) => {
+    const tipo = String(fila[7] ?? '').trim();
+    return TIPOS_PRODUCTO.includes(tipo);
+  });
+  if (despachosFuenteProgramadoTurno()) return tipadas;
+  return filasSalidaDespachoReal(tipadas);
+}
+
 function hoyIsoLocal() {
   return fechaOperativaHoy();
 }
@@ -998,8 +1013,8 @@ function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelD
   const totalsComplete = obtenerOplTotalsJuegoCompleto(s);
   const mapaOPL = cargarMapaOPL(s);
   const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  const progPaquete = filasSalidaDespachoReal(programadosTurno || []);
-  const salPaquete = filasSalidaDespachoReal(salidasDelDia || []);
+  const progPaquete = filasParaProgresoOpl(programadosTurno || []);
+  const salPaquete = filasParaProgresoOpl(salidasDelDia || []);
   const progSet = agruparAnimalesConPiezasPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
   const salSet = agruparAnimalesConPiezasPorClave(salPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
   const progComplete = agruparJuegosCompletosPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
@@ -1212,13 +1227,13 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
 
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  const programadosEnPaquete = filasSalidaDespachoReal(programadosBruto);
+  const programadosEnPaquete = filasParaProgresoOpl(programadosBruto);
   const salidasTurno = filasDespachoTurnoOperacion(
     filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
     turnoOp
   );
   // Salidas del día: meta baseline + partición antes/después del corte 15:20.
-  const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
+  const salidasDespacho = filasParaProgresoOpl(salidasTurno);
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
   const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
@@ -1673,7 +1688,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'particulares-planilla-v27';
+export const GESTOR_BUILD = 'opl-prog-recepcion-v28';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -2222,10 +2237,15 @@ export async function calcularProgresoOPL(_totalJuegosParam) {
 
   if (!todosOPL.length) {
     const nJuegos = Number(s.resumenDespachos?.totalJuegos || 0);
+    const nProg = filasParaProgresoOpl(
+      filasDespachoTurnoOperacion(s.despachosCavas || [], turnoLive)
+    ).length;
     const msg =
-      nJuegos > 0
-        ? `${nJuegos} juegos programados del turno ${turnoLive}, pero no se pudo armar el mapa propietario→OPL. Revise Configuración OPL y vuelva a recalcular.`
-        : 'Sin juegos en cava para este turno. Sincronice despachos desde SIRT.';
+      nJuegos > 0 && nProg === 0
+        ? `${nJuegos} juegos en resumen, pero no hay filas tipadas (VR/VB/Cabeza/Patas) para armar OPL. Sincronice despachos y vuelva a recalcular.`
+        : nJuegos > 0
+          ? `${nJuegos} juegos programados del turno ${turnoLive}, pero el progreso OPL quedó vacío. Pulse Recalcular de nuevo; si persiste, revise Configuración OPL.`
+          : 'Sin juegos en cava para este turno. Sincronice despachos desde SIRT.';
     return { success: false, message: msg };
   }
 

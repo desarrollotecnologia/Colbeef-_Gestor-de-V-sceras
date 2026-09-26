@@ -13,9 +13,12 @@ assert.ok(
   String(GESTOR_BUILD).includes('v24') ||
     String(GESTOR_BUILD).includes('v25') ||
     String(GESTOR_BUILD).includes('v26') ||
+    String(GESTOR_BUILD).includes('v27') ||
+    String(GESTOR_BUILD).includes('v28') ||
     String(GESTOR_BUILD).includes('incompletos') ||
     String(GESTOR_BUILD).includes('beneficio') ||
-    String(GESTOR_BUILD).includes('particulares')
+    String(GESTOR_BUILD).includes('particulares') ||
+    String(GESTOR_BUILD).includes('opl-prog')
 );
 
 const puesto = '01001/Bucaramanga/JxV/';
