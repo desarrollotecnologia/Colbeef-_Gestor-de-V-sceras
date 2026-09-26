@@ -433,7 +433,7 @@
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#1e3a5f;">➕ Adicionales</div>
               <div class="split-valor" id="dashAdicionales" style="font-size:1.4rem;color:#1e3a5f;">—</div>
-              <div class="split-sub" id="dashAdicionalesSub">Juegos pistoleados ≥ 15:20</div>
+              <div class="split-sub" id="dashAdicionalesSub">Salidas ≥ 15:20 (no bajan el total a despachar)</div>
             </div>
           </div>
         </div>
@@ -448,15 +448,15 @@
         <div class="resumen-icon">🚚</div>
       </div>
 
-      <!-- TARJETA 3: Total a despachar (único que baja) + despachados -->
+      <!-- TARJETA 3: Total a despachar (baja solo con salidas < 15:20) -->
       <div class="tarjeta-resumen">
         <div class="resumen-label">Total Juegos a Despachar</div>
         <div class="resumen-valor" id="dashDespachos" style="color:#dc2626;">—</div>
         <div class="resumen-sub" id="dashDespTurno"></div>
         <div style="margin-top:0.45rem;font-size:0.82rem;color:#4b6358;">
-          Despachados: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
+          Antes del corte: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
           <span style="margin:0 0.35rem;opacity:0.5;">·</span>
-          Meta programados: <strong id="dashTotalJuegos">—</strong>
+          Meta: <strong id="dashTotalJuegos">—</strong>
         </div>
         <div class="resumen-icon">🚛</div>
       </div>
@@ -605,8 +605,8 @@
         <div class="adicionales-panel">
           <h4>Pistoleo del día · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
           <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
-            Hasta las <strong>15:19</strong> = salida normal · desde las <strong>15:20</strong> = adicional.
-            En pendientes / OPL se cuentan igual: la etiqueta solo sirve para diferenciar cuáles salieron tarde.
+            Hasta las <strong>15:19</strong> bajan el Total a despachar · desde las <strong>15:20</strong> van a Adicionales (el total queda congelado).
+            <strong>Antes + Adicionales = total salidas del día</strong>.
           </p>
           <div class="adicionales-kpis">
             <div>Normales<br><strong id="kpiSalNormales">—</strong></div>
@@ -1605,13 +1605,20 @@ function updateDashboard(data) {
     var adiSub = document.getElementById('dashAdicionalesSub');
     if (adiSub) {
       var corte = data.corteAdicional || '15:20';
-      var piezasAdi = Number(data.totalPiezasAdicionales || 0);
+      var antes = Number(data.totalJuegosAntesCorte || 0);
+      var totalSal = Number(data.totalJuegosSalidaDia || antes + adiJuegos);
       adiSub.textContent =
-        piezasAdi > 0
-          ? 'Juegos ≥ ' + corte + (piezasAdi ? ' · ' + piezasAdi + ' piezas' : '')
-          : 'Juegos pistoleados ≥ ' + corte;
+        '≥ ' +
+        corte +
+        ' · antes ' +
+        antes +
+        ' + adi ' +
+        adiJuegos +
+        ' = ' +
+        totalSal +
+        ' salidas';
     }
-    // Total a despachar: único que disminuye con cada salida.
+    // Total a despachar: baja solo con salidas < 15:20 (después queda congelado).
     setText('dashDespachos', pendientes);
     setText('dashDespachados', despachadosNum);
     setText('dashTotalJuegos', juegosTotalesOperacion > 0 ? juegosTotalesOperacion : '—');

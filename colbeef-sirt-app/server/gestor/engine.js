@@ -48,7 +48,9 @@ import {
   getDiaOperativoCorteHora,
   formatearCodigoSucursal,
   getSalidaAdicionalCorteLabel,
+  getSalidaAdicionalCorte,
   esSalidaAdicionalPorHora,
+  parseHoraDesdeCelda,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -663,29 +665,94 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
 
 const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
 
+/** Minutos desde 00:00; -1 si la celda no trae hora. */
+function minutosDesdeCeldaSalida(celda) {
+  const hm = parseHoraDesdeCelda(celda);
+  if (!hm) return -1;
+  return hm.h * 60 + hm.m;
+}
+
 /**
- * Juegos completos con pistoleo ≥ 15:20 (adicionales), solo cava paquete visceral.
- * No cambia pendientes: solo métrica visual del tablero.
+ * Parte juegos completos (paquete visceral) en antes / adicionales según corte 15:20.
+ * Cada animal cuenta una sola vez: hora del juego = última fecha_salida de sus 4 piezas.
+ * Garantiza: antes + adicionales = total juegos con salida del día (en el filtro).
  */
-function contarJuegosAdicionalesSalidas(salidasRows, turno = '') {
-  const conHora = (salidasRows || []).filter((fila) => esSalidaAdicionalPorHora(fila[0]));
-  if (!conHora.length) {
-    return { juegos: 0, piezas: 0, corte: getSalidaAdicionalCorteLabel() };
-  }
-  const paquete = filasSalidaDespachoReal(conHora);
-  const delTurno = turno
-    ? filasDespachoTurnoOperacion(paquete, turno)
-    : paquete;
-  const juegos =
-    Number(
-      contarJuegosCompletosPorClave(delTurno, COLS_DESPACHO_CAVA, () => '__TOTAL__', '')[
-        '__TOTAL__'
-      ] || 0
-    ) || 0;
+function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
+  const turno = String(opts.turno || '').trim();
+  const getClave = typeof opts.getClave === 'function' ? opts.getClave : () => '__TOTAL__';
+  const corte = getSalidaAdicionalCorte();
+  const corteMins = Number(corte.hora) * 60 + Number(corte.minuto);
+  const corteLabel = getSalidaAdicionalCorteLabel();
+
+  const paquete = filasSalidaDespachoReal(salidasRows || []);
+  const filas = turno ? filasDespachoTurnoOperacion(paquete, turno) : paquete;
+
+  /** @type {Map<string, { tipos: Set<string>, maxMins: number, clave: string, piezas: number }>} */
+  const porAnimal = new Map();
+  filas.forEach((fila) => {
+    const id = String(fila[COLS_DESPACHO_CAVA.id] ?? '').trim();
+    const tipo = String(fila[COLS_DESPACHO_CAVA.tipo] ?? '').trim();
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    const clave = String(getClave(fila) || '').trim() || '__TOTAL__';
+    const mins = minutosDesdeCeldaSalida(fila[0]);
+    if (!porAnimal.has(base)) {
+      porAnimal.set(base, { tipos: new Set(), maxMins: -1, clave, piezas: 0 });
+    }
+    const info = porAnimal.get(base);
+    info.tipos.add(tipo);
+    info.piezas += 1;
+    if (mins > info.maxMins) info.maxMins = mins;
+    if (clave) info.clave = clave;
+  });
+
+  const antesPorClave = {};
+  const adiPorClave = {};
+  let juegosAntes = 0;
+  let juegosAdicionales = 0;
+  let piezasAntes = 0;
+  let piezasAdicionales = 0;
+
+  porAnimal.forEach((info) => {
+    if (!tieneJuegoCompleto(info.tipos)) return;
+    const esAdi = info.maxMins >= 0 && info.maxMins >= corteMins;
+    const k = info.clave || '__TOTAL__';
+    if (esAdi) {
+      juegosAdicionales += 1;
+      piezasAdicionales += info.piezas;
+      adiPorClave[k] = (adiPorClave[k] || 0) + 1;
+    } else {
+      // Sin hora o < corte → asignada en ventana normal.
+      juegosAntes += 1;
+      piezasAntes += info.piezas;
+      antesPorClave[k] = (antesPorClave[k] || 0) + 1;
+    }
+  });
+
   return {
-    juegos,
-    piezas: delTurno.length,
-    corte: getSalidaAdicionalCorteLabel(),
+    corte: corteLabel,
+    juegosAntes,
+    juegosAdicionales,
+    juegosTotal: juegosAntes + juegosAdicionales,
+    piezasAntes,
+    piezasAdicionales,
+    piezasTotal: piezasAntes + piezasAdicionales,
+    antesPorClave,
+    adiPorClave,
+  };
+}
+
+/** @deprecated Usar clasificarJuegosSalidaPorCorte */
+function contarJuegosAdicionalesSalidas(salidasRows, turno = '') {
+  const c = clasificarJuegosSalidaPorCorte(salidasRows, { turno });
+  return {
+    juegos: c.juegosAdicionales,
+    piezas: c.piezasAdicionales,
+    juegosAntes: c.juegosAntes,
+    piezasAntes: c.piezasAntes,
+    juegosTotal: c.juegosTotal,
+    corte: c.corte,
   };
 }
 
@@ -1108,37 +1175,53 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
     turnoOp
   );
-  // Salidas del día solo para congelar meta; NO definen despachados por sí solas.
+  // Salidas del día: meta baseline + partición antes/después del corte 15:20.
   const salidasDespacho = filasSalidaDespachoReal(salidasTurno);
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
   const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
 
-  // Pendientes = juegos completos que AÚN están en cava (programados, fecha_salida NULL en SIRT).
+  // Pendientes en cava (informativo); despachados que bajan meta = solo salidas < 15:20.
   const pendCompleteOpl = contarJuegosCompletosPorClave(
     programadosEnPaquete,
     COLS_DESPACHO_CAVA,
     claveOpl,
     ''
   );
+  const part = clasificarJuegosSalidaPorCorte(salidasDespacho, {
+    turno: '',
+    getClave: claveOpl,
+  });
+  const despAntesOpl = part.antesPorClave || {};
+  const adiOpl = part.adiPorClave || {};
 
   const opls = new Set([
     ...Object.keys(totalsFrozen),
     ...Object.keys(totalsCompleteFrozen),
     ...Object.keys(pendCompleteOpl),
+    ...Object.keys(despAntesOpl),
+    ...Object.keys(adiOpl),
   ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
     const pendComplete = Number(pendCompleteOpl[opl] || 0);
-    const totalMeta = Math.max(Number(totalsFrozen[opl] || 0), pendComplete);
-    const completeMeta = Math.max(Number(totalsCompleteFrozen[opl] || 0), pendComplete);
+    const despAntes = Number(despAntesOpl[opl] || 0);
+    const adi = Number(adiOpl[opl] || 0);
+    const totalMeta = Math.max(
+      Number(totalsFrozen[opl] || 0),
+      pendComplete + despAntes + adi
+    );
+    const completeMeta = Math.max(
+      Number(totalsCompleteFrozen[opl] || 0),
+      pendComplete + despAntes + adi
+    );
     if (totalMeta <= 0) return;
     totalsFrozen[opl] = totalMeta;
     totalsCompleteFrozen[opl] = completeMeta;
-    // Despachados = juegos completos que ya no están en cava (salieron al pistolear).
-    const despachados = Math.max(0, completeMeta - pendComplete);
+    // Solo salidas < 15:20 bajan pendientes; ≥ 15:20 van a adicionales.
+    const despachados = Math.min(despAntes, totalMeta);
     const pendientes = Math.max(0, totalMeta - despachados);
     let pct = Math.round((despachados / totalMeta) * 100);
     if (pendientes > 0) pct = Math.min(99, pct);
@@ -1148,6 +1231,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
       total: totalMeta,
       despachados,
       pendientes,
+      adicionales: adi,
       progreso: pct,
       fecha,
     };
@@ -1164,6 +1248,11 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
+    totalAdicionales: todosOPL.reduce((sum, p) => sum + Number(p.adicionales || 0), 0),
+    juegosSalidaAntes: part.juegosAntes,
+    juegosSalidaAdicionales: part.juegosAdicionales,
+    juegosSalidaTotal: part.juegosTotal,
+    corteAdicional: part.corte,
     unidad: 'juegos',
     turno: turnoOp,
   };
@@ -1534,7 +1623,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'dash-juegos-adicionales-v22';
+export const GESTOR_BUILD = 'adicionales-congela-meta-v23';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1683,16 +1772,20 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      // Despachados = juegos completos que ya no están en cava (pistoleo real).
-      const despachados = Math.max(0, Number(oplLive.totalDespachados ?? 0));
-      // Meta = programados del día (congelada). No mezclar recepción ni rezago.
+      // Despachados que bajan "Total a despachar" = solo salidas < 15:20.
+      const despachados = Math.max(
+        0,
+        Number(oplLive.totalDespachados ?? oplLive.juegosSalidaAntes ?? 0)
+      );
+      const adi = clasificarJuegosSalidaPorCorte(salidasDia || [], { turno: turnoOp });
+      // Meta = programados del día (congelada).
       const juegosEnCava = Math.max(
         Number(kpiFrozen.totalJuegos || 0),
         Number(rd.totalJuegos || 0),
         Number(oplLive.totalJuegos || 0),
-        despachados
+        despachados + adi.juegosAdicionales
       );
-      // Total a despachar = lo que falta = meta − despachados.
+      // Total a despachar se congela tras 15:20: no resta adicionales.
       const pendientes = Math.max(0, juegosEnCava - despachados);
       const totalJuegosDespachar = pendientes;
       const juegosTotalesOperacion = juegosEnCava;
@@ -1707,15 +1800,17 @@ export async function getDashboardData(range) {
         if (pendientes > 0) progreso = Math.min(99, progreso);
         else progreso = 100;
         progresoMensaje =
-          'Meta real paquete visceral ' +
+          'Meta ' +
           juegosTotalesOperacion +
           ' · ' +
           despachados +
-          ' despachados · ' +
+          ' antes ' +
+          adi.corte +
+          ' · ' +
+          adi.juegosAdicionales +
+          ' adicionales · ' +
           pendientes +
-          ' por despachar · ' +
-          progreso +
-          '% · turno ' +
+          ' por despachar · turno ' +
           turnoOp +
           ' · ' +
           isoToDdMmYyyy(fechaIso);
@@ -1741,7 +1836,6 @@ export async function getDashboardData(range) {
         Number(decomisoVinculoStats?.decomisosUnicos) ||
         Number(decomisoVinculoStats?.filasEnRango) ||
         reporte.length;
-      const adi = contarJuegosAdicionalesSalidas(salidasDia || [], turnoOp);
 
       const progresoOPL = preview.success
         ? preview.operacionFinalizada
@@ -1762,8 +1856,11 @@ export async function getDashboardData(range) {
         totalDecomisosPiezas: contarCruceDecomisosSync(estado, reporte, desp),
         totalDecomisosSinVinculo: Math.max(0, totalDecomisosEnRango - totalDecomisos),
         totalCrudas: cr.total,
-        totalJuegosAdicionales: adi.juegos,
-        totalPiezasAdicionales: adi.piezas,
+        totalJuegosAdicionales: adi.juegosAdicionales,
+        totalPiezasAdicionales: adi.piezasAdicionales,
+        totalJuegosAntesCorte: adi.juegosAntes,
+        totalPiezasAntesCorte: adi.piezasAntes,
+        totalJuegosSalidaDia: adi.juegosTotal,
         corteAdicional: adi.corte,
         totalJuegosDespachar,
         despachados,
