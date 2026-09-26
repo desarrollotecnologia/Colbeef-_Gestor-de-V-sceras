@@ -609,6 +609,48 @@ app.get('/api/planilla', async (req, res) => {
   }
 });
 
+app.get('/api/planilla/particulares', async (_req, res) => {
+  try {
+    res.json(await gestor.getOplsParticulares());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/planilla/particulares', async (req, res) => {
+  try {
+    const out = await gestor.setOplsParticulares(req.body?.opls || []);
+    auditRest(req, 'setOplsParticulares', 'planilla', String((out.opls || []).join(',')), {
+      n: (out.opls || []).length,
+    });
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/planilla/excel-particulares', async (req, res) => {
+  try {
+    const date = String(req.query.date || req.query.from || '').trim();
+    const range = date ? { date, from: date, to: date } : {};
+    const out = await gestor.generarExcelParticulares(range);
+    if (!out.success) {
+      return res.status(400).json({ success: false, message: out.message });
+    }
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${out.filename || 'Particulares_pendientes.xlsx'}"`
+    );
+    res.send(out.buffer);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
 app.post('/api/adicionales', upload.single('archivo'), async (req, res) => {
   try {
     if (!req.file?.buffer) return res.status(400).json({ success: false, message: 'Falta archivo .xlsx.' });

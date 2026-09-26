@@ -75,6 +75,7 @@ import {
   despachoCavaRowToDto,
   consultarDecomisosDesdeSirt,
 } from './sirtSync.js';
+import { buildExcelParticularesBuffer } from './planillaParticularesExcel.js';
 import { loadState, saveState, defaultState } from './store.js';
 
 function cargarMapaOPL(state) {
@@ -1672,7 +1673,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'beneficio-distinct-v25';
+export const GESTOR_BUILD = 'particulares-planilla-v26';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -3028,6 +3029,142 @@ export async function getListaOPLsParaPlanilla() {
     });
   }
   return Object.keys(set).sort();
+}
+
+/** OPLs marcados como particulares (Excel multi-hoja). */
+export async function getOplsParticulares() {
+  const s = await loadState();
+  return {
+    success: true,
+    opls: Array.isArray(s.oplsParticulares) ? [...s.oplsParticulares] : [],
+  };
+}
+
+export async function setOplsParticulares(opls) {
+  if (!Array.isArray(opls)) {
+    return { success: false, message: 'opls debe ser una lista.' };
+  }
+  const limpios = [];
+  const vistos = new Set();
+  for (const item of opls) {
+    const opl = String(item || '').trim();
+    if (!opl) continue;
+    const key = opl.toUpperCase();
+    if (vistos.has(key)) continue;
+    vistos.add(key);
+    limpios.push(opl);
+  }
+  const s = await loadState();
+  s.oplsParticulares = limpios;
+  await saveState(s);
+  return { success: true, opls: limpios };
+}
+
+/**
+ * Filas programadas en Paquete Visceral aún sin fecha_salida (pendientes).
+ */
+function filasPendientesParticularesSync(s) {
+  const fechaOp =
+    String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
+  const turnoOp =
+    String(s.resumenDespachos?.turno || '').trim() ||
+    resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
+  const programados = filasSalidaDespachoReal(
+    filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp)
+  );
+  const salidas = filasSalidaDespachoReal(
+    filasDespachoTurnoOperacion(
+      filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
+      turnoOp
+    )
+  );
+  const pendientes = despachosProgramadosSinSalidasDelDia(programados, salidas);
+  return { pendientes, fechaOp, turnoOp };
+}
+
+function filaPendienteADtoParticular(fila) {
+  return {
+    codigo: String(fila[3] ?? '').trim(),
+    propietario: String(fila[4] ?? '').trim(),
+    subproducto: String(fila[7] ?? '').trim(),
+    descripcion: String(fila[7] ?? '').trim(),
+    puesto: String(fila[9] ?? '').trim(),
+    cava: String(fila[6] ?? '').trim(),
+    destino: String(fila[8] ?? '').trim(),
+    estado: 'Pendiente',
+  };
+}
+
+/**
+ * Excel particulares: una hoja por OPL seleccionado, solo pendientes.
+ * Opcionalmente refresca SIRT con `range.date` / `range.from`.
+ * @returns {{ success, buffer?, filename?, meta?, message? }}
+ */
+export async function generarExcelParticulares(range = {}) {
+  const filtro = normalizarRangoFechas(range || {});
+  if (filtroSirtValido(filtro)) {
+    const prep = await prepararPlanillaDesdeSIRT(filtro);
+    if (!prep.success) {
+      return { success: false, message: prep.message || 'No se pudo sincronizar la fecha.' };
+    }
+  }
+
+  const s = await loadState();
+  const seleccion = Array.isArray(s.oplsParticulares)
+    ? s.oplsParticulares.map((x) => String(x).trim()).filter(Boolean)
+    : [];
+  if (!seleccion.length) {
+    return {
+      success: false,
+      message: 'No hay OPLs particulares configurados. Selecciónelos primero.',
+    };
+  }
+
+  const { pendientes, fechaOp, turnoOp } = filasPendientesParticularesSync(s);
+  const mapaOPL = cargarMapaOPL(s);
+  const seleccionUp = new Map(seleccion.map((o) => [o.toUpperCase(), o]));
+  const porOpl = {};
+  seleccion.forEach((o) => {
+    porOpl[o] = [];
+  });
+
+  for (const fila of pendientes) {
+    const opl = claveOplDesdeFila(fila, mapaOPL);
+    const canon = seleccionUp.get(String(opl).toUpperCase());
+    if (!canon) continue;
+    porOpl[canon].push(filaPendienteADtoParticular(fila));
+  }
+
+  // Orden estable dentro de cada hoja
+  Object.keys(porOpl).forEach((opl) => {
+    porOpl[opl].sort((a, b) => {
+      const c = String(a.codigo).localeCompare(String(b.codigo), 'es');
+      if (c) return c;
+      return String(a.subproducto).localeCompare(String(b.subproducto), 'es');
+    });
+  });
+
+  const buffer = await buildExcelParticularesBuffer({
+    fechaIso: fechaOp,
+    turno: turnoOp,
+    porOpl,
+  });
+  const totalFilas = Object.values(porOpl).reduce((n, arr) => n + arr.length, 0);
+  const filename = `Particulares_pendientes_${fechaOp}.xlsx`;
+  return {
+    success: true,
+    buffer,
+    filename,
+    meta: {
+      fecha: fechaOp,
+      turno: turnoOp,
+      opls: seleccion,
+      totalFilas,
+      porOpl: Object.fromEntries(
+        Object.entries(porOpl).map(([k, v]) => [k, v.length])
+      ),
+    },
+  };
 }
 
 export async function generarPlanillaPuntos(opl) {

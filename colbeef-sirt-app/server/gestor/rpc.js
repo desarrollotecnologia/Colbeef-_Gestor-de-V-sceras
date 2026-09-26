@@ -41,6 +41,8 @@ const handlers = {
   consolidarDatos: engine.consolidarDatos,
   prepararPlanillaDesdeSIRT: engine.prepararPlanillaDesdeSIRT,
   getListaOPLsParaPlanilla: engine.getListaOPLsParaPlanilla,
+  getOplsParticulares: engine.getOplsParticulares,
+  setOplsParticulares: engine.setOplsParticulares,
   generarPlanillaPuntos: engine.generarPlanillaPuntos,
   generarHTMLPlanillaPDF: engine.generarHTMLPlanillaPDF,
   cerrarOperacion: engine.cerrarOperacion,
@@ -86,6 +88,7 @@ const AUDIT_METHODS = new Set([
   'eliminarPlaza',
   'consolidarDatos',
   'prepararPlanillaDesdeSIRT',
+  'setOplsParticulares',
 ]);
 
 function moduleForMethod(method) {

@@ -12,8 +12,10 @@ assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:20:00'), true);
 assert.ok(
   String(GESTOR_BUILD).includes('v24') ||
     String(GESTOR_BUILD).includes('v25') ||
+    String(GESTOR_BUILD).includes('v26') ||
     String(GESTOR_BUILD).includes('incompletos') ||
-    String(GESTOR_BUILD).includes('beneficio')
+    String(GESTOR_BUILD).includes('beneficio') ||
+    String(GESTOR_BUILD).includes('particulares')
 );
 
 const puesto = '01001/Bucaramanga/JxV/';

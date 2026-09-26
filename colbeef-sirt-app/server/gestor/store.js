@@ -75,6 +75,8 @@ export function defaultState() {
     consolidado: [],
     plazasMap: {},
     informe: null,
+    /** OPLs marcados para Excel multi-hoja de particulares (persiste entre jornadas). */
+    oplsParticulares: [],
     historialPdf: [],
     fechaInicioOperacion: null,
     /**
@@ -98,6 +100,7 @@ function normalizeState(raw) {
     s.despachoKpiBaseline = defaultState().despachoKpiBaseline;
   }
   if (!s.plazasMap || typeof s.plazasMap !== 'object') s.plazasMap = {};
+  if (!Array.isArray(s.oplsParticulares)) s.oplsParticulares = [];
   delete s.oplTotalsSubproducto;
   return s;
 }

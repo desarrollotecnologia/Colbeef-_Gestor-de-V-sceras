@@ -852,6 +852,7 @@
       <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-secondary" id="btnProcesarPlanilla" onclick="procesarPlanilla()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Procesar Planilla</button>
         <button class="btn btn-secondary" onclick="abrirModalPlazas()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Configurar Plazas</button>
+        <button class="btn btn-secondary" id="btnParticularesPlanilla" onclick="abrirModalParticulares()" style="padding:0.5rem 1.1rem;font-size:0.85rem;background:#ff9800;color:#fff;border:none;" title="Elegir OPLs y descargar Excel multi-hoja solo con lo pendiente">📥 Descargar particulares</button>
         <button class="btn btn-primary" onclick="exportarPlanillaPDF()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">🖨️ Exportar PDF</button>
       </div>
     </div>
@@ -930,6 +931,30 @@
     </div>
     <p id="historialFiltroMeta" style="font-size:0.8rem;color:var(--gris);margin:0 0 0.8rem;"></p>
     <div id="historialContainer"><p class="empty-state">Cargando...</p></div>
+  </div>
+
+  <!-- MODAL PARTICULARES (Planilla) -->
+  <div class="modal-overlay" id="modalParticulares">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header">
+        <div class="modal-title">📥 Particulares · Excel multi-hoja</div>
+        <button class="modal-close" onclick="cerrarModalParticulares()" aria-label="Cerrar">✕</button>
+      </div>
+      <p style="font-size:0.84rem;color:var(--gris);margin-bottom:0.8rem;line-height:1.4;">
+        Marca los OPLs que quieras como <strong>particulares</strong>. El Excel tendrá
+        <strong>una hoja por OPL</strong> y solo lo <strong>pendiente</strong>
+        (lo pistoleado se va quitando en cada descarga).
+      </p>
+      <div id="particularesLista" style="max-height:320px;overflow:auto;border:1px solid var(--vc);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:1rem;background:#f8fbff;">
+        <div class="empty-state">Cargando OPLs…</div>
+      </div>
+      <div style="display:flex;gap:0.6rem;flex-wrap:wrap;justify-content:flex-end;">
+        <button type="button" class="btn btn-secondary btn-sm" onclick="cerrarModalParticulares()">Cancelar</button>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="guardarParticularesSeleccion(false)">💾 Guardar selección</button>
+        <button type="button" class="btn btn-primary btn-sm" style="background:#ff9800;border:none;" onclick="guardarYDescargarParticulares()">📥 Guardar y descargar</button>
+      </div>
+      <div class="alert" id="particularesAlert" style="margin-top:0.8rem;"></div>
+    </div>
   </div>
 
   <!-- MODAL PLAZAS -->
@@ -3773,6 +3798,184 @@ function exportarPlanillaPDF() {
     .generarHTMLPlanillaPDF(_planillaOplActivo);
 }
 
+// ── Particulares (Excel multi-hoja, solo pendientes) ──
+var _particularesSeleccion = new Set();
+
+function showParticularesAlert(tipo, msg) {
+  var el = document.getElementById('particularesAlert');
+  if (!el) return;
+  if (!msg) {
+    el.className = 'alert';
+    el.textContent = '';
+    el.style.display = 'none';
+    return;
+  }
+  var t = tipo === 'success' ? 'success' : tipo === 'warn' ? 'warn' : 'error';
+  el.className = 'alert alert-' + t + ' show';
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function cerrarModalParticulares() {
+  var m = document.getElementById('modalParticulares');
+  if (m) m.classList.remove('show');
+}
+
+function _oplsParticularesActuales() {
+  return [..._particularesSeleccion].filter(Boolean);
+}
+
+function toggleParticularOpl(el, opl) {
+  var up = String(opl || '').toUpperCase();
+  for (var x of [..._particularesSeleccion]) {
+    if (String(x).toUpperCase() === up) _particularesSeleccion.delete(x);
+  }
+  if (el.checked) _particularesSeleccion.add(opl);
+}
+
+function renderParticularesLista(opls) {
+  var box = document.getElementById('particularesLista');
+  if (!box) return;
+  if (!opls || !opls.length) {
+    box.innerHTML =
+      '<div class="empty-state">Sin OPLs. Procesa la planilla primero.</div>';
+    return;
+  }
+  var selUp = new Set([..._particularesSeleccion].map(function (x) { return String(x).toUpperCase(); }));
+  box.innerHTML = opls
+    .map(function (opl) {
+      var checked = selUp.has(String(opl).toUpperCase()) ? ' checked' : '';
+      return (
+        '<label style="display:flex;align-items:center;gap:0.55rem;padding:0.35rem 0.2rem;cursor:pointer;font-size:0.88rem;">' +
+        '<input type="checkbox" onchange="toggleParticularOpl(this, this.getAttribute(\'data-opl\'))" data-opl="' +
+        escapeHtml(opl) +
+        '"' +
+        checked +
+        '> <span>' +
+        escapeHtml(opl) +
+        '</span></label>'
+      );
+    })
+    .join('');
+}
+
+function abrirModalParticulares() {
+  var m = document.getElementById('modalParticulares');
+  if (m) m.classList.add('show');
+  showParticularesAlert('', '');
+  var box = document.getElementById('particularesLista');
+  if (box) box.innerHTML = '<div class="empty-state">Cargando OPLs…</div>';
+
+  google.script.run
+    .withSuccessHandler(function (saved) {
+      _particularesSeleccion = new Set((saved && saved.opls) || []);
+      google.script.run
+        .withSuccessHandler(function (opls) {
+          renderParticularesLista(opls || []);
+        })
+        .withFailureHandler(function (e) {
+          if (box) box.innerHTML = '<div class="empty-state">Error: ' + escapeHtml(e.message) + '</div>';
+        })
+        .getListaOPLsParaPlanilla();
+    })
+    .withFailureHandler(function () {
+      _particularesSeleccion = new Set();
+      google.script.run
+        .withSuccessHandler(function (opls) {
+          renderParticularesLista(opls || []);
+        })
+        .withFailureHandler(function (e) {
+          if (box) box.innerHTML = '<div class="empty-state">Error: ' + escapeHtml(e.message) + '</div>';
+        })
+        .getListaOPLsParaPlanilla();
+    })
+    .getOplsParticulares();
+}
+
+function guardarParticularesSeleccion(silent) {
+  var opls = _oplsParticularesActuales();
+  return new Promise(function (resolve) {
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res || !res.success) {
+          showParticularesAlert('error', (res && res.message) || 'No se pudo guardar');
+          resolve(false);
+          return;
+        }
+        _particularesSeleccion = new Set(res.opls || opls);
+        if (!silent) {
+          showParticularesAlert(
+            'success',
+            '✅ ' + _particularesSeleccion.size + ' OPL(s) particulares guardados'
+          );
+        }
+        resolve(true);
+      })
+      .withFailureHandler(function (e) {
+        showParticularesAlert('error', e.message || 'No se pudo guardar');
+        resolve(false);
+      })
+      .setOplsParticulares(opls);
+  });
+}
+
+function descargarExcelParticulares() {
+  var fecha = getFechaGlobalISO();
+  var url = '/api/planilla/excel-particulares?date=' + encodeURIComponent(fecha);
+  showSpinner('Generando Excel de particulares…');
+  fetch(url)
+    .then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (j) {
+          throw new Error((j && j.message) || 'Error ' + r.status);
+        });
+      }
+      var cd = r.headers.get('Content-Disposition') || '';
+      var m = cd.match(/filename="?([^"]+)"?/i);
+      var fname = (m && m[1]) || 'Particulares_pendientes_' + fecha + '.xlsx';
+      return r.blob().then(function (blob) {
+        return { blob: blob, fname: fname };
+      });
+    })
+    .then(function (pack) {
+      hideSpinner();
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(pack.blob);
+      a.download = pack.fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () {
+        URL.revokeObjectURL(a.href);
+      }, 2000);
+      showParticularesAlert('success', '📥 Excel descargado');
+      if (window.ColbeefUsage) {
+        ColbeefUsage.track('excel_download', 'planilla', 'Excel particulares');
+      }
+    })
+    .catch(function (e) {
+      hideSpinner();
+      showParticularesAlert('error', e.message || 'No se pudo descargar');
+    });
+}
+
+async function guardarYDescargarParticulares() {
+  var opls = _oplsParticularesActuales();
+  if (!opls.length) {
+    showParticularesAlert('warn', 'Selecciona al menos un OPL particular.');
+    return;
+  }
+  var ok = await guardarParticularesSeleccion(true);
+  if (!ok) return;
+  showParticularesAlert('success', '📥 Descargando Excel con ' + opls.length + ' hoja(s)…');
+  descargarExcelParticulares();
+}
+
+document.addEventListener('click', function (e) {
+  var m = document.getElementById('modalParticulares');
+  if (m && e.target === m) cerrarModalParticulares();
+});
+
 function abrirModalPlazas() {
   document.getElementById('modalPlazas').classList.add('show');
   _plazaEditIdx = null;
@@ -3865,7 +4068,7 @@ function eliminarPlazaModal(idx) {
 
 // Cerrar modal OPL con ESC
 document.addEventListener('keydown', function(e) {
-  if (e.key === 'Escape') { cerrarModal(); cerrarModalOPL(); cerrarModalPlazas(); }
+  if (e.key === 'Escape') { cerrarModal(); cerrarModalOPL(); cerrarModalPlazas(); cerrarModalParticulares(); }
 });
 
 // MOSTRAR RESUMEN GENERAL EN EL MISMO LUGAR QUE LAS TARJETAS
