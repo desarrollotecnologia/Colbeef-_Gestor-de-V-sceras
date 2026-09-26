@@ -31,9 +31,11 @@ import {
   loginAdmin,
   verifyAdminToken,
   getUsageStats,
+  getUsageEventsRange,
   buildGestorLink,
   migrateUsabilityJsonToMysql,
 } from './gestor/usabilityStore.js';
+import { buildUsabilityExcelBuffer } from './gestor/usabilityExport.js';
 import {
   initGestorMysqlConEspera,
   closeGestorMysql,
@@ -262,6 +264,35 @@ app.get('/api/usability/stats', requireUsabilityAdmin, async (req, res) => {
     res.json(stats);
   } catch (e) {
     apiError(res, e);
+  }
+});
+
+app.get('/api/usability/export', requireUsabilityAdmin, async (req, res) => {
+  try {
+    const from = String(req.query.from || '').slice(0, 10);
+    const to = String(req.query.to || '').slice(0, 10);
+    const out = await getUsageEventsRange(from, to);
+    res.json(out);
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
+});
+
+app.get('/api/usability/export.xlsx', requireUsabilityAdmin, async (req, res) => {
+  try {
+    const from = String(req.query.from || '').slice(0, 10);
+    const to = String(req.query.to || '').slice(0, 10);
+    const out = await getUsageEventsRange(from, to);
+    const { buffer } = await buildUsabilityExcelBuffer(out.events || [], from, to);
+    const fname = `usabilidad_${from}_${to}.xlsx`;
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+    res.send(buffer);
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
   }
 });
 

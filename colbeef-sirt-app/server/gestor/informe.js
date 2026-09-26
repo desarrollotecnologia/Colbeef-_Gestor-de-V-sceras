@@ -408,8 +408,8 @@ export async function generarInformeHTML(payload) {
     ${percherosSection}
     ${sinSecciones ? '<div class="aviso-vacio">No hay secciones seleccionadas. Marque al menos una opción en «Incluir en el informe».</div>' : ''}
     <div class="doc-footer">
-      <strong>SERGIO ANAYA</strong> — GESTOR DE VÍSCERAS<br>
-      Documento generado automáticamente · Gestor de Vísceras Colbeef · ${escHtml(fecha)}
+      <strong>GESTOR DE VÍSCERAS</strong><br>
+      Desarrollo Colbeef · Documento generado automáticamente · ${escHtml(fecha)}
     </div>
   </div>
   <button class="export-btn" onclick="exportarPNG()">📥 Exportar como PNG</button>

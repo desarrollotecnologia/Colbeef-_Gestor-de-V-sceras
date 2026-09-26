@@ -67,6 +67,15 @@
             <option value="30" selected>Últimos 30 días</option>
             <option value="90">Últimos 90 días</option>
           </select>
+          <label style="font-size:0.78rem;color:var(--gris);display:flex;align-items:center;gap:0.35rem;">
+            Desde
+            <input type="date" id="exportFrom" value="2026-09-15" style="width:auto;padding:0.35rem;">
+          </label>
+          <label style="font-size:0.78rem;color:var(--gris);display:flex;align-items:center;gap:0.35rem;">
+            Hasta
+            <input type="date" id="exportTo" value="2026-09-26" style="width:auto;padding:0.35rem;">
+          </label>
+          <button class="btn" type="button" id="btnExportExcel">⬇ Excel informe</button>
           <button class="btn secondary" type="button" onclick="location.href='/gestor.html'">← Volver al gestor</button>
           <button class="btn secondary" type="button" onclick="location.href='/portal.html'">Portal principal</button>
         </div>
@@ -387,6 +396,45 @@
     });
 
     document.getElementById('daysSelect').addEventListener('change', loadStats);
+
+    document.getElementById('btnExportExcel').addEventListener('click', function () {
+      var from = document.getElementById('exportFrom').value;
+      var to = document.getElementById('exportTo').value;
+      if (!from || !to) {
+        alert('Indique fechas desde / hasta');
+        return;
+      }
+      var btn = document.getElementById('btnExportExcel');
+      btn.disabled = true;
+      btn.textContent = 'Generando…';
+      fetch('/api/usability/export.xlsx?from=' + encodeURIComponent(from) + '&to=' + encodeURIComponent(to), {
+        headers: { Authorization: 'Bearer ' + token() },
+      })
+        .then(function (r) {
+          if (!r.ok) {
+            return r.json().then(function (j) {
+              throw new Error((j && j.message) || 'Error ' + r.status);
+            });
+          }
+          return r.blob();
+        })
+        .then(function (blob) {
+          var a = document.createElement('a');
+          a.href = URL.createObjectURL(blob);
+          a.download = 'usabilidad_' + from + '_' + to + '.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+        })
+        .catch(function (e) {
+          alert('No se pudo exportar: ' + (e.message || e));
+        })
+        .finally(function () {
+          btn.disabled = false;
+          btn.textContent = '⬇ Excel informe';
+        });
+    });
 
     if (token()) showDash();
     else showLogin();

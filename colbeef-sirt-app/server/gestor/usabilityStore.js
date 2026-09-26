@@ -261,6 +261,55 @@ export async function getUsageStats(days = 30) {
   return getUsageStatsJson(d);
 }
 
+/**
+ * Eventos crudos para export (rango inclusive por fecha calendario Bogotá aproximada vía DATE(ts)).
+ */
+export async function getUsageEventsRange(fromIso, toIso) {
+  const from = String(fromIso || '').slice(0, 10);
+  const to = String(toIso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+    throw new Error('Indique from y to como YYYY-MM-DD.');
+  }
+  if (isGestorMysqlReady()) {
+    try {
+      const rows = await gestorQuery(
+        `SELECT event_id, ts, usuario, action, module, detail, session_id, page, ip, user_agent
+         FROM usability_events
+         WHERE DATE(ts) >= ? AND DATE(ts) <= ?
+         ORDER BY ts ASC
+         LIMIT 100000`,
+        [from, to]
+      );
+      return {
+        success: true,
+        store: 'mysql',
+        from,
+        to,
+        events: rows.map((r) => ({
+          id: r.event_id,
+          ts: r.ts instanceof Date ? r.ts.toISOString() : String(r.ts),
+          usuario: r.usuario,
+          action: r.action,
+          module: r.module || '',
+          detail: r.detail || '',
+          sessionId: r.session_id || '',
+          page: r.page || '',
+          ip: r.ip || '',
+          userAgent: r.user_agent || '',
+        })),
+      };
+    } catch (e) {
+      console.warn('[usabilidad] export MySQL falló, usando JSON:', e.message);
+    }
+  }
+  const data = await loadData();
+  const events = (data.events || []).filter((e) => {
+    const d = String(e.ts || '').slice(0, 10);
+    return d >= from && d <= to;
+  });
+  return { success: true, store: 'json', from, to, events };
+}
+
 /** Importa eventos del JSON a MySQL una vez (idempotente por event_id). */
 export async function migrateUsabilityJsonToMysql() {
   if (!isGestorMysqlReady()) return { ok: false, skipped: true };
