@@ -66,10 +66,16 @@
         var d = res.data;
         if (d && d.ok && d.db) {
           setConnectionStatus(true, 'Conectado', 'Base de datos OK');
+          if (d.gestorBuild && typeof window.setGestorBuildBadge === 'function') {
+            window.setGestorBuildBadge(d.gestorBuild);
+          }
           return;
         }
         if (d && d.ok && !d.db) {
           setConnectionStatus(false, 'Sin conexión', d.message || 'No se pudo leer PostgreSQL');
+          if (d.gestorBuild && typeof window.setGestorBuildBadge === 'function') {
+            window.setGestorBuildBadge(d.gestorBuild);
+          }
           return;
         }
         setConnectionStatus(

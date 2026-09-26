@@ -673,9 +673,9 @@ function minutosDesdeCeldaSalida(celda) {
 }
 
 /**
- * Parte juegos completos (paquete visceral) en antes / adicionales según corte 15:20.
- * Cada animal cuenta una sola vez: hora del juego = última fecha_salida de sus 4 piezas.
- * Garantiza: antes + adicionales = total juegos con salida del día (en el filtro).
+ * Parte juegos (paquete visceral) en antes / adicionales / incompletos.
+ * Completos: antes + adicionales = total juegos completos salidos.
+ * Incompletos: salieron con piezas pero sin los 4 subproductos (detalle de lo que faltó).
  */
 function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
   const turno = String(opts.turno || '').trim();
@@ -687,48 +687,86 @@ function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
   const paquete = filasSalidaDespachoReal(salidasRows || []);
   const filas = turno ? filasDespachoTurnoOperacion(paquete, turno) : paquete;
 
-  /** @type {Map<string, { tipos: Set<string>, maxMins: number, clave: string, piezas: number }>} */
+  /** @type {Map<string, { tipos: Set<string>, maxMins: number, clave: string, piezas: number, prop: string, puesto: string, ids: string[] }>} */
   const porAnimal = new Map();
   filas.forEach((fila) => {
     const id = String(fila[COLS_DESPACHO_CAVA.id] ?? '').trim();
     const tipo = String(fila[COLS_DESPACHO_CAVA.tipo] ?? '').trim();
+    const prop = String(fila[COLS_DESPACHO_CAVA.prop] ?? '').trim();
+    const puesto = String(fila[COLS_DESPACHO_CAVA.puesto] ?? '').trim();
     if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
     const base = codigoBase(id);
     if (!base) return;
     const clave = String(getClave(fila) || '').trim() || '__TOTAL__';
     const mins = minutosDesdeCeldaSalida(fila[0]);
     if (!porAnimal.has(base)) {
-      porAnimal.set(base, { tipos: new Set(), maxMins: -1, clave, piezas: 0 });
+      porAnimal.set(base, {
+        tipos: new Set(),
+        maxMins: -1,
+        clave,
+        piezas: 0,
+        prop,
+        puesto,
+        ids: [],
+      });
     }
     const info = porAnimal.get(base);
     info.tipos.add(tipo);
     info.piezas += 1;
+    info.ids.push(id);
+    if (prop) info.prop = prop;
+    if (puesto) info.puesto = puesto;
     if (mins > info.maxMins) info.maxMins = mins;
     if (clave) info.clave = clave;
   });
 
   const antesPorClave = {};
   const adiPorClave = {};
+  const incompletosPorClave = {};
+  const incompletos = [];
   let juegosAntes = 0;
   let juegosAdicionales = 0;
   let piezasAntes = 0;
   let piezasAdicionales = 0;
 
-  porAnimal.forEach((info) => {
-    if (!tieneJuegoCompleto(info.tipos)) return;
-    const esAdi = info.maxMins >= 0 && info.maxMins >= corteMins;
+  porAnimal.forEach((info, base) => {
     const k = info.clave || '__TOTAL__';
-    if (esAdi) {
-      juegosAdicionales += 1;
-      piezasAdicionales += info.piezas;
-      adiPorClave[k] = (adiPorClave[k] || 0) + 1;
-    } else {
-      // Sin hora o < corte → asignada en ventana normal.
-      juegosAntes += 1;
-      piezasAntes += info.piezas;
-      antesPorClave[k] = (antesPorClave[k] || 0) + 1;
+    const tiposArr = [...info.tipos];
+    if (tieneJuegoCompleto(info.tipos)) {
+      const esAdi = info.maxMins >= 0 && info.maxMins >= corteMins;
+      if (esAdi) {
+        juegosAdicionales += 1;
+        piezasAdicionales += info.piezas;
+        adiPorClave[k] = (adiPorClave[k] || 0) + 1;
+      } else {
+        juegosAntes += 1;
+        piezasAntes += info.piezas;
+        antesPorClave[k] = (antesPorClave[k] || 0) + 1;
+      }
+      return;
     }
+    if (!tienePiezaVisceral(info.tipos)) return;
+    const faltan = TIPOS_PRODUCTO.filter((t) => !info.tipos.has(t));
+    incompletosPorClave[k] = (incompletosPorClave[k] || 0) + 1;
+    incompletos.push({
+      codigoBase: base,
+      codigo: info.ids[0] || base,
+      propietario: info.prop,
+      puesto: info.puesto,
+      opl: k === '__TOTAL__' ? '' : k,
+      tiposPresentes: tiposArr,
+      tiposFaltantes: faltan,
+      piezas: info.piezas,
+      adicional: info.maxMins >= 0 && info.maxMins >= corteMins,
+    });
   });
+
+  incompletos.sort(
+    (a, b) =>
+      String(a.opl || '').localeCompare(String(b.opl || ''), 'es') ||
+      String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
+      String(a.codigoBase || '').localeCompare(String(b.codigoBase || ''))
+  );
 
   return {
     corte: corteLabel,
@@ -740,6 +778,9 @@ function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
     piezasTotal: piezasAntes + piezasAdicionales,
     antesPorClave,
     adiPorClave,
+    incompletosPorClave,
+    incompletos,
+    totalIncompletos: incompletos.length,
   };
 }
 
@@ -1181,7 +1222,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const totalsFrozen = obtenerOplTotalsJuego(s);
   const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
 
-  // Pendientes en cava (informativo); despachados que bajan meta = solo salidas < 15:20.
+  // Pendientes = juegos completos que AÚN están en cava (no los incompletos ya salidos).
   const pendCompleteOpl = contarJuegosCompletosPorClave(
     programadosEnPaquete,
     COLS_DESPACHO_CAVA,
@@ -1194,6 +1235,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   });
   const despAntesOpl = part.antesPorClave || {};
   const adiOpl = part.adiPorClave || {};
+  const incOpl = part.incompletosPorClave || {};
 
   const opls = new Set([
     ...Object.keys(totalsFrozen),
@@ -1201,6 +1243,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     ...Object.keys(pendCompleteOpl),
     ...Object.keys(despAntesOpl),
     ...Object.keys(adiOpl),
+    ...Object.keys(incOpl),
   ]);
   const todosOPL = [];
   const progreso = [];
@@ -1209,21 +1252,24 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     const pendComplete = Number(pendCompleteOpl[opl] || 0);
     const despAntes = Number(despAntesOpl[opl] || 0);
     const adi = Number(adiOpl[opl] || 0);
+    const inc = Number(incOpl[opl] || 0);
+    // Meta = juegos completos del turno (no inflar con incompletos sueltos).
     const totalMeta = Math.max(
+      Number(totalsCompleteFrozen[opl] || 0),
       Number(totalsFrozen[opl] || 0),
-      pendComplete + despAntes + adi
+      pendComplete + despAntes + adi + inc
     );
-    const completeMeta = Math.max(
+    if (totalMeta <= 0) return;
+    totalsFrozen[opl] = Math.max(Number(totalsFrozen[opl] || 0), totalMeta);
+    totalsCompleteFrozen[opl] = Math.max(
       Number(totalsCompleteFrozen[opl] || 0),
       pendComplete + despAntes + adi
     );
-    if (totalMeta <= 0) return;
-    totalsFrozen[opl] = totalMeta;
-    totalsCompleteFrozen[opl] = completeMeta;
-    // Solo salidas < 15:20 bajan pendientes; ≥ 15:20 van a adicionales.
+    // Despachados que bajan el cupo normal = solo salidas completas < 15:20.
     const despachados = Math.min(despAntes, totalMeta);
-    const pendientes = Math.max(0, totalMeta - despachados);
-    let pct = Math.round((despachados / totalMeta) * 100);
+    // Pendientes = solo lo que sigue en cava (incompletos ya salidos no quedan “colgados”).
+    const pendientes = pendComplete;
+    let pct = totalMeta > 0 ? Math.round(((totalMeta - pendientes) / totalMeta) * 100) : 0;
     if (pendientes > 0) pct = Math.min(99, pct);
     else pct = 100;
     const item = {
@@ -1232,6 +1278,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
       despachados,
       pendientes,
       adicionales: adi,
+      incompletos: inc,
       progreso: pct,
       fecha,
     };
@@ -1249,6 +1296,8 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
     totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
     totalAdicionales: todosOPL.reduce((sum, p) => sum + Number(p.adicionales || 0), 0),
+    totalIncompletos: part.totalIncompletos || 0,
+    salidasIncompletas: part.incompletos || [],
     juegosSalidaAntes: part.juegosAntes,
     juegosSalidaAdicionales: part.juegosAdicionales,
     juegosSalidaTotal: part.juegosTotal,
@@ -1623,7 +1672,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'adicionales-congela-meta-v23';
+export const GESTOR_BUILD = 'beneficio-distinct-v25';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1772,21 +1821,25 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      // Despachados que bajan "Total a despachar" = solo salidas < 15:20.
+      const adi = clasificarJuegosSalidaPorCorte(salidasDia || [], {
+        turno: turnoOp,
+        getClave: (fila) => claveOplDesdeFila(fila, cargarMapaOPL(sWork)),
+      });
+      // Despachados que bajan cupo normal = salidas completas < 15:20.
       const despachados = Math.max(
         0,
-        Number(oplLive.totalDespachados ?? oplLive.juegosSalidaAntes ?? 0)
+        Number(oplLive.totalDespachados ?? adi.juegosAntes ?? 0)
       );
-      const adi = clasificarJuegosSalidaPorCorte(salidasDia || [], { turno: turnoOp });
-      // Meta = programados del día (congelada).
+      // Meta del día.
       const juegosEnCava = Math.max(
         Number(kpiFrozen.totalJuegos || 0),
         Number(rd.totalJuegos || 0),
         Number(oplLive.totalJuegos || 0),
-        despachados + adi.juegosAdicionales
+        despachados + adi.juegosAdicionales + adi.totalIncompletos
       );
-      // Total a despachar se congela tras 15:20: no resta adicionales.
-      const pendientes = Math.max(0, juegosEnCava - despachados);
+      // Total a despachar = solo juegos completos que SIGUEN en cava.
+      // Incompletos ya salidos no quedan colgados como pendientes.
+      const pendientes = Math.max(0, Number(oplLive.totalPendientes ?? 0));
       const totalJuegosDespachar = pendientes;
       const juegosTotalesOperacion = juegosEnCava;
       const filasSalidasFisicas = (salidasDia || []).length;
@@ -1796,7 +1849,8 @@ export async function getDashboardData(range) {
       let progreso = 0;
       let progresoMensaje = '';
       if (juegosTotalesOperacion > 0) {
-        progreso = Math.round((despachados / juegosTotalesOperacion) * 100);
+        const cerrados = Math.max(0, juegosTotalesOperacion - pendientes);
+        progreso = Math.round((cerrados / juegosTotalesOperacion) * 100);
         if (pendientes > 0) progreso = Math.min(99, progreso);
         else progreso = 100;
         progresoMensaje =
@@ -1809,8 +1863,10 @@ export async function getDashboardData(range) {
           ' · ' +
           adi.juegosAdicionales +
           ' adicionales · ' +
+          (adi.totalIncompletos || 0) +
+          ' incompletos · ' +
           pendientes +
-          ' por despachar · turno ' +
+          ' en cava · turno ' +
           turnoOp +
           ' · ' +
           isoToDdMmYyyy(fechaIso);
@@ -1861,6 +1917,8 @@ export async function getDashboardData(range) {
         totalJuegosAntesCorte: adi.juegosAntes,
         totalPiezasAntesCorte: adi.piezasAntes,
         totalJuegosSalidaDia: adi.juegosTotal,
+        totalSalidasIncompletas: adi.totalIncompletos || 0,
+        salidasIncompletas: adi.incompletos || [],
         corteAdicional: adi.corte,
         totalJuegosDespachar,
         despachados,

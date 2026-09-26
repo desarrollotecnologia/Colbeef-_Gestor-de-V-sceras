@@ -23,6 +23,11 @@
     .logo-icon img{width:100%;height:100%;display:block;border-radius:18px;object-fit:contain;}
     .logo-text h1{font-size:1.8rem;font-weight:700;letter-spacing:-0.5px;}
     .logo-text p{color:var(--gris);font-size:0.9rem;}
+    .gestor-build-badge{
+      display:inline-block;margin-top:0.25rem;padding:0.15rem 0.5rem;border-radius:4px;
+      background:#f1f5f9;border:1px solid #cbd5e1;color:#334155;
+      font-size:0.72rem;font-weight:700;letter-spacing:0.02em;font-family:ui-monospace,Consolas,monospace;
+    }
     .fecha-badge{background:white;padding:0.45rem 1rem;border-radius:40px;font-weight:500;color:var(--vp);box-shadow:var(--sombra);border:1px solid var(--vc);display:flex;align-items:center;gap:0.5rem;}
     .btn-volver-portal{width:42px;height:42px;border-radius:12px;border:1.5px solid var(--vc);background:#fff;color:var(--vp);font-size:1.25rem;font-weight:700;cursor:pointer;flex-shrink:0;box-shadow:var(--sombra);display:inline-flex;align-items:center;justify-content:center;text-decoration:none;}
     .btn-volver-portal:hover{background:var(--vc);}
@@ -401,6 +406,7 @@
       <div class="logo-text">
         <h1><span style="color:var(--vp)">Col</span><span style="color:var(--rojo)">beef</span> · Gestor de Vísceras</h1>
         <p>Control de inventario y despachos · todos los módulos en una sola pantalla</p>
+        <span class="gestor-build-badge" id="gestorBuildBadge" title="Versión del servidor en ejecución">build …</span>
       </div>
     </div>
     <span id="usuarioBadge" class="usuario-badge" style="display:none;"></span>
@@ -434,6 +440,11 @@
               <div class="split-label" style="font-size:0.7rem;color:#1e3a5f;">➕ Adicionales</div>
               <div class="split-valor" id="dashAdicionales" style="font-size:1.4rem;color:#1e3a5f;">—</div>
               <div class="split-sub" id="dashAdicionalesSub">Salidas ≥ 15:20 (no bajan el total a despachar)</div>
+            </div>
+            <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
+              <div class="split-label" style="font-size:0.7rem;color:#b45309;">⚠ Incompletos</div>
+              <div class="split-valor" id="dashIncompletos" style="font-size:1.4rem;color:#b45309;cursor:pointer;" onclick="abrirModalIncompletos()" title="Ver detalle">—</div>
+              <div class="split-sub" id="dashIncompletosSub">Salieron sin los 4 subproductos · click para ver</div>
             </div>
           </div>
         </div>
@@ -980,6 +991,36 @@
     </div>
   </div>
 
+  <!-- MODAL SALIDAS INCOMPLETAS -->
+  <div class="modal-overlay" id="modalIncompletos">
+    <div class="modal-box" style="max-width:min(960px,96vw);">
+      <div class="modal-header">
+        <div class="modal-title">⚠ Salidas incompletas</div>
+        <button class="modal-close" onclick="cerrarModalIncompletos()" aria-label="Cerrar">✕</button>
+      </div>
+      <p class="detalle-puesto-hint" id="modalIncompletosHint">
+        Animales que salieron de Paquete Visceral sin los 4 subproductos. No quedan como “pendiente en cava”; aquí se ve qué faltó por sacar.
+      </p>
+      <div class="table-wrap" style="margin-top:0;max-height:min(58vh,520px);overflow:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Código animal</th>
+              <th>Propietario</th>
+              <th>OPL</th>
+              <th>Puesto</th>
+              <th>Salió</th>
+              <th>Faltó por sacar</th>
+            </tr>
+          </thead>
+          <tbody id="modalIncompletosTbody">
+            <tr><td colspan="6" class="empty-state">Sin datos.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- MODAL OPL EXPANDIDO -->
   <div class="modal-overlay" id="modalOPL">
     <div class="modal-box" style="max-width:620px;">
@@ -1102,31 +1143,19 @@
     location.replace('/portal.html');
   };
 
-  var logoClicks = 0;
-  var logoTimer = null;
-
-  function openUsabilidadAdmin() {
-    var pwd = prompt('Contraseña de administración (usabilidad):');
-    if (!pwd) return;
-    fetch('/api/usability/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pwd }),
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (!data.success) {
-          alert(data.message || 'Contraseña incorrecta');
-          return;
-        }
-        sessionStorage.setItem('colbeef_usabilidad_token', data.token);
-        if (window.ColbeefUsage) ColbeefUsage.track('admin_open', 'usabilidad', 'Dashboard oculto');
-        location.href = '/usabilidad.html';
-      })
-      .catch(function () {
-        alert('No se pudo verificar la contraseña. ¿El servicio está activo?');
-      });
+  function setGestorBuildBadge(build) {
+    var el = document.getElementById('gestorBuildBadge');
+    if (!el) return;
+    var b = String(build || '').trim();
+    if (!b) {
+      el.textContent = 'build ?';
+      el.title = 'No se pudo leer la versión del servidor';
+      return;
+    }
+    el.textContent = 'build ' + b;
+    el.title = 'Versión del servidor: ' + b;
   }
+  window.setGestorBuildBadge = setGestorBuildBadge;
 
   function onUiReady() {
     if (window.ColbeefUsage) {
@@ -1147,24 +1176,12 @@
       };
     }
 
-    var logo = document.getElementById('logoIconGestor');
-    function onLogoClick(e) {
-      if (e) e.stopPropagation();
-      logoClicks++;
-      clearTimeout(logoTimer);
-      logoTimer = setTimeout(function () { logoClicks = 0; }, 1200);
-      if (logoClicks >= 5) {
-        logoClicks = 0;
-        openUsabilidadAdmin();
-      }
-    }
-    if (logo) {
-      logo.style.cursor = 'pointer';
-      logo.title = 'Colbeef';
-      logo.addEventListener('click', onLogoClick);
-      var img = logo.querySelector('img');
-      if (img) img.addEventListener('click', onLogoClick);
-    }
+    fetch('/api/health')
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d && d.gestorBuild) setGestorBuildBadge(d.gestorBuild);
+      })
+      .catch(function () {});
 
     if (typeof window.__colbeefPendingInit === 'function') {
       var pending = window.__colbeefPendingInit;
@@ -1198,6 +1215,8 @@ var infState = {
   completos:   0,
   incompletos: 0,
   beneficioDia:0,
+  beneficioFuente: '',
+  beneficioMeta: null,
   stockTotal:  100,
   danados:     2,
   novedades:   [],
@@ -1616,9 +1635,19 @@ function updateDashboard(data) {
         adiJuegos +
         ' = ' +
         totalSal +
-        ' salidas';
+        ' completos';
     }
-    // Total a despachar: baja solo con salidas < 15:20 (después queda congelado).
+    var nInc = Number(data.totalSalidasIncompletas || 0);
+    window._salidasIncompletas = data.salidasIncompletas || [];
+    setText('dashIncompletos', data.totalSalidasIncompletas != null ? nInc : '—');
+    var incSub = document.getElementById('dashIncompletosSub');
+    if (incSub) {
+      incSub.textContent =
+        nInc > 0
+          ? nInc + ' salieron sin los 4 · click para ver código / faltante'
+          : 'Sin salidas incompletas';
+    }
+    // Total a despachar = juegos completos aún en cava.
     setText('dashDespachos', pendientes);
     setText('dashDespachados', despachadosNum);
     setText('dashTotalJuegos', juegosTotalesOperacion > 0 ? juegosTotalesOperacion : '—');
@@ -1627,7 +1656,7 @@ function updateDashboard(data) {
       var fechaLbl = data.fechaConsulta ? String(data.fechaConsulta) : '';
       setText(
         'dashDespTurno',
-        'Turno ' + turnoLbl + (fechaLbl ? ' · ' + fechaLbl : '')
+        'Turno ' + turnoLbl + (fechaLbl ? ' · ' + fechaLbl : '') + ' · pendientes = en cava'
       );
     }
 
@@ -1640,10 +1669,11 @@ function updateDashboard(data) {
     }
     setText('progresoPorcentaje', progreso + '%');
     setWidth('progresoBarra', progreso + '%');
+    if (data.gestorBuild && typeof window.setGestorBuildBadge === 'function') {
+      window.setGestorBuildBadge(data.gestorBuild);
+    }
     if (data.progresoMensaje) {
-      var metaTxt = data.progresoMensaje;
-      if (data.gestorBuild) metaTxt += ' · build ' + data.gestorBuild;
-      setText('progresoMeta', metaTxt);
+      setText('progresoMeta', data.progresoMensaje);
     } else {
       setText(
         'progresoMeta',
@@ -2550,7 +2580,64 @@ function abrirDetalle(elOrStr) {
     .getDetallesPuesto(puesto);
 }
 function cerrarModal(){document.getElementById('modalDetalle').classList.remove('show');}
-document.addEventListener('keydown',function(e){if(e.key==='Escape')cerrarModal();});
+
+function abrirModalIncompletos() {
+  var filas = window._salidasIncompletas || [];
+  var modal = document.getElementById('modalIncompletos');
+  var tbody = document.getElementById('modalIncompletosTbody');
+  var hint = document.getElementById('modalIncompletosHint');
+  if (!modal || !tbody) return;
+  if (hint) {
+    hint.textContent =
+      filas.length > 0
+        ? filas.length +
+          ' animal(es) salieron incompletos de Paquete Visceral. No cuentan como pendiente en cava; revise qué subproducto faltó.'
+        : 'No hay salidas incompletas en la fecha consultada.';
+  }
+  if (!filas.length) {
+    tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Sin salidas incompletas.</td></tr>';
+  } else {
+    tbody.innerHTML = filas
+      .map(function (f) {
+        var faltan = (f.tiposFaltantes || []).join(', ') || '—';
+        var salio = (f.tiposPresentes || []).join(', ') || '—';
+        return (
+          '<tr>' +
+          '<td class="col-codigo">' +
+          escapeHtml(f.codigoBase || f.codigo || '') +
+          '</td>' +
+          '<td class="col-propietario">' +
+          escapeHtml(f.propietario || '') +
+          '</td>' +
+          '<td>' +
+          escapeHtml(f.opl || '—') +
+          '</td>' +
+          '<td style="font-size:0.78rem;max-width:180px;word-break:break-word;">' +
+          escapeHtml(f.puesto || '') +
+          '</td>' +
+          '<td style="font-size:0.78rem;">' +
+          escapeHtml(salio) +
+          '</td>' +
+          '<td style="font-weight:700;color:#9a3412;">' +
+          escapeHtml(faltan) +
+          '</td>' +
+          '</tr>'
+        );
+      })
+      .join('');
+  }
+  modal.classList.add('show');
+}
+function cerrarModalIncompletos() {
+  var m = document.getElementById('modalIncompletos');
+  if (m) m.classList.remove('show');
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') {
+    cerrarModal();
+    cerrarModalIncompletos();
+  }
+});
 
 // ══════════════════════════════════════════════════════
 // BUSCADOR DESPACHOS
@@ -2615,6 +2702,7 @@ function cargarDatosInforme() {
       infState.incompletos  = res.incompletos;
       infState.beneficioDia = res.beneficioDia;
       infState.beneficioFuente = res.beneficioFuente || '';
+      infState.beneficioMeta = res.beneficioMeta || null;
       infState.stockTotal   = res.stockTotal;
       infState.danados      = res.danados;
       infState.novedades    = res.novedades || [];
@@ -2640,10 +2728,26 @@ function _renderInforme() {
   document.getElementById('infIncompletos').value = infState.incompletos;
   document.getElementById('infBeneficioVal').textContent =
     infState.beneficioDia != null && infState.beneficioDia !== '' ? infState.beneficioDia : '—';
-  document.getElementById('infBeneficioNota').textContent =
+  var meta = infState.beneficioMeta;
+  var notaBenef =
     infState.beneficioFuente === 'sirt'
-      ? 'Fuente: SIRT · plan de faena · fecha operación ' + infState.fecha
-      : 'Sin conexión SIRT para esta fecha';
+      ? 'Fuente: SIRT · animales únicos en plan de faena · ' + infState.fecha
+      : infState.beneficioFuente === 'manual'
+        ? 'Sin dato SIRT para esta fecha (revise conexión o fecha)'
+        : 'Consultando SIRT…';
+  if (
+    meta &&
+    infState.beneficioFuente === 'sirt' &&
+    Number(meta.filasProducto || 0) > Number(meta.animales || 0)
+  ) {
+    notaBenef +=
+      ' · (SIRT tenía ' +
+      meta.filasProducto +
+      ' filas; se cuentan ' +
+      meta.animales +
+      ' códigos únicos)';
+  }
+  document.getElementById('infBeneficioNota').textContent = notaBenef;
   document.getElementById('percStock').value      = infState.stockTotal;
   document.getElementById('percDanados').value    = infState.danados;
   // Novedades

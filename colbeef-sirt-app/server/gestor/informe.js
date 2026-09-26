@@ -6,7 +6,7 @@
  * que el navegador puede convertir a PNG mediante html2canvas.
  */
 import { loadState, saveState } from './store.js';
-import { fetchAnimalesBeneficiadosDia } from './sirtSync.js';
+import { fetchAnimalesBeneficiadosDiaDetalle } from './sirtSync.js';
 import {
   CAVAS_DEFAULT,
   calcularTotalesCavas,
@@ -58,10 +58,20 @@ function isoAFechaTexto(iso) {
 async function enriquecerBeneficioDesdeSirt(datos, fechaIso) {
   if (!fechaIso) return datos;
   try {
-    datos.beneficioDia = await fetchAnimalesBeneficiadosDia({ from: fechaIso, to: fechaIso });
+    const det = await fetchAnimalesBeneficiadosDiaDetalle({ from: fechaIso, to: fechaIso });
+    datos.beneficioDia = det.animales;
     datos.beneficioFuente = 'sirt';
+    datos.beneficioMeta = {
+      animales: det.animales,
+      filasProducto: det.filasProducto,
+      planes: det.planes,
+      desde: det.from,
+      hasta: det.to,
+    };
   } catch {
-    datos.beneficioFuente = datos.beneficioFuente || 'manual';
+    // No dejar fuente "sirt" con un número viejo si la consulta falló.
+    datos.beneficioFuente = 'manual';
+    datos.beneficioMeta = null;
   }
   return datos;
 }

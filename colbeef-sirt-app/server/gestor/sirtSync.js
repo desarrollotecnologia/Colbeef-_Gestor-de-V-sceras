@@ -128,22 +128,42 @@ function hoyIso() {
 }
 
 /**
- * Animales beneficiados del día — plan de faena (cabecera + detalle producto).
- * Equivale a: COUNT(*) FROM plan_faena pf JOIN plan_faena_producto pfp WHERE pf.fecha_plan = fecha.
+ * Animales beneficiados del día — códigos únicos en plan de faena.
+ *
+ * Un plan (cabecera) tiene muchos animales en plan_faena_producto. Contar filas
+ * del JOIN inflaba el número cuando un animal aparecía más de una vez; omitir
+ * productos dejaba el día corto. La fecha se toma en America/Bogota (misma
+ * regla que control de librillos) para no correr el día por zona horaria.
  */
-export async function fetchAnimalesBeneficiadosDia(range = {}) {
+export async function fetchAnimalesBeneficiadosDiaDetalle(range = {}) {
   const from = normDate(range.from) || normDate(range.date) || normDate(range.to) || hoyIso();
   const to = normDate(range.to) || from;
   const sql = `
-    SELECT COUNT(*)::int AS total
+    SELECT
+      COUNT(DISTINCT NULLIF(TRIM(pfp.id_producto::text), ''))::int AS animales,
+      COUNT(*)::int AS filas_producto,
+      COUNT(DISTINCT pf.id)::int AS planes
     FROM trazabilidad_proceso.plan_faena pf
     JOIN trazabilidad_proceso.plan_faena_producto pfp
       ON pfp.id_plan_faena = pf.id
-    WHERE pf.fecha_plan::date >= $1::date
-      AND pf.fecha_plan::date <= $2::date
+    WHERE DATE(timezone('America/Bogota', pf.fecha_plan)) >= $1::date
+      AND DATE(timezone('America/Bogota', pf.fecha_plan)) <= $2::date
   `;
   const { rows } = await query(sql, [from, to]);
-  return rows[0]?.total ?? 0;
+  const r = rows[0] || {};
+  return {
+    from,
+    to,
+    animales: Number(r.animales || 0),
+    filasProducto: Number(r.filas_producto || 0),
+    planes: Number(r.planes || 0),
+  };
+}
+
+/** @returns {Promise<number>} animales únicos del plan de faena en el rango. */
+export async function fetchAnimalesBeneficiadosDia(range = {}) {
+  const det = await fetchAnimalesBeneficiadosDiaDetalle(range);
+  return det.animales;
 }
 
 /**
