@@ -1601,11 +1601,12 @@ function updateDashboard(data) {
         ? data.juegosTotalesOperacion
         : Math.max(juegosEnCava, despachadosNum)
     );
-    // Pendientes = meta − despachados (TOTAL fijo; solo suben/bajan desp y pend).
+    // Pendientes = juegos completos aún en cava (servidor); las salidas ≥ corte son adicionales, no despachados.
+    var pendServidor = data.faltan != null ? data.faltan : data.totalJuegosDespachar;
     var pendientes =
-      juegosTotalesOperacion > 0
-        ? Math.max(0, juegosTotalesOperacion - despachadosNum)
-        : Number(data.faltan != null ? data.faltan : data.totalJuegosDespachar || 0);
+      pendServidor != null
+        ? Math.max(0, Number(pendServidor))
+        : Math.max(0, juegosTotalesOperacion - despachadosNum);
     var finalizada =
       !data.consultaSIRT &&
       juegosEnCava > 0 &&
@@ -1706,7 +1707,7 @@ function updateDashboard(data) {
     // ── % contra meta en cava (congelada); no 100% si aún faltan ──
     var progreso = Number(data.progreso || 0);
     if (juegosTotalesOperacion > 0) {
-      progreso = Math.round((despachadosNum / juegosTotalesOperacion) * 100);
+      progreso = Math.round((Math.max(0, juegosTotalesOperacion - pendientes) / juegosTotalesOperacion) * 100);
       if (pendientes > 0) progreso = Math.min(99, progreso);
       else progreso = 100;
     }
