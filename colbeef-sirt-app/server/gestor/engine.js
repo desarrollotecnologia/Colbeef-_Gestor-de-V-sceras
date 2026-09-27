@@ -1688,7 +1688,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'opl-prog-recepcion-v28';
+export const GESTOR_BUILD = 'opl-prog-modal-v29';
 
 function metaRespuestaOpl(extra = {}) {
   return {

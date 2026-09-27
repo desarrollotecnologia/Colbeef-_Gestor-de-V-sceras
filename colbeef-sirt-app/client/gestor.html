@@ -3316,10 +3316,13 @@ function renderModalOplProgreso(progreso, unidad) {
   }
   var html = progreso.map(function(p) {
     var desp = Number(p.despachados || 0);
-    // TOTAL se mantiene; PENDIENTES = TOTAL − DESPACHADOS
+    var adi = Number(p.adicionales || 0);
     var total = Math.max(Number(p.total || 0), desp);
-    var pend = Math.max(0, total - desp);
-    var pct = total > 0 ? Math.round((desp / total) * 100) : 0;
+    // Pendientes y % vienen del servidor: las salidas ≥ corte van a adicionales, no a despachados.
+    var pend = p.pendientes != null ? Math.max(0, Number(p.pendientes)) : Math.max(0, total - desp - adi);
+    var pct = p.progreso != null
+      ? Number(p.progreso)
+      : (total > 0 ? Math.round(((total - pend) / total) * 100) : 0);
     if (pend > 0) pct = Math.min(99, pct);
     else if (total > 0) pct = 100;
     var completo = total > 0 && pend === 0;
@@ -3337,6 +3340,7 @@ function renderModalOplProgreso(progreso, unidad) {
       +   '<div style="display:flex;gap:1.1rem;font-size:0.82rem;flex-shrink:0;">'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">TOTAL</span><strong style="font-size:1.05rem;">' + total + '</strong><span style="display:block;font-size:0.62rem;color:var(--gris);">juegos</span></div>'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">DESPACHADOS</span><strong style="color:#16a34a;font-size:1.05rem;">' + desp + '</strong></div>'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">ADICIONALES</span><strong style="color:#1e3a5f;font-size:1.05rem;">' + adi + '</strong></div>'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">PENDIENTES</span><strong style="color:#dc2626;font-size:1.05rem;">' + pend + '</strong></div>'
       +   '</div>'
       + '</div>'
