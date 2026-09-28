@@ -58,6 +58,7 @@ const handlers = {
   consultarEnCavaDesdeSIRT: engine.consultarEnCavaDesdeSIRT,
   consultarSalidasCavaDesdeSIRT: engine.consultarSalidasCavaDesdeSIRT,
   consultarSalidasFisicasDesdeSIRT: engine.consultarSalidasFisicasDesdeSIRT,
+  consultarJuegosAsignadosDelDia: engine.consultarJuegosAsignadosDelDia,
   consultarDecomisosDesdeSIRT: engine.consultarDecomisosDesdeSIRT,
   consultarCruceDecomisosPreview: engine.consultarCruceDecomisosPreview,
   consultarDespachosPreview: engine.consultarDespachosPreview,

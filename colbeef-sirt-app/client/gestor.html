@@ -605,18 +605,18 @@
       <span class="search-count" id="searchCount"></span>
     </div>
     <details class="ux-collapsible" open>
-      <summary>Salidas físicas — normales vs adicionales (asignadas ≥ 15:20)</summary>
+      <summary>Juegos asignados del día — normales vs adicionales (asignados ≥ 15:20)</summary>
       <div class="ux-collapsible-body">
         <div class="adicionales-panel">
-          <h4>Pistoleo del día · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
+          <h4>Asignación de salidas · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
           <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
-            Se clasifica por la <strong>hora en que se asignó la salida</strong>: hasta las <strong>15:19</strong> = normal · desde las <strong>15:20</strong> = adicional.
-            La hora del pistoleo no cambia la clasificación.
+            Juegos del día según la <strong>hora en que se les asignó la salida</strong>: hasta las <strong>15:19</strong> = normal · desde las <strong>15:20</strong> = adicional.
+            El estado indica si el juego sigue en cava o ya salió de planta.
           </p>
           <div class="adicionales-kpis">
             <div>Normales<br><strong id="kpiSalNormales">—</strong></div>
             <div>Adicionales<br><strong id="kpiSalAdicionales" style="color:#1e3a5f;">—</strong></div>
-            <div>Total<br><strong id="kpiSalTotal">—</strong></div>
+            <div>Total asignado<br><strong id="kpiSalTotal">—</strong></div>
           </div>
           <div class="adicionales-filtros">
             <button type="button" class="active" id="filtroSalTodas" onclick="filtrarSalidasFisicas('todas')">Todas</button>
@@ -628,11 +628,11 @@
             <table style="font-size:0.82rem;">
               <thead>
                 <tr>
-                  <th>Fecha/hora salida</th>
+                  <th>Hora asignación</th>
                   <th>Código</th>
-                  <th>Subproducto</th>
-                  <th>Puesto</th>
-                  <th>Cava</th>
+                  <th>Propietario</th>
+                  <th>OPL / Puesto</th>
+                  <th>Estado</th>
                   <th>Tipo</th>
                 </tr>
               </thead>
@@ -2028,8 +2028,8 @@ function renderTablaSalidasFisicas() {
     tbody.innerHTML =
       '<tr><td colspan="6" class="empty-state">' +
       (filtro === 'adicionales'
-        ? 'Sin salidas adicionales (≥ ' + (cache.corte || '15:20') + ').'
-        : 'Sin salidas físicas para la fecha.') +
+        ? 'Sin juegos asignados desde las ' + (cache.corte || '15:20') + '.'
+        : 'Sin juegos asignados para la fecha.') +
       '</td></tr>';
     return;
   }
@@ -2037,23 +2037,30 @@ function renderTablaSalidasFisicas() {
   tbody.innerHTML = slice
     .map(function (f) {
       var badge = f.adicional
-        ? '<span class="badge-adicional" title="Salida ≥ ' +
+        ? '<span class="badge-adicional" title="Asignado desde las ' +
           escapeHtml(cache.corte || '15:20') +
           '">adicional</span>'
         : '<span style="color:#64748b;font-size:0.72rem;">normal</span>';
+      var estado =
+        f.estado === 'Despachado'
+          ? '<span style="color:#16a34a;font-weight:600;">Despachado</span>' +
+            (f.horaSalida ? '<br><span style="font-size:0.72rem;color:#64748b;">' + escapeHtml(f.horaSalida) + '</span>' : '')
+          : '<span style="color:#dc2626;font-weight:600;">En cava</span>';
       return (
         '<tr class="' +
         (f.adicional ? 'fila-adicional' : '') +
         '"><td>' +
-        escapeHtml(f.fechaSalida || '') +
+        escapeHtml(f.horaAsignacion || '—') +
         '</td><td>' +
         escapeHtml(f.codigo || '') +
-        '</td><td>' +
-        escapeHtml(f.descripcion || f.tipoProducto || '') +
         '</td><td style="max-width:200px;font-size:0.78rem;word-break:break-word;">' +
-        escapeHtml(f.puesto || f.destino || '') +
+        escapeHtml(f.propietario || '') +
+        '</td><td style="max-width:200px;font-size:0.78rem;word-break:break-word;"><strong>' +
+        escapeHtml(f.opl || '') +
+        '</strong><br>' +
+        escapeHtml(f.puesto || '') +
         '</td><td>' +
-        escapeHtml(f.cava || '—') +
+        estado +
         '</td><td>' +
         badge +
         '</td></tr>'
@@ -2072,14 +2079,14 @@ function renderTablaSalidasFisicas() {
 
 function cargarVistaSalidasFisicas() {
   var tbody = document.getElementById('tablaSalidasFisicas');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Consultando pistoleo…</td></tr>';
+  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Consultando juegos asignados…</td></tr>';
   google.script.run
     .withSuccessHandler(function (res) {
       if (!res || !res.success) {
         if (tbody) {
           tbody.innerHTML =
             '<tr><td colspan="6" class="empty-state">' +
-            escapeHtml((res && res.message) || 'Error al consultar salidas físicas') +
+            escapeHtml((res && res.message) || 'Error al consultar juegos asignados') +
             '</td></tr>';
         }
         return;
@@ -2098,7 +2105,7 @@ function cargarVistaSalidasFisicas() {
       };
       setKpi('kpiSalNormales', res.totalNormales != null ? res.totalNormales : 0);
       setKpi('kpiSalAdicionales', res.totalAdicionales != null ? res.totalAdicionales : 0);
-      setKpi('kpiSalTotal', res.totalFilas != null ? res.totalFilas : 0);
+      setKpi('kpiSalTotal', res.total != null ? res.total : 0);
       renderTablaSalidasFisicas();
     })
     .withFailureHandler(function (e) {
@@ -2109,7 +2116,7 @@ function cargarVistaSalidasFisicas() {
           '</td></tr>';
       }
     })
-    .consultarSalidasFisicasDesdeSIRT(leerFechaGlobal());
+    .consultarJuegosAsignadosDelDia(leerFechaGlobal());
 }
 
 function uxBuscarDecomisosSirt(q) {

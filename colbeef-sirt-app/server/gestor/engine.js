@@ -3740,6 +3740,97 @@ export async function consultarSalidasFisicasDesdeSIRT(range) {
   };
 }
 
+/**
+ * Juegos asignados del día con su hora de asignación: normal (< 15:20) o adicional (≥ 15:20),
+ * y si siguen en cava o ya salieron de planta.
+ */
+export async function consultarJuegosAsignadosDelDia(range) {
+  const filtro = normalizarRangoFechas(range || {});
+  const fechaOp = filtroSirtValido(filtro) ? filtro.from : hoyIsoLocal();
+  const useRange = { from: fechaOp, to: fechaOp };
+  const [prog, sal, estado, persisted] = await Promise.all([
+    fetchDespachosCavasRows(useRange),
+    fetchDespachosCavaRielRows(useRange),
+    fetchEstadoCavasRows({ stockActual: true }),
+    loadState(),
+  ]);
+  const s = { lastSyncRange: useRange, despachosCavas: prog, salidasCavaDia: sal, estadoFromRow12: estado };
+  const salidas = salidasRealesDelDia(s, fechaOp);
+  const mapaOPL = cargarMapaOPL(persisted);
+  const corte = getSalidaAdicionalCorte();
+  const corteLabel = getSalidaAdicionalCorteLabel();
+  const corteIso = `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
+
+  const porAnimal = new Map();
+  const agregar = (fila, enCava) => {
+    const id = String(fila[COLS_DESPACHO_CAVA.id] ?? '').trim();
+    const tipo = String(fila[COLS_DESPACHO_CAVA.tipo] ?? '').trim();
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    if (!porAnimal.has(base)) {
+      porAnimal.set(base, {
+        codigo: base,
+        propietario: '',
+        puesto: '',
+        opl: '',
+        registro: '',
+        tipos: new Set(),
+        enCava: false,
+        ultimaSalida: '',
+      });
+    }
+    const a = porAnimal.get(base);
+    a.tipos.add(tipo);
+    const reg = String(fila[COL_REGISTRO_ASIGNACION] ?? '').trim();
+    if (reg && (!a.registro || reg < a.registro)) a.registro = reg;
+    a.propietario = a.propietario || String(fila[COLS_DESPACHO_CAVA.prop] ?? '').trim();
+    a.puesto = a.puesto || String(fila[COLS_DESPACHO_CAVA.puesto] ?? '').trim();
+    a.opl = a.opl || claveOplDesdeFila(fila, mapaOPL);
+    if (enCava) a.enCava = true;
+    else {
+      const f = String(fila[0] ?? '').trim();
+      if (f > a.ultimaSalida) a.ultimaSalida = f;
+    }
+  };
+  prog.forEach((f) => agregar(f, true));
+  salidas.forEach((f) => agregar(f, false));
+
+  const filas = [...porAnimal.values()]
+    .filter((a) => tieneJuegoCompleto(a.tipos))
+    .map((a) => {
+      const adicional = Boolean(a.registro) && a.registro >= corteIso;
+      return {
+        codigo: a.codigo,
+        propietario: a.propietario,
+        opl: a.opl,
+        puesto: a.puesto,
+        horaAsignacion: a.registro ? a.registro.replace('T', ' ').slice(0, 16) : '',
+        adicional,
+        tipoSalida: adicional ? 'adicional' : 'normal',
+        estado: a.enCava ? 'En cava' : 'Despachado',
+        horaSalida: a.enCava ? '' : a.ultimaSalida.replace('T', ' ').slice(0, 16),
+      };
+    })
+    .sort(
+      (x, y) =>
+        Number(y.adicional) - Number(x.adicional) ||
+        String(y.horaAsignacion).localeCompare(String(x.horaAsignacion)) ||
+        x.codigo.localeCompare(y.codigo)
+    );
+  const adicionales = filas.filter((f) => f.adicional);
+  return {
+    success: true,
+    fecha: fechaOp,
+    corteAdicional: corteLabel,
+    total: filas.length,
+    totalNormales: filas.length - adicionales.length,
+    totalAdicionales: adicionales.length,
+    adicionalesEnCava: adicionales.filter((f) => f.estado === 'En cava').length,
+    filas,
+  };
+}
+
 /** Resumen de salidas adicionales del día (pistoleo ≥ corte horario). */
 export async function getResumenAdicionales(range) {
   const out = await consultarSalidasFisicasDesdeSIRT(range || {});
