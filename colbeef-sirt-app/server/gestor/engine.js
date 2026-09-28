@@ -3216,7 +3216,7 @@ function filaPendienteADtoParticular(fila) {
  * Opcionalmente refresca SIRT con `range.date` / `range.from`.
  * @returns {{ success, buffer?, filename?, meta?, message? }}
  */
-export async function generarExcelParticulares(range = {}) {
+export async function generarExcelParticulares(range = {}, oplsSolicitados = null) {
   const filtro = normalizarRangoFechas(range || {});
   if (filtroSirtValido(filtro)) {
     const prep = await prepararPlanillaDesdeSIRT(filtro);
@@ -3226,9 +3226,20 @@ export async function generarExcelParticulares(range = {}) {
   }
 
   const s = await loadState();
-  const seleccion = Array.isArray(s.oplsParticulares)
-    ? s.oplsParticulares.map((x) => String(x).trim()).filter(Boolean)
-    : [];
+  const origen =
+    Array.isArray(oplsSolicitados) && oplsSolicitados.length
+      ? oplsSolicitados
+      : Array.isArray(s.oplsParticulares)
+        ? s.oplsParticulares
+        : [];
+  const seleccion = [];
+  const vistosSel = new Set();
+  for (const x of origen) {
+    const o = String(x ?? '').trim();
+    if (!o || vistosSel.has(o.toUpperCase())) continue;
+    vistosSel.add(o.toUpperCase());
+    seleccion.push(o);
+  }
   if (!seleccion.length) {
     return {
       success: false,

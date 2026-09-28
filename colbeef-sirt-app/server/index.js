@@ -633,7 +633,16 @@ app.get('/api/planilla/excel-particulares', async (req, res) => {
   try {
     const date = String(req.query.date || req.query.from || '').trim();
     const range = date ? { date, from: date, to: date } : {};
-    const out = await gestor.generarExcelParticulares(range);
+    let opls = null;
+    if (req.query.opls) {
+      try {
+        const parsed = JSON.parse(String(req.query.opls));
+        if (Array.isArray(parsed)) opls = parsed;
+      } catch (_) {
+        opls = null;
+      }
+    }
+    const out = await gestor.generarExcelParticulares(range, opls);
     if (!out.success) {
       return res.status(400).json({ success: false, message: out.message });
     }

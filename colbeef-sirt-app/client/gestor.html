@@ -3853,6 +3853,15 @@ function renderParticularesLista(opls) {
       '<div class="empty-state">Sin OPLs. Procesa la planilla primero.</div>';
     return;
   }
+  // Una selección guardada de otra jornada puede traer OPLs que hoy no están
+  // en la lista: quedarían marcados sin casilla visible y saldrían en el Excel.
+  var visiblesUp = new Map(opls.map(function (o) { return [String(o).toUpperCase(), o]; }));
+  var podada = new Set();
+  _particularesSeleccion.forEach(function (x) {
+    var canon = visiblesUp.get(String(x).toUpperCase());
+    if (canon) podada.add(canon);
+  });
+  _particularesSeleccion = podada;
   var selUp = new Set([..._particularesSeleccion].map(function (x) { return String(x).toUpperCase(); }));
   box.innerHTML = opls
     .map(function (opl) {
@@ -3931,9 +3940,10 @@ function guardarParticularesSeleccion(silent) {
   });
 }
 
-function descargarExcelParticulares() {
+function descargarExcelParticulares(opls) {
   var fecha = getFechaGlobalISO();
   var url = '/api/planilla/excel-particulares?date=' + encodeURIComponent(fecha);
+  if (opls && opls.length) url += '&opls=' + encodeURIComponent(JSON.stringify(opls));
   showSpinner('Generando Excel de particulares…');
   fetch(url)
     .then(function (r) {
@@ -3991,7 +4001,7 @@ async function guardarYDescargarParticulares() {
   var ok = await guardarParticularesSeleccion(true);
   if (!ok) return;
   showParticularesAlert('success', '📥 Descargando Excel con ' + opls.length + ' hoja(s)…');
-  descargarExcelParticulares();
+  descargarExcelParticulares(opls);
 }
 
 document.addEventListener('click', function (e) {
