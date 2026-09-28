@@ -486,10 +486,21 @@ export function parseHoraDesdeCelda(celda) {
  * Sin hora en la celda → no se marca adicional.
  */
 export function esSalidaAdicionalPorHora(celda, corte = getSalidaAdicionalCorte()) {
-  const hm = parseHoraDesdeCelda(celda);
-  if (!hm) return false;
-  const mins = hm.h * 60 + hm.m;
+  const mins = minutosOperativosDesdeCelda(celda);
+  if (mins < 0) return false;
   return mins >= Number(corte.hora) * 60 + Number(corte.minuto);
+}
+
+/**
+ * Minutos desde las 00:00 del día operativo; -1 sin hora.
+ * La madrugada (antes del corte del día operativo) pertenece al día anterior,
+ * así que 00:34 vale 24:34 y queda después de las 15:20.
+ */
+export function minutosOperativosDesdeCelda(celda, corteDiaHora = getDiaOperativoCorteHora()) {
+  const hm = parseHoraDesdeCelda(celda);
+  if (!hm) return -1;
+  const mins = hm.h * 60 + hm.m;
+  return hm.h < Number(corteDiaHora) ? mins + 24 * 60 : mins;
 }
 
 /**

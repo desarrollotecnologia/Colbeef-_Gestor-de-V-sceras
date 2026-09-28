@@ -51,6 +51,7 @@ import {
   getSalidaAdicionalCorte,
   esSalidaAdicionalPorHora,
   parseHoraDesdeCelda,
+  minutosOperativosDesdeCelda,
 } from './engineUtils.js';
 import ExcelJS from 'exceljs';
 import PDFDocument from 'pdfkit';
@@ -666,11 +667,9 @@ function contarCruceDecomisosSync(_estadoFromRow12, reporteDecomisos, salidasFil
 
 const COLS_DESPACHO_CAVA = { id: 3, tipo: 7, prop: 4, puesto: 9 };
 
-/** Minutos desde 00:00; -1 si la celda no trae hora. */
+/** Minutos del día operativo (madrugada = después de medianoche); -1 si no trae hora. */
 function minutosDesdeCeldaSalida(celda) {
-  const hm = parseHoraDesdeCelda(celda);
-  if (!hm) return -1;
-  return hm.h * 60 + hm.m;
+  return minutosOperativosDesdeCelda(celda);
 }
 
 /**
@@ -685,8 +684,9 @@ function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
   const corteMins = Number(corte.hora) * 60 + Number(corte.minuto);
   const corteLabel = getSalidaAdicionalCorteLabel();
 
-  const paquete = filasSalidaDespachoReal(salidasRows || []);
-  const filas = turno ? filasDespachoTurnoOperacion(paquete, turno) : paquete;
+  // Con salidas reales (pieza ya fuera de toda cava) cuenta cualquier cava, incluida Recepción.
+  const origen = opts.todasCavas ? salidasRows || [] : filasSalidaDespachoReal(salidasRows || []);
+  const filas = turno ? filasDespachoTurnoOperacion(origen, turno) : origen;
 
   /** @type {Map<string, { tipos: Set<string>, maxMins: number, clave: string, piezas: number, prop: string, puesto: string, ids: string[] }>} */
   const porAnimal = new Map();
@@ -709,12 +709,17 @@ function clasificarJuegosSalidaPorCorte(salidasRows, opts = {}) {
         prop,
         puesto,
         ids: [],
+        vistas: new Set(),
       });
     }
     const info = porAnimal.get(base);
     info.tipos.add(tipo);
-    info.piezas += 1;
-    info.ids.push(id);
+    const kPieza = clavePieza(id, tipo);
+    if (!info.vistas.has(kPieza)) {
+      info.vistas.add(kPieza);
+      info.piezas += 1;
+      info.ids.push(id);
+    }
     if (prop) info.prop = prop;
     if (puesto) info.puesto = puesto;
     if (mins > info.maxMins) info.maxMins = mins;
@@ -884,6 +889,34 @@ function filasParaProgresoOpl(rows) {
   });
   if (despachosFuenteProgramadoTurno()) return tipadas;
   return filasSalidaDespachoReal(tipadas);
+}
+
+function clavePieza(codigo, tipo) {
+  return `${String(codigo ?? '').trim()}|${String(tipo ?? '').trim()}`;
+}
+
+/** Piezas que siguen físicamente en alguna cava (programación abierta + stock actual). */
+function clavesPiezasEnCava(s) {
+  const set = new Set();
+  (s.despachosCavas || []).forEach((fila) => {
+    if (String(fila[3] ?? '').trim()) set.add(clavePieza(fila[3], fila[7]));
+  });
+  (s.estadoFromRow12 || []).forEach((fila) => {
+    if (String(fila[0] ?? '').trim()) set.add(clavePieza(fila[0], fila[1]));
+  });
+  return set;
+}
+
+/**
+ * Salidas físicas del día que son despacho real.
+ * SIRT registra fecha_salida también en traslados internos (Recepción → Paquete →
+ * contenedor); si la pieza sigue en una cava no ha salido de planta.
+ */
+function salidasRealesDelDia(s, fechaOpIso) {
+  const enCava = clavesPiezasEnCava(s);
+  return filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOpIso).filter(
+    (fila) => !enCava.has(clavePieza(fila[3], fila[7]))
+  );
 }
 
 function hoyIsoLocal() {
@@ -1135,9 +1168,9 @@ function extraerKpisProgramacionActuales(s, turno, opts = {}) {
     String(turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   const programadosTurno = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
-  // Solo Cava Paquete Visceral (stock + pistoleo). No recepción, no números inventados.
-  const salidasDespacho = filasSalidaDespachoReal(
-    filasDespachoTurnoOperacion(filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp), turnoOp)
+  // Salidas reales de planta (desde cualquier cava); los traslados internos ya no cuentan.
+  const salidasDespacho = filasDespachoTurnoOperacion(salidasRealesDelDia(s, fechaOp), turnoOp).filter(
+    (fila) => TIPOS_PRODUCTO.includes(String(fila[7] ?? '').trim())
   );
   const programadosEnPaquete = programadosTurno.filter((fila) =>
     esCavaDespachoReal(fila[COL_CAVA_SALIDA])
@@ -1217,6 +1250,45 @@ function limpiarBaselineDespachoKpis(s) {
   };
 }
 
+const COL_REGISTRO_ASIGNACION = 13;
+
+/**
+ * Juegos completos del día según la hora en que se les asignó la salida (registro de la
+ * programación en SIRT): antes del corte 15:20 = despacho normal; desde el corte = adicional.
+ * La hora de salida física no interviene. Sin hora de registro → antes del corte.
+ */
+function clasificarJuegosPorAsignacion(filas, { fechaOp, getClave }) {
+  const corte = getSalidaAdicionalCorte();
+  const corteIso = `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
+  const porAnimal = new Map();
+  (filas || []).forEach((fila) => {
+    const id = String(fila[COLS_DESPACHO_CAVA.id] ?? '').trim();
+    const tipo = String(fila[COLS_DESPACHO_CAVA.tipo] ?? '').trim();
+    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
+    const base = codigoBase(id);
+    if (!base) return;
+    const registro = String(fila[COL_REGISTRO_ASIGNACION] ?? '').trim();
+    if (!porAnimal.has(base)) {
+      porAnimal.set(base, { tipos: new Set(), registro: '', clave: '' });
+    }
+    const info = porAnimal.get(base);
+    info.tipos.add(tipo);
+    if (registro && (!info.registro || registro < info.registro)) info.registro = registro;
+    const clave = String(getClave(fila) || '').trim();
+    if (clave) info.clave = clave;
+  });
+  const antes = {};
+  const adicionales = {};
+  porAnimal.forEach((info, base) => {
+    if (!tieneJuegoCompleto(info.tipos)) return;
+    const k = info.clave || '__TOTAL__';
+    const destino = info.registro && fechaOp && info.registro >= corteIso ? adicionales : antes;
+    if (!destino[k]) destino[k] = new Set();
+    destino[k].add(base);
+  });
+  return { antes, adicionales, corteIso };
+}
+
 export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const mapaOPL = cargarMapaOPL(s);
   const fechaOp =
@@ -1228,10 +1300,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
 
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
   const programadosEnPaquete = filasParaProgresoOpl(programadosBruto);
-  const salidasTurno = filasDespachoTurnoOperacion(
-    filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp),
-    turnoOp
-  );
+  const salidasTurno = filasDespachoTurnoOperacion(salidasRealesDelDia(s, fechaOp), turnoOp);
   // Salidas del día: meta baseline + partición antes/después del corte 15:20.
   const salidasDespacho = filasParaProgresoOpl(salidasTurno);
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
@@ -1247,42 +1316,53 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   );
   const part = clasificarJuegosSalidaPorCorte(salidasDespacho, {
     turno: '',
+    todasCavas: true,
     getClave: claveOpl,
   });
-  const despAntesOpl = part.antesPorClave || {};
-  const adiOpl = part.adiPorClave || {};
+  const salAntesOpl = part.antesPorClave || {};
+  const salAdiOpl = part.adiPorClave || {};
   const incOpl = part.incompletosPorClave || {};
+  const pendSets = agruparJuegosCompletosPorClave(programadosEnPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const asig = clasificarJuegosPorAsignacion([...programadosEnPaquete, ...salidasDespacho], {
+    fechaOp,
+    getClave: claveOpl,
+  });
 
   const opls = new Set([
     ...Object.keys(totalsFrozen),
     ...Object.keys(totalsCompleteFrozen),
     ...Object.keys(pendCompleteOpl),
-    ...Object.keys(despAntesOpl),
-    ...Object.keys(adiOpl),
+    ...Object.keys(salAntesOpl),
+    ...Object.keys(salAdiOpl),
     ...Object.keys(incOpl),
+    ...Object.keys(asig.antes),
+    ...Object.keys(asig.adicionales),
   ]);
   const todosOPL = [];
   const progreso = [];
 
   [...opls].forEach((opl) => {
     const pendComplete = Number(pendCompleteOpl[opl] || 0);
-    const despAntes = Number(despAntesOpl[opl] || 0);
-    const adi = Number(adiOpl[opl] || 0);
+    // Juegos completos que ya salieron de planta (cualquier hora).
+    const salidos = Number(salAntesOpl[opl] || 0) + Number(salAdiOpl[opl] || 0);
     const inc = Number(incOpl[opl] || 0);
+    const adiSet = asig.adicionales[opl] || new Set();
+    const antesSet = asig.antes[opl] || new Set();
+    const pendSet = pendSets[opl] || new Set();
+    const adicionalesPendientes = [...pendSet].filter((b) => adiSet.has(b)).length;
     // Meta = juegos completos del turno (no inflar con incompletos sueltos).
     const totalMeta = Math.max(
       Number(totalsCompleteFrozen[opl] || 0),
       Number(totalsFrozen[opl] || 0),
-      pendComplete + despAntes + adi + inc
+      pendComplete + salidos + inc
     );
     if (totalMeta <= 0) return;
     totalsFrozen[opl] = Math.max(Number(totalsFrozen[opl] || 0), totalMeta);
     totalsCompleteFrozen[opl] = Math.max(
       Number(totalsCompleteFrozen[opl] || 0),
-      pendComplete + despAntes + adi
+      pendComplete + salidos
     );
-    // Despachados que bajan el cupo normal = solo salidas completas < 15:20.
-    const despachados = Math.min(despAntes, totalMeta);
+    const despachados = Math.min(salidos, totalMeta);
     // Pendientes = solo lo que sigue en cava (incompletos ya salidos no quedan “colgados”).
     const pendientes = pendComplete;
     let pct = totalMeta > 0 ? Math.round(((totalMeta - pendientes) / totalMeta) * 100) : 0;
@@ -1293,7 +1373,10 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
       total: totalMeta,
       despachados,
       pendientes,
-      adicionales: adi,
+      asignadosAntes: antesSet.size,
+      adicionales: adiSet.size,
+      pendientesAntes: Math.max(0, pendientes - adicionalesPendientes),
+      adicionalesPendientes,
       incompletos: inc,
       progreso: pct,
       fecha,
@@ -1304,14 +1387,18 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
 
   todosOPL.sort((a, b) => b.pendientes - a.pendientes || b.total - a.total || a.opl.localeCompare(b.opl));
   progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
+  const sumar = (campo) => todosOPL.reduce((sum, p) => sum + Number(p[campo] || 0), 0);
   return {
     todosOPL,
     progreso,
     operacionFinalizada: todosOPL.length > 0 && progreso.length === 0,
-    totalJuegos: todosOPL.reduce((sum, p) => sum + p.total, 0),
-    totalDespachados: todosOPL.reduce((sum, p) => sum + p.despachados, 0),
-    totalPendientes: todosOPL.reduce((sum, p) => sum + p.pendientes, 0),
-    totalAdicionales: todosOPL.reduce((sum, p) => sum + Number(p.adicionales || 0), 0),
+    totalJuegos: sumar('total'),
+    totalDespachados: sumar('despachados'),
+    totalPendientes: sumar('pendientes'),
+    totalAsignadosAntes: sumar('asignadosAntes'),
+    totalAdicionales: sumar('adicionales'),
+    totalPendientesAntes: sumar('pendientesAntes'),
+    totalAdicionalesPendientes: sumar('adicionalesPendientes'),
     totalIncompletos: part.totalIncompletos || 0,
     salidasIncompletas: part.incompletos || [],
     juegosSalidaAntes: part.juegosAntes,
@@ -1688,7 +1775,7 @@ export function contarCrudasProgramadasSync(s, turno = '') {
 }
 
 /** Versión del motor expuesta por la API para comprobar el despliegue activo. */
-export const GESTOR_BUILD = 'opl-prog-modal-v29';
+export const GESTOR_BUILD = 'adicionales-asignacion-v32';
 
 function metaRespuestaOpl(extra = {}) {
   return {
@@ -1837,25 +1924,27 @@ export async function getDashboardData(range) {
       const resSalidas = contarJuegosVisceralesSync(sWork);
       const juegosStockCava = resSalidas.total || 0;
       const filasEnCava = estado.length;
-      const adi = clasificarJuegosSalidaPorCorte(salidasDia || [], {
+      const adi = clasificarJuegosSalidaPorCorte(salidasRealesDelDia(sWork, fechaIso), {
         turno: turnoOp,
+        todasCavas: true,
         getClave: (fila) => claveOplDesdeFila(fila, cargarMapaOPL(sWork)),
       });
-      // Despachados que bajan cupo normal = salidas completas < 15:20.
-      const despachados = Math.max(
-        0,
-        Number(oplLive.totalDespachados ?? adi.juegosAntes ?? 0)
-      );
+      // Partición por hora de ASIGNACIÓN de la salida (no por hora de salida física).
+      const asignadosAntes = Number(oplLive.totalAsignadosAntes || 0);
+      const adicionalesAsig = Number(oplLive.totalAdicionales || 0);
+      const adicionalesPendientes = Number(oplLive.totalAdicionalesPendientes || 0);
+      const salidosDia = Number(oplLive.totalDespachados || 0);
+      const despachados = asignadosAntes;
       // Meta del día.
       const juegosEnCava = Math.max(
         Number(kpiFrozen.totalJuegos || 0),
         Number(rd.totalJuegos || 0),
         Number(oplLive.totalJuegos || 0),
-        despachados + adi.juegosAdicionales + adi.totalIncompletos
+        asignadosAntes + adicionalesAsig
       );
-      // Total a despachar = solo juegos completos que SIGUEN en cava.
-      // Incompletos ya salidos no quedan colgados como pendientes.
-      const pendientes = Math.max(0, Number(oplLive.totalPendientes ?? 0));
+      // Total a despachar = todo lo que sigue en cava (asignados antes del corte + adicionales).
+      const pendientesTodos = Math.max(0, Number(oplLive.totalPendientes ?? 0));
+      const pendientes = pendientesTodos;
       const totalJuegosDespachar = pendientes;
       const juegosTotalesOperacion = juegosEnCava;
       const filasSalidasFisicas = (salidasDia || []).length;
@@ -1865,23 +1954,25 @@ export async function getDashboardData(range) {
       let progreso = 0;
       let progresoMensaje = '';
       if (juegosTotalesOperacion > 0) {
-        const cerrados = Math.max(0, juegosTotalesOperacion - pendientes);
+        const cerrados = Math.max(0, juegosTotalesOperacion - pendientesTodos);
         progreso = Math.round((cerrados / juegosTotalesOperacion) * 100);
-        if (pendientes > 0) progreso = Math.min(99, progreso);
+        if (pendientesTodos > 0) progreso = Math.min(99, progreso);
         else progreso = 100;
         progresoMensaje =
           'Meta ' +
           juegosTotalesOperacion +
-          ' · ' +
-          despachados +
+          ' · asignados ' +
+          asignadosAntes +
           ' antes ' +
           adi.corte +
-          ' · ' +
-          adi.juegosAdicionales +
+          ' + ' +
+          adicionalesAsig +
           ' adicionales · ' +
+          salidosDia +
+          ' salidos · ' +
           (adi.totalIncompletos || 0) +
           ' incompletos · ' +
-          pendientes +
+          pendientesTodos +
           ' en cava · turno ' +
           turnoOp +
           ' · ' +
@@ -1928,11 +2019,14 @@ export async function getDashboardData(range) {
         totalDecomisosPiezas: contarCruceDecomisosSync(estado, reporte, desp),
         totalDecomisosSinVinculo: Math.max(0, totalDecomisosEnRango - totalDecomisos),
         totalCrudas: cr.total,
-        totalJuegosAdicionales: adi.juegosAdicionales,
-        totalPiezasAdicionales: adi.piezasAdicionales,
-        totalJuegosAntesCorte: adi.juegosAntes,
-        totalPiezasAntesCorte: adi.piezasAntes,
-        totalJuegosSalidaDia: adi.juegosTotal,
+        totalJuegosAdicionales: adicionalesAsig,
+        totalAdicionalesPendientes: adicionalesPendientes,
+        totalAdicionalesSalidos: Math.max(0, adicionalesAsig - adicionalesPendientes),
+        totalJuegosAntesCorte: asignadosAntes,
+        totalJuegosSalidaDia: asignadosAntes + adicionalesAsig,
+        totalJuegosSalidos: salidosDia,
+        totalPendientesEnCava: pendientesTodos,
+        adicionalesPorAsignacion: true,
         totalSalidasIncompletas: adi.totalIncompletos || 0,
         salidasIncompletas: adi.incompletos || [],
         corteAdicional: adi.corte,
@@ -3099,7 +3193,7 @@ function filasPendientesParticularesSync(s) {
       return id && puesto && TIPOS_PRODUCTO.includes(tipo);
     }
   );
-  const salidasDia = filasSalidasCavaDelDia(s.salidasCavaDia || [], fechaOp);
+  const salidasDia = salidasRealesDelDia(s, fechaOp);
   const pendientes = despachosProgramadosSinSalidasDelDia(programados, salidasDia);
   return { pendientes, fechaOp, turnoOp, totalProgramados: programados.length };
 }
@@ -3627,7 +3721,7 @@ export async function consultarSalidasFisicasDesdeSIRT(range) {
     ? filtro
     : { from: hoyIsoLocal(), to: hoyIsoLocal() };
   const matriz = await fetchDespachosCavaRielRows(useRange);
-  const filas = matriz.map(despachoCavaRowToDto);
+  const filas = matriz.map((fila) => despachoCavaRowToDto(fila, { fechaOp: useRange.from }));
   const normales = filas.filter((f) => !f.adicional);
   const adicionales = filas.filter((f) => f.adicional);
   const corte = getSalidaAdicionalCorteLabel();

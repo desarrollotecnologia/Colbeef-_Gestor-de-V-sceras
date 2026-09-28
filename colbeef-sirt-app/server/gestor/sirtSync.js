@@ -21,6 +21,7 @@ import {
   fechaIsoLocalDesdeDate,
   formatearCodigoSucursal,
   esSalidaAdicionalPorHora,
+  getSalidaAdicionalCorte,
   getSalidaAdicionalCorteLabel,
 } from './engineUtils.js';
 import {
@@ -203,9 +204,13 @@ function buildPuestoDespacho(r) {
   return [suc, dest, r.riel ? `Riel ${r.riel}` : ''].filter(Boolean).join(' / ');
 }
 
-/** Matriz Despachos_Cavas: [8]=destino/zona, [9]=ruta puesto, [10]=sucursal, [11]=dirección. */
+/**
+ * Matriz Despachos_Cavas: [8]=destino/zona, [9]=ruta puesto, [10]=sucursal, [11]=dirección,
+ * [13]=hora en que se asignó la salida (registro de la programación).
+ */
 function mapFilaDespachoCavaMatrix(r, opts = {}) {
-  const row = new Array(13).fill('');
+  const row = new Array(14).fill('');
+  row[13] = r.registro_asignacion ? fmtDateTimeIsoLocal(r.registro_asignacion) : '';
   if (opts.fechaSalida) row[0] = fmtDateTimeIsoLocal(r.fecha_salida) || fmtDateCell(r.fecha_salida);
   else row[0] = fmtDateTimeCell(r.fecha_programada) || fmtDateCell(r.fecha_programada);
   row[1] = fmtDateTimeCell(r.fecha_ingreso) || fmtDateCell(r.fecha_ingreso);
@@ -267,11 +272,23 @@ export function estadoCavaRowToDto(fila) {
   };
 }
 
-/** Matriz 13 columnas (Despachos_Cavas / salidas de cava). */
-export function despachoCavaRowToDto(fila) {
+/**
+ * Matriz Despachos_Cavas / salidas de cava.
+ * Con fechaOp y hora de asignación, adicional = salida asignada desde el corte (15:20) de ese día.
+ */
+export function despachoCavaRowToDto(fila, opts = {}) {
   const tipo = String(fila[7] ?? '').trim();
   const fechaSalida = String(fila[0] ?? '').trim();
-  const adicional = esSalidaAdicionalPorHora(fechaSalida);
+  const registroAsignacion = String(fila[13] ?? '').trim();
+  const fechaOp = typeof opts === 'object' && opts ? String(opts.fechaOp || '').trim() : '';
+  let adicional;
+  if (registroAsignacion && fechaOp) {
+    const { hora, minuto } = getSalidaAdicionalCorte();
+    const corteIso = `${fechaOp}T${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}:00`;
+    adicional = registroAsignacion >= corteIso;
+  } else {
+    adicional = esSalidaAdicionalPorHora(fechaSalida);
+  }
   return {
     fechaSalida,
     fechaIngreso: String(fila[1] ?? '').trim(),
@@ -286,6 +303,7 @@ export function despachoCavaRowToDto(fila) {
     cava: String(fila[6] ?? '').trim(),
     riel: String(fila[2] ?? '').trim(),
     observaciones: String(fila[12] ?? '').trim(),
+    registroAsignacion,
     adicional,
     tipoSalida: adicional ? 'adicional' : 'normal',
     corteAdicional: getSalidaAdicionalCorteLabel(),
@@ -544,7 +562,8 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
-      ${SQL_PUESTO_LOGISTICO} AS puesto_turno
+      ${SQL_PUESTO_LOGISTICO} AS puesto_turno,
+      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion
     ${SQL_CAVA_FROM}
     LEFT JOIN trazabilidad_proceso.cava c
       ON c.id = ppcr.id_cava
@@ -603,7 +622,8 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       COALESCE(ppcr.id_riel::text, '') AS riel,
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
-      ${SQL_PUESTO_LOGISTICO} AS puesto_turno
+      ${SQL_PUESTO_LOGISTICO} AS puesto_turno,
+      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
     JOIN trazabilidad_proceso.parte_producto pp
       ON pp.id = ppcr.id_parte_producto

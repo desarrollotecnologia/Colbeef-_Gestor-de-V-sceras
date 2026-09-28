@@ -58,7 +58,7 @@ export const PUESTOS_TEMPRANAS = ['NSF', '6505', 'ARIR', 'LHMV', 'WMERCAN'];
  * Las cavas de recepción solo mueven mitades (blancas/rojas o cabezas/patas).
  * Override: GESTOR_CAVA_DESPACHO (prefijo o lista separada por comas).
  */
-export const CAVA_DESPACHO_JUEGOS = 'Cava Paquete Visceral';
+export const CAVA_DESPACHO_JUEGOS = 'Cava Paquete Visceral,Despacho contenedor paquete visceral';
 
 /** Cuatro componentes necesarios para considerar completo un juego visceral. */
 export const TIPOS_PRODUCTO = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];

@@ -433,7 +433,7 @@
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#1e3a5f;">➕ Adicionales</div>
               <div class="split-valor" id="dashAdicionales" style="font-size:1.4rem;color:#1e3a5f;">—</div>
-              <div class="split-sub" id="dashAdicionalesSub">Salidas ≥ 15:20 (no bajan el total a despachar)</div>
+              <div class="split-sub" id="dashAdicionalesSub">Juegos asignados desde las 15:20 (no bajan el total a despachar)</div>
             </div>
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#b45309;">⚠ Incompletos</div>
@@ -453,15 +453,15 @@
         <div class="resumen-icon">🚚</div>
       </div>
 
-      <!-- TARJETA 3: Total a despachar (baja solo con salidas < 15:20) -->
+      <!-- TARJETA 3: Total a despachar = todo lo que sigue en cava (incluye adicionales) -->
       <div class="tarjeta-resumen">
         <div class="resumen-label">Total Juegos a Despachar</div>
         <div class="resumen-valor" id="dashDespachos" style="color:#dc2626;">—</div>
         <div class="resumen-sub" id="dashDespTurno"></div>
         <div style="margin-top:0.45rem;font-size:0.82rem;color:#4b6358;">
-          Antes del corte: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
-          <span style="margin:0 0.35rem;opacity:0.5;">·</span>
-          Meta: <strong id="dashTotalJuegos">—</strong>
+          Antes 15:20: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
+          + Adic.: <strong id="dashAdicTotal" style="color:#1e3a5f;">—</strong>
+          = Total asignado: <strong id="dashTotalJuegos">—</strong>
         </div>
         <div class="resumen-icon">🚛</div>
       </div>
@@ -605,13 +605,13 @@
       <span class="search-count" id="searchCount"></span>
     </div>
     <details class="ux-collapsible" open>
-      <summary>Salidas físicas — normales vs adicionales (≥ 15:20)</summary>
+      <summary>Salidas físicas — normales vs adicionales (asignadas ≥ 15:20)</summary>
       <div class="ux-collapsible-body">
         <div class="adicionales-panel">
           <h4>Pistoleo del día · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
           <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
-            Hasta las <strong>15:19</strong> bajan el Total a despachar · desde las <strong>15:20</strong> van a Adicionales (el total queda congelado).
-            <strong>Antes + Adicionales = total salidas del día</strong>.
+            Se clasifica por la <strong>hora en que se asignó la salida</strong>: hasta las <strong>15:19</strong> = normal · desde las <strong>15:20</strong> = adicional.
+            La hora del pistoleo no cambia la clasificación.
           </p>
           <div class="adicionales-kpis">
             <div>Normales<br><strong id="kpiSalNormales">—</strong></div>
@@ -1669,17 +1669,19 @@ function updateDashboard(data) {
     if (adiSub) {
       var corte = data.corteAdicional || '15:20';
       var antes = Number(data.totalJuegosAntesCorte || 0);
-      var totalSal = Number(data.totalJuegosSalidaDia || antes + adiJuegos);
+      var totalAsig = Number(data.totalJuegosSalidaDia || antes + adiJuegos);
+      var adiSalidos = Number(data.totalAdicionalesSalidos || 0);
       adiSub.textContent =
-        '≥ ' +
+        'Asignados ≥ ' +
         corte +
         ' · antes ' +
         antes +
         ' + adi ' +
         adiJuegos +
         ' = ' +
-        totalSal +
-        ' completos';
+        totalAsig +
+        ' asignados' +
+        (adiJuegos > 0 ? ' · ' + adiSalidos + ' ya salieron' : '');
     }
     var nInc = Number(data.totalSalidasIncompletas || 0);
     window._salidasIncompletas = data.salidasIncompletas || [];
@@ -1694,19 +1696,20 @@ function updateDashboard(data) {
     // Total a despachar = juegos completos aún en cava.
     setText('dashDespachos', pendientes);
     setText('dashDespachados', despachadosNum);
+    setText('dashAdicTotal', data.totalJuegosAdicionales != null ? adiJuegos : '—');
     setText('dashTotalJuegos', juegosTotalesOperacion > 0 ? juegosTotalesOperacion : '—');
     if (data.turnoDespacho || data.turnoOperacion) {
       var turnoLbl = data.turnoDespacho || data.turnoOperacion;
       var fechaLbl = data.fechaConsulta ? String(data.fechaConsulta) : '';
       setText(
         'dashDespTurno',
-        'Turno ' + turnoLbl + (fechaLbl ? ' · ' + fechaLbl : '') + ' · pendientes = en cava'
+        'Turno ' + turnoLbl + (fechaLbl ? ' · ' + fechaLbl : '') + ' · pendientes en cava (incluye adicionales)'
       );
     }
 
     // ── % contra meta en cava (congelada); no 100% si aún faltan ──
     var progreso = Number(data.progreso || 0);
-    if (juegosTotalesOperacion > 0) {
+    if (data.progreso == null && juegosTotalesOperacion > 0) {
       progreso = Math.round((Math.max(0, juegosTotalesOperacion - pendientes) / juegosTotalesOperacion) * 100);
       if (pendientes > 0) progreso = Math.min(99, progreso);
       else progreso = 100;
@@ -3316,11 +3319,10 @@ function renderModalOplProgreso(progreso, unidad) {
     return;
   }
   var html = progreso.map(function(p) {
+    // Despachados = juegos que ya salieron de planta (cualquier hora).
     var desp = Number(p.despachados || 0);
-    var adi = Number(p.adicionales || 0);
     var total = Math.max(Number(p.total || 0), desp);
-    // Pendientes y % vienen del servidor: las salidas ≥ corte van a adicionales, no a despachados.
-    var pend = p.pendientes != null ? Math.max(0, Number(p.pendientes)) : Math.max(0, total - desp - adi);
+    var pend = p.pendientes != null ? Math.max(0, Number(p.pendientes)) : Math.max(0, total - desp);
     var pct = p.progreso != null
       ? Number(p.progreso)
       : (total > 0 ? Math.round(((total - pend) / total) * 100) : 0);
@@ -3340,9 +3342,7 @@ function renderModalOplProgreso(progreso, unidad) {
       +   '<div style="font-weight:700;color:var(--vp);font-size:0.95rem;line-height:1.3;">🚚 ' + escapeHtml(p.opl) + '</div>'
       +   '<div style="display:flex;gap:1.1rem;font-size:0.82rem;flex-shrink:0;">'
       +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">TOTAL</span><strong style="font-size:1.05rem;">' + total + '</strong><span style="display:block;font-size:0.62rem;color:var(--gris);">juegos</span></div>'
-      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">DESPACHADOS</span><strong style="color:#16a34a;font-size:1.05rem;">' + desp + '</strong></div>'
-      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">ADICIONALES</span><strong style="color:#1e3a5f;font-size:1.05rem;">' + adi + '</strong></div>'
-      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">PENDIENTES</span><strong style="color:#dc2626;font-size:1.05rem;">' + pend + '</strong></div>'
+      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">DESPACHADOS</span><strong style="color:#16a34a;font-size:1.05rem;">' + desp + '</strong></div>'      +     '<div style="text-align:center;min-width:52px;"><span style="color:var(--gris);display:block;font-size:0.68rem;font-weight:600;">PENDIENTES</span><strong style="color:#dc2626;font-size:1.05rem;">' + pend + '</strong></div>'
       +   '</div>'
       + '</div>'
       + '<div style="background:#e5e7eb;height:12px;border-radius:20px;overflow:hidden;margin-bottom:0.35rem;">'

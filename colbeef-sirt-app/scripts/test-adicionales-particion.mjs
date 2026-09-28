@@ -18,7 +18,9 @@ assert.ok(
     String(GESTOR_BUILD).includes('incompletos') ||
     String(GESTOR_BUILD).includes('beneficio') ||
     String(GESTOR_BUILD).includes('particulares') ||
-    String(GESTOR_BUILD).includes('opl-prog')
+    String(GESTOR_BUILD).includes('opl-prog') ||
+    String(GESTOR_BUILD).includes('salidas-reales') ||
+    String(GESTOR_BUILD).includes('adicionales-asignacion')
 );
 
 const puesto = '01001/Bucaramanga/JxV/';
@@ -92,8 +94,9 @@ assert.deepStrictEqual(pack.salidasIncompletas[0].tiposFaltantes, ['Patas y Mano
 
 const tc = pack.todosOPL.find((p) => p.opl === 'TRANSCARNES');
 assert.ok(tc);
-assert.strictEqual(tc.despachados, 2, 'solo antes del corte');
-assert.strictEqual(tc.adicionales, 2);
+assert.strictEqual(tc.despachados, 4, 'todos los juegos completos que salieron');
+assert.strictEqual(tc.adicionales, 0, 'sin hora de asignación ≥ 15:20 no hay adicionales');
+assert.strictEqual(tc.asignadosAntes, 7, '3 en cava + 4 salidos');
 assert.strictEqual(tc.incompletos, 1);
 // 3 aún en cava programados → pendientes = 3 (incompleto NO cuelga)
 assert.strictEqual(tc.pendientes, 3, 'pendientes = solo en cava');
