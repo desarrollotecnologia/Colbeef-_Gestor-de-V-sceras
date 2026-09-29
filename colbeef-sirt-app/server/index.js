@@ -598,6 +598,19 @@ app.get('/api/crudas', async (_req, res) => {
   }
 });
 
+app.get('/api/crudas/excel', async (req, res) => {
+  try {
+    const out = await gestor.generarExcelCrudas();
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
+    res.setHeader('X-Crudas-Total', String(out.total || 0));
+    auditRest(req, 'excelCrudas', 'crudas', 'REST', { n: out.total || 0 });
+    res.send(out.buffer);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
 app.get('/api/planilla', async (req, res) => {
   try {
     const range = req.query.date ? { date: String(req.query.date) } : {};

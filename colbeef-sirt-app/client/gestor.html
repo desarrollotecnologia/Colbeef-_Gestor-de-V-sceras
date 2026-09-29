@@ -826,6 +826,7 @@
         <button class="s-clear" id="searchCrudasClear" onclick="limpiarBusquedaCrudas()">✕</button>
       </div>
       <button class="btn btn-secondary" onclick="cargarModuloCrudas()" style="padding:0.5rem 1rem;font-size:0.85rem;">🔄 Actualizar</button>
+      <button class="btn btn-primary" onclick="descargarExcelCrudas()" style="padding:0.5rem 1rem;font-size:0.85rem;">📥 Descargar Excel por OPL</button>
     </div>
     <div class="alert" id="crudasAlert"></div>
     <div class="table-wrap">
@@ -3550,6 +3551,40 @@ function buscarEnCrudas(query) {
 function limpiarBusquedaCrudas() {
   document.getElementById('searchCrudas').value = '';
   buscarEnCrudas('');
+}
+
+function descargarExcelCrudas() {
+  showSpinner('Generando Excel de crudas…');
+  fetch('/api/crudas/excel')
+    .then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (j) {
+          throw new Error((j && (j.message || j.error)) || 'Error ' + r.status);
+        });
+      }
+      var cd = r.headers.get('Content-Disposition') || '';
+      var m = cd.match(/filename="?([^"]+)"?/i);
+      var total = Number(r.headers.get('X-Crudas-Total') || 0);
+      return r.blob().then(function (blob) {
+        return { blob: blob, fname: (m && m[1]) || 'Crudas_por_OPL.xlsx', total: total };
+      });
+    })
+    .then(function (pack) {
+      hideSpinner();
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(pack.blob);
+      a.download = pack.fname;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(a.href); }, 2000);
+      showAlert('crudasAlert', pack.total ? 'success' : 'warn',
+        pack.total ? '📥 Excel descargado · ' + pack.total + ' crudas' : 'Excel generado sin crudas registradas.');
+    })
+    .catch(function (e) {
+      hideSpinner();
+      showAlert('crudasAlert', 'error', e.message);
+    });
 }
 
 // ══════════════════════════════════════════════════════

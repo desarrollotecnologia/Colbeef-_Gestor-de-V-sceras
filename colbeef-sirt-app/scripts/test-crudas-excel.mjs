@@ -1,0 +1,40 @@
+/**
+ * Arma el Excel de Crudas con las crudas actuales del servidor (solo lectura) y lo verifica.
+ * node scripts/test-crudas-excel.mjs [http://192.168.20.205:3001]
+ */
+import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import ExcelJS from 'exceljs';
+import { agruparCrudasPorOpl, buildExcelCrudasBuffer } from '../server/gestor/crudasExcel.js';
+
+const host = process.argv[2] || 'http://192.168.20.205:3001';
+const r = await fetch(`${host}/api/rpc`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ method: 'getCrudasDetalle', args: [] }),
+});
+const json = await r.json();
+const det = json.result || json;
+const filas = det.filas || [];
+const opls = agruparCrudasPorOpl(filas);
+const buffer = await buildExcelCrudasBuffer({ fechaTxt: 'prueba', turno: det.turno, opls });
+const destino = path.join(os.tmpdir(), 'Crudas_por_OPL_prueba.xlsx');
+fs.writeFileSync(destino, buffer);
+
+const wb = new ExcelJS.Workbook();
+await wb.xlsx.load(buffer);
+assert.strictEqual(wb.worksheets.length, opls.length + 1, 'Resumen + una hoja por OPL');
+let suma = 0;
+opls.forEach((o, i) => {
+  const ws = wb.worksheets[i + 1];
+  assert.strictEqual(ws.getCell('A3').value, 'Puesto');
+  assert.ok(ws.autoFilter, `filtro en ${ws.name}`);
+  const cant = o.puestos.reduce((a, p) => a + p.cantidad, 0);
+  suma += cant;
+  console.log(`  ${ws.name.padEnd(24)} ${String(o.puestos.length).padStart(3)} puestos ${String(cant).padStart(4)} crudas`);
+});
+const totalPantalla = filas.reduce((a, f) => a + Number(f.cantidad || 1), 0);
+assert.strictEqual(suma, totalPantalla, 'total Excel = total pantalla');
+console.log(`test-crudas-excel: ok · ${filas.length} crudas · ${opls.length} OPL · ${destino}`);

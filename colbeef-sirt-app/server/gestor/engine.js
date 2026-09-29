@@ -77,6 +77,7 @@ import {
   consultarDecomisosDesdeSirt,
 } from './sirtSync.js';
 import { buildExcelParticularesBuffer } from './planillaParticularesExcel.js';
+import { agruparCrudasPorOpl, buildExcelCrudasBuffer } from './crudasExcel.js';
 import { loadState, saveState, defaultState } from './store.js';
 
 function cargarMapaOPL(state) {
@@ -2739,6 +2740,25 @@ export async function getCrudasDetalle() {
   });
   const filas = Object.values(crudas).sort((a, b) => a.puesto.localeCompare(b.puesto));
   return { success: true, filas, turno };
+}
+
+/** Excel de Crudas con los mismos datos de pantalla, agrupados por OPL → puesto. */
+export async function generarExcelCrudas() {
+  const det = await getCrudasDetalle();
+  const s = await loadState();
+  const opls = agruparCrudasPorOpl(det.filas);
+  const fechaIso = String(s.lastSyncRange?.from || '').trim() || hoyIsoLocal();
+  const buffer = await buildExcelCrudasBuffer({
+    fechaTxt: isoToDdMmYyyy(fechaIso),
+    turno: det.turno || '',
+    opls,
+  });
+  return {
+    success: true,
+    buffer,
+    filename: `Crudas_por_OPL_${fechaIso}.xlsx`,
+    total: (det.filas || []).length,
+  };
 }
 
 /** Catálogo oficial BD Plazas OPL (fallback si el mapa aún está vacío). */
