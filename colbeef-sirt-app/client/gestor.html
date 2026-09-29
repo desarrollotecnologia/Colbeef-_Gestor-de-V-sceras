@@ -3177,21 +3177,48 @@ function renderDashOplMini(progreso) {
   document.getElementById('dashOplMini').innerHTML = html;
 }
 
+function fechaOperacionTableroISO() {
+  if (state.dashboardVista !== 'sirt') return fechaHoyISO();
+  var el = document.getElementById('fechaGlobal');
+  return el && el.value && /^\d{4}-\d{2}-\d{2}$/.test(el.value) ? el.value : fechaHoyISO();
+}
+
+// Progreso OPL de la fecha del tablero (misma fuente que las tarjetas del dashboard).
+function consultarProgresoOplTablero(onOk, onError) {
+  var iso = fechaOperacionTableroISO();
+  google.script.run
+    .withSuccessHandler(function(d) {
+      if (!d || !d.success) {
+        onOk({ success: false, message: d && d.message ? d.message : 'Sin datos de OPL para ' + iso });
+        return;
+      }
+      var p = iso.split('-');
+      onOk({
+        success: true,
+        fecha: p[2] + '/' + p[1] + '/' + p[0],
+        turno: d.turnoOperacion || d.turnoDespacho || '',
+        todosOPL: d.todosOPL || [],
+        progreso: d.progresoOPL || [],
+        operacionFinalizada: Boolean(d.operacionOPLFinalizada),
+        unidad: 'juegos',
+      });
+    })
+    .withFailureHandler(onError || function(){})
+    .getDashboardData({ date: iso });
+}
+
 // Cargar OPL en el dashboard (consulta SIRT en vivo)
 function loadDashOPL() {
-  google.script.run
-    .withSuccessHandler(function(res) {
-      if (!res || !res.success) return;
-      if (res.operacionFinalizada) {
-        renderDashOplFinalizada(res.fecha);
-      } else if (res.todosOPL && res.todosOPL.length > 0) {
-        renderDashOplMini(res.todosOPL);
-      } else if (res.progreso && res.progreso.length > 0) {
-        renderDashOplMini(res.progreso);
-      }
-    })
-    .withFailureHandler(function(){})
-    .calcularProgresoOPL();
+  consultarProgresoOplTablero(function(res) {
+    if (!res || !res.success) return;
+    if (res.operacionFinalizada) {
+      renderDashOplFinalizada(res.fecha);
+    } else if (res.todosOPL && res.todosOPL.length > 0) {
+      renderDashOplMini(res.todosOPL);
+    } else if (res.progreso && res.progreso.length > 0) {
+      renderDashOplMini(res.progreso);
+    }
+  });
 }
 
 function renderDashOplFinalizada(fecha) {
@@ -3285,17 +3312,17 @@ function refrescarProgresoModalOPL(opts) {
     document.getElementById('oplModalProgresoContainer').innerHTML =
       '<p class="empty-state" style="padding:1.5rem;">Consultando SIRT…</p>';
   }
-  google.script.run
-    .withSuccessHandler(function(res) {
+  consultarProgresoOplTablero(
+    function(res) {
       aplicarProgresoModalOPL(res, opts);
-    })
-    .withFailureHandler(function(e) {
+    },
+    function(e) {
       if (!opts.silent) {
         document.getElementById('oplModalProgresoContainer').innerHTML =
           '<p class="empty-state" style="color:#991b1b;">Error: ' + escapeHtml(e.message) + '</p>';
       }
-    })
-    .calcularProgresoOPL();
+    }
+  );
 }
 
 function cargarProgresoModalOPL() {
@@ -3305,17 +3332,17 @@ function cargarProgresoModalOPL() {
 function recalcularOPLModal() {
   document.getElementById('oplModalProgresoContainer').innerHTML =
     '<p class="empty-state" style="padding:1rem;">Consultando SIRT…</p>';
-  google.script.run
-    .withSuccessHandler(function(res) {
+  consultarProgresoOplTablero(
+    function(res) {
       if (!res || !res.success) {
         showAlert('oplModalAlert', 'error', 'Error: ' + (res ? res.message : ''));
         return;
       }
-      showAlert('oplModalAlert', 'success', '✓ Actualizado — Turno: ' + res.turno);
+      showAlert('oplModalAlert', 'success', '✓ Actualizado — ' + res.fecha + ' · Turno: ' + res.turno);
       aplicarProgresoModalOPL(res, {});
-    })
-    .withFailureHandler(function(e) { showAlert('oplModalAlert', 'error', e.message); })
-    .calcularProgresoOPL();
+    },
+    function(e) { showAlert('oplModalAlert', 'error', e.message); }
+  );
 }
 
 function renderModalOplProgreso(progreso, unidad) {

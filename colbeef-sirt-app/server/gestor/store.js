@@ -70,6 +70,9 @@ export function defaultState() {
     /** Total fijo de juegos a despachar por OPL (baseline del día). */
     oplTotalsJuego: {},
     oplTotalsJuegoCompleto: {},
+    /** Metas congeladas por "fecha|turno" (sobreviven al cambio de día y a consultar otras fechas). */
+    oplBaselinesPorDia: {},
+    despachoKpiBaselinesPorDia: {},
     oplProgreso: [],
     historicoOpl: [],
     consolidado: [],

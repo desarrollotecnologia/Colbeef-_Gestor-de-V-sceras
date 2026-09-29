@@ -994,6 +994,43 @@ function reconstruirResumenDespachosOplSync(s, turno) {
 }
 
 /** Reinicia totales OPL al cambiar el día o turno de operación. */
+const MAX_BASELINES_POR_DIA = 14;
+
+function claveBaselineDia(fecha, turno) {
+  return `${String(fecha || '').trim()}|${String(turno || '').trim()}`;
+}
+
+/** Conserva solo las últimas fechas para que el estado no crezca sin límite. */
+function recortarBaselinesPorDia(mapa) {
+  const claves = Object.keys(mapa).sort();
+  claves.slice(0, Math.max(0, claves.length - MAX_BASELINES_POR_DIA)).forEach((k) => {
+    delete mapa[k];
+  });
+}
+
+function mapaBaselinesOpl(s) {
+  if (!s.oplBaselinesPorDia || typeof s.oplBaselinesPorDia !== 'object') {
+    s.oplBaselinesPorDia = {};
+  }
+  return s.oplBaselinesPorDia;
+}
+
+/**
+ * Guarda la meta congelada de la fecha activa en el mapa por día, para que consultar
+ * otra fecha no la borre (al volver se recupera en vez de reconstruirse en vivo).
+ */
+function guardarBaselineOplActual(s) {
+  const dia = String(s.oplBaselineFecha || '').trim();
+  if (!dia || String(s.oplBaselineBuild || '') !== GESTOR_BUILD) return;
+  const mapa = mapaBaselinesOpl(s);
+  mapa[claveBaselineDia(dia, s.oplBaselineTurno)] = {
+    build: GESTOR_BUILD,
+    totals: { ...obtenerOplTotalsJuego(s) },
+    totalsComplete: { ...obtenerOplTotalsJuegoCompleto(s) },
+  };
+  recortarBaselinesPorDia(mapa);
+}
+
 function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
   const t = String(turno || s.resumenDespachos?.turno || '').trim();
@@ -1003,10 +1040,16 @@ function asegurarBaselineOplDelDia(s, fechaIso, turno = '') {
     String(s.oplBaselineTurno || '') !== t ||
     String(s.oplBaselineBuild || '') !== GESTOR_BUILD
   ) {
+    guardarBaselineOplActual(s);
     (s.oplConfig || []).forEach((r) => {
       r.total = 0;
     });
     limpiarOplTotalsJuego(s);
+    const previo = mapaBaselinesOpl(s)[claveBaselineDia(dia, t)];
+    if (previo && previo.build === GESTOR_BUILD) {
+      s.oplTotalsJuego = { ...(previo.totals || {}) };
+      s.oplTotalsJuegoCompleto = { ...(previo.totalsComplete || {}) };
+    }
     s.oplBaselineFecha = dia;
     s.oplBaselineTurno = t;
     s.oplBaselineBuild = GESTOR_BUILD;
@@ -1123,15 +1166,35 @@ function asegurarBaselineDespachoKpis(s, fechaIso, turno) {
     s.despachoKpiBaseline.turno !== t ||
     String(s.despachoKpiBaseline.build || '') !== GESTOR_BUILD
   ) {
-    s.despachoKpiBaseline = {
-      fecha: dia,
-      turno: t,
-      build: GESTOR_BUILD,
-      juegosBases: [],
-      decomisoBases: [],
-      crudasBases: [],
-    };
+    guardarBaselineKpiActual(s);
+    const previo = mapaBaselinesKpi(s)[claveBaselineDia(dia, t)];
+    s.despachoKpiBaseline =
+      previo && previo.build === GESTOR_BUILD
+        ? JSON.parse(JSON.stringify(previo))
+        : {
+            fecha: dia,
+            turno: t,
+            build: GESTOR_BUILD,
+            juegosBases: [],
+            decomisoBases: [],
+            crudasBases: [],
+          };
   }
+}
+
+function mapaBaselinesKpi(s) {
+  if (!s.despachoKpiBaselinesPorDia || typeof s.despachoKpiBaselinesPorDia !== 'object') {
+    s.despachoKpiBaselinesPorDia = {};
+  }
+  return s.despachoKpiBaselinesPorDia;
+}
+
+function guardarBaselineKpiActual(s) {
+  const bl = s.despachoKpiBaseline;
+  if (!bl?.fecha || String(bl.build || '') !== GESTOR_BUILD) return;
+  const mapa = mapaBaselinesKpi(s);
+  mapa[claveBaselineDia(bl.fecha, bl.turno)] = JSON.parse(JSON.stringify(bl));
+  recortarBaselinesPorDia(mapa);
 }
 
 function basesDecomisoEnFilasDespacho(filas, reporte, indiceVw) {
@@ -1233,6 +1296,7 @@ export function actualizarBaselineDespachoKpisSync(s, turno, opts = {}) {
     cur.activas
   );
   bl.crudasBases = fusionarBaselineKpi(bl.crudasBases, toArr(cur.crudasBases), cur.activas);
+  guardarBaselineKpiActual(s);
   return {
     totalJuegos: bl.juegosBases.length,
     totalConDecomiso: bl.decomisoBases.length,
@@ -1257,7 +1321,7 @@ const COL_REGISTRO_ASIGNACION = 13;
  * programación en SIRT): antes del corte 15:20 = despacho normal; desde el corte = adicional.
  * La hora de salida física no interviene. Sin hora de registro → antes del corte.
  */
-function clasificarJuegosPorAsignacion(filas, { fechaOp, getClave }) {
+function clasificarJuegosPorAsignacion(filas, { fechaOp, getClave, incluirBases = null }) {
   const corte = getSalidaAdicionalCorte();
   const corteIso = `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
   const porAnimal = new Map();
@@ -1280,7 +1344,7 @@ function clasificarJuegosPorAsignacion(filas, { fechaOp, getClave }) {
   const antes = {};
   const adicionales = {};
   porAnimal.forEach((info, base) => {
-    if (!tieneJuegoCompleto(info.tipos)) return;
+    if (!tieneJuegoCompleto(info.tipos) && !incluirBases?.has(base)) return;
     const k = info.clave || '__TOTAL__';
     const destino = info.registro && fechaOp && info.registro >= corteIso ? adicionales : antes;
     if (!destino[k]) destino[k] = new Set();
@@ -1307,13 +1371,9 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const totalsFrozen = obtenerOplTotalsJuego(s);
   const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
 
-  // Pendientes = juegos completos que AÚN están en cava (no los incompletos ya salidos).
-  const pendCompleteOpl = contarJuegosCompletosPorClave(
-    programadosEnPaquete,
-    COLS_DESPACHO_CAVA,
-    claveOpl,
-    ''
-  );
+  // Pendientes = animales con piezas asignadas que siguen en cava, estén las 4 o no
+  // (p. ej. la cabeza salió otro día y quedan VB/VR/patas). Si alguna pieza salió hoy,
+  // el animal ya cuenta como incompleto del día y no se repite como pendiente.
   const part = clasificarJuegosSalidaPorCorte(salidasDespacho, {
     turno: '',
     todasCavas: true,
@@ -1322,16 +1382,29 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const salAntesOpl = part.antesPorClave || {};
   const salAdiOpl = part.adiPorClave || {};
   const incOpl = part.incompletosPorClave || {};
-  const pendSets = agruparJuegosCompletosPorClave(programadosEnPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const enCavaSets = agruparAnimalesConPiezasPorClave(programadosEnPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
+  const salidosHoy = new Set();
+  Object.values(
+    agruparAnimalesConPiezasPorClave(salidasDespacho, COLS_DESPACHO_CAVA, claveOpl, '')
+  ).forEach((set) => set.forEach((b) => salidosHoy.add(b)));
+  const pendSets = {};
+  const basesPendientes = new Set();
+  Object.keys(enCavaSets).forEach((opl) => {
+    const set = new Set([...enCavaSets[opl]].filter((b) => !salidosHoy.has(b)));
+    if (!set.size) return;
+    pendSets[opl] = set;
+    set.forEach((b) => basesPendientes.add(b));
+  });
   const asig = clasificarJuegosPorAsignacion([...programadosEnPaquete, ...salidasDespacho], {
     fechaOp,
     getClave: claveOpl,
+    incluirBases: basesPendientes,
   });
 
   const opls = new Set([
     ...Object.keys(totalsFrozen),
     ...Object.keys(totalsCompleteFrozen),
-    ...Object.keys(pendCompleteOpl),
+    ...Object.keys(pendSets),
     ...Object.keys(salAntesOpl),
     ...Object.keys(salAdiOpl),
     ...Object.keys(incOpl),
@@ -1342,13 +1415,13 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const progreso = [];
 
   [...opls].forEach((opl) => {
-    const pendComplete = Number(pendCompleteOpl[opl] || 0);
+    const pendSet = pendSets[opl] || new Set();
+    const pendComplete = pendSet.size;
     // Juegos completos que ya salieron de planta (cualquier hora).
     const salidos = Number(salAntesOpl[opl] || 0) + Number(salAdiOpl[opl] || 0);
     const inc = Number(incOpl[opl] || 0);
     const adiSet = asig.adicionales[opl] || new Set();
     const antesSet = asig.antes[opl] || new Set();
-    const pendSet = pendSets[opl] || new Set();
     const adicionalesPendientes = [...pendSet].filter((b) => adiSet.has(b)).length;
     // Meta = juegos completos del turno (no inflar con incompletos sueltos).
     const totalMeta = Math.max(
@@ -1384,6 +1457,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     todosOPL.push(item);
     if (pendientes > 0) progreso.push(item);
   });
+  guardarBaselineOplActual(s);
 
   todosOPL.sort((a, b) => b.pendientes - a.pendientes || b.total - a.total || a.opl.localeCompare(b.opl));
   progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
@@ -1886,6 +1960,8 @@ export async function getDashboardData(range) {
         oplBaselineFecha: persisted.oplBaselineFecha || '',
         oplBaselineTurno: persisted.oplBaselineTurno || '',
         oplBaselineBuild: persisted.oplBaselineBuild || '',
+        oplBaselinesPorDia: { ...(persisted.oplBaselinesPorDia || {}) },
+        despachoKpiBaselinesPorDia: { ...(persisted.despachoKpiBaselinesPorDia || {}) },
         resumenDespachos: {
           turno: '',
           fechaStr: '',
@@ -1916,6 +1992,8 @@ export async function getDashboardData(range) {
       persisted.oplBaselineFecha = sWork.oplBaselineFecha;
       persisted.oplBaselineTurno = sWork.oplBaselineTurno;
       persisted.oplBaselineBuild = sWork.oplBaselineBuild;
+      persisted.oplBaselinesPorDia = sWork.oplBaselinesPorDia;
+      persisted.despachoKpiBaselinesPorDia = sWork.despachoKpiBaselinesPorDia;
       await saveState(persisted);
       const preview = computeProgresoOPLPreview(sWork, oplLive.totalJuegos || rd.totalJuegos, {
         consultaSirt: true,
@@ -2275,6 +2353,8 @@ export async function limpiarDespachos() {
   s.oplBaselineFecha = '';
   s.oplBaselineTurno = '';
   limpiarOplTotalsJuego(s);
+  s.oplBaselinesPorDia = {};
+  s.despachoKpiBaselinesPorDia = {};
   s.oplProgreso = [];
   s.fechaInicioOperacion = null;
   await saveState(s);
