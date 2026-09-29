@@ -38,15 +38,16 @@ function encabezados(ws, headers) {
 }
 
 function filaDatos(ws, nFila, valores, idx, opts = {}) {
+  const numCol = opts.numCol ?? 1;
   const row = ws.getRow(nFila);
   valores.forEach((v, i) => {
     const cell = row.getCell(i + 1);
     cell.value = v;
-    cell.font = { name: 'Calibri', size: 11, bold: i === 1 };
+    cell.font = { name: 'Calibri', size: 11, bold: i === numCol };
     cell.border = BORDES;
     cell.alignment = {
       vertical: 'top',
-      horizontal: i === 1 ? 'center' : 'left',
+      horizontal: i === numCol ? 'center' : 'left',
       wrapText: i === opts.wrapCol,
     };
     if (idx % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE_CLARO } };
@@ -54,16 +55,17 @@ function filaDatos(ws, nFila, valores, idx, opts = {}) {
 }
 
 /** Fila TOTAL fuera del rango de filtros; SUBTOTAL suma solo lo visible al filtrar. */
-function filaTotal(ws, nFila, primera, ultima, nCols) {
+function filaTotal(ws, nFila, primera, ultima, nCols, colCantidad = 2) {
   const row = ws.getRow(nFila);
+  const letra = String.fromCharCode(64 + colCantidad);
   row.getCell(1).value = 'TOTAL';
-  row.getCell(2).value = { formula: `SUBTOTAL(109,B${primera}:B${ultima})` };
+  row.getCell(colCantidad).value = { formula: `SUBTOTAL(109,${letra}${primera}:${letra}${ultima})` };
   for (let i = 1; i <= nCols; i++) {
     const cell = row.getCell(i);
     cell.font = { bold: true, name: 'Calibri', size: 11, color: { argb: 'FF065F46' } };
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD1FAE5' } };
     cell.border = BORDES;
-    cell.alignment = { horizontal: i === 2 ? 'center' : 'left' };
+    cell.alignment = { horizontal: i === colCantidad ? 'center' : 'left' };
   }
 }
 
@@ -139,6 +141,36 @@ export async function buildExcelCrudasBuffer({ fechaTxt, turno = '', opls = [] }
     ws.getColumn(3).width = 95;
     ws.views = [{ state: 'frozen', ySplit: 3 }];
   }
+
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
+
+/** Una sola hoja con todas las crudas: OPL / Puesto / Cantidad / Códigos, en orden OPL → puesto. */
+export async function buildExcelCrudasGeneralBuffer({ fechaTxt, turno = '', opls = [] }) {
+  const wb = new ExcelJS.Workbook();
+  wb.creator = 'Colbeef Gestor Vísceras';
+  wb.created = new Date();
+  const turnoTxt = turno ? ` · turno ${turno}` : '';
+  const filas = opls.flatMap((o) => o.puestos.map((p) => ({ opl: o.opl, ...p })));
+  const total = filas.reduce((a, f) => a + f.cantidad, 0);
+
+  const ws = wb.addWorksheet('Crudas');
+  titulo(ws, 'D', 'CRUDAS · GENERAL', `${fechaTxt}${turnoTxt} · ${opls.length} OPL · ${filas.length} puestos · ${total} crudas`);
+  encabezados(ws, ['OPL', 'Puesto', 'Cantidad', 'Códigos']);
+  filas.forEach((f, idx) => {
+    filaDatos(ws, 4 + idx, [f.opl, f.puesto, f.cantidad, f.codigos.join(', ')], idx, {
+      numCol: 2,
+      wrapCol: 3,
+    });
+  });
+  const ult = 3 + Math.max(1, filas.length);
+  ws.autoFilter = { from: 'A3', to: `D${ult}` };
+  filaTotal(ws, ult + 1, 4, ult, 4, 3);
+  ws.getColumn(1).width = 24;
+  ws.getColumn(2).width = 14;
+  ws.getColumn(3).width = 12;
+  ws.getColumn(4).width = 95;
+  ws.views = [{ state: 'frozen', ySplit: 3 }];
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

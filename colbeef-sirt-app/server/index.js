@@ -600,7 +600,7 @@ app.get('/api/crudas', async (_req, res) => {
 
 app.get('/api/crudas/excel', async (req, res) => {
   try {
-    const out = await gestor.generarExcelCrudas();
+    const out = await gestor.generarExcelCrudas({ general: req.query.modo === 'general' });
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename="${out.filename}"`);
     res.setHeader('X-Crudas-Total', String(out.total || 0));

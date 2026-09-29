@@ -77,7 +77,11 @@ import {
   consultarDecomisosDesdeSirt,
 } from './sirtSync.js';
 import { buildExcelParticularesBuffer } from './planillaParticularesExcel.js';
-import { agruparCrudasPorOpl, buildExcelCrudasBuffer } from './crudasExcel.js';
+import {
+  agruparCrudasPorOpl,
+  buildExcelCrudasBuffer,
+  buildExcelCrudasGeneralBuffer,
+} from './crudasExcel.js';
 import { loadState, saveState, defaultState } from './store.js';
 
 function cargarMapaOPL(state) {
@@ -2700,7 +2704,30 @@ function codigoPuestoCrudas(puestoResuelto, sucursalFila) {
 }
 
 /**
+ * Animales con VB cruda asignados a despacho en el turno. Debe seguir el mismo criterio
+ * que `totalCrudas` de construirResumenDespachosDesdeFilas (tarjeta del tablero).
+ */
+function basesCrudaProgramadasTurno(despachosCavas, estadoFromRow12, turno) {
+  const estadoNeto = aplicarEstadoEnCavaNeto(estadoFromRow12 || [], despachosCavas || []);
+  const { crudaBases } = construirIndiceEnCava(estadoNeto);
+  const bases = new Set();
+  filasDespachoTurno(despachosCavas || [], turno).forEach((fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puestoTexto = String(fila[9] ?? '').trim() || String(fila[8] ?? '').trim();
+    if (!id || tipo !== 'Visceras Blancas' || !puestoTexto) return;
+    if (!puestoTexto.includes(turno)) return;
+    if (PUESTOS_EXCLUIDOS_DESP.includes(puestoTexto)) return;
+    if (!claveAgrupacionPuesto(puestoTexto)) return;
+    const base = codigoBase(id);
+    if (base && (crudaBases.has(base) || esCruda(fila[12]))) bases.add(base);
+  });
+  return bases;
+}
+
+/**
  * Lista VB crudas únicas y resuelve su puesto desde la salida programada.
+ * Solo las asignadas al turno del día (las programadas para otra fecha no se muestran).
  * La respuesta de pantalla usa solo el código de sucursal y agrupa después por
  * puesto + OPL; el PDF reconstruye la ruta logística completa.
  */
@@ -2709,8 +2736,9 @@ export async function getCrudasDetalle() {
   const mapaOPL = cargarMapaOPL(s);
   const turno = resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
   const puestoPorBase = construirMapaPuestoCrudaPorBase(s.despachosCavas, turno);
+  const delTurno = basesCrudaProgramadasTurno(s.despachosCavas, s.estadoFromRow12, turno);
   const crudas = {};
-  s.estadoFromRow12.forEach((fila) => {
+  (s.estadoFromRow12 || []).forEach((fila) => {
     const codigo = String(fila[0] ?? '').trim();
     const desc = String(fila[1] ?? '').trim();
     const cliente = String(fila[3] ?? '').trim();
@@ -2718,6 +2746,7 @@ export async function getCrudasDetalle() {
     if (!codigo || desc !== 'Visceras Blancas') return;
     if (!esCruda(colO)) return;
     const base = codigoBase(codigo);
+    if (!delTurno.has(base)) return;
     const puesto = codigoPuestoCrudas(
       resolverPuestoFilaCruda(fila, puestoPorBase, turno),
       fila[5]
@@ -2743,12 +2772,13 @@ export async function getCrudasDetalle() {
 }
 
 /** Excel de Crudas con los mismos datos de pantalla, agrupados por OPL → puesto. */
-export async function generarExcelCrudas() {
+export async function generarExcelCrudas({ general = false } = {}) {
   const det = await getCrudasDetalle();
   const s = await loadState();
   const opls = agruparCrudasPorOpl(det.filas);
   const fechaIso = String(s.lastSyncRange?.from || '').trim() || hoyIsoLocal();
-  const buffer = await buildExcelCrudasBuffer({
+  const construir = general ? buildExcelCrudasGeneralBuffer : buildExcelCrudasBuffer;
+  const buffer = await construir({
     fechaTxt: isoToDdMmYyyy(fechaIso),
     turno: det.turno || '',
     opls,
@@ -2756,7 +2786,7 @@ export async function generarExcelCrudas() {
   return {
     success: true,
     buffer,
-    filename: `Crudas_por_OPL_${fechaIso}.xlsx`,
+    filename: `${general ? 'Crudas_general' : 'Crudas_por_OPL'}_${fechaIso}.xlsx`,
     total: (det.filas || []).length,
   };
 }
