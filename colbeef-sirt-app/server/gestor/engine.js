@@ -3328,8 +3328,15 @@ function filasPendientesParticularesSync(s) {
   return { pendientes, fechaOp, turnoOp, totalProgramados: programados.length };
 }
 
-function filaPendienteADtoParticular(fila) {
+function corteAdicionalIso(fechaOp) {
+  const corte = getSalidaAdicionalCorte();
+  return `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
+}
+
+function filaPendienteADtoParticular(fila, corteIso = '') {
+  const registro = String(fila[COL_REGISTRO_ASIGNACION] ?? '').trim();
   return {
+    adicional: Boolean(corteIso && registro && registro >= corteIso),
     codigo: String(fila[3] ?? '').trim(),
     propietario: String(fila[4] ?? '').trim(),
     subproducto: String(fila[7] ?? '').trim(),
@@ -3343,10 +3350,16 @@ function filaPendienteADtoParticular(fila) {
 
 /**
  * Excel particulares: una hoja por OPL seleccionado, solo pendientes.
+ * Con `general` agrega de primera una hoja con todos los OPL. Las filas asignadas
+ * desde el corte de adicionales (15:20) van en azul.
  * Opcionalmente refresca SIRT con `range.date` / `range.from`.
  * @returns {{ success, buffer?, filename?, meta?, message? }}
  */
-export async function generarExcelParticulares(range = {}, oplsSolicitados = null) {
+export async function generarExcelParticulares(
+  range = {},
+  oplsSolicitados = null,
+  { general = false } = {}
+) {
   const filtro = normalizarRangoFechas(range || {});
   if (filtroSirtValido(filtro)) {
     const prep = await prepararPlanillaDesdeSIRT(filtro);
@@ -3385,6 +3398,7 @@ export async function generarExcelParticulares(range = {}, oplsSolicitados = nul
     porOpl[o] = [];
   });
 
+  const corteIso = corteAdicionalIso(fechaOp);
   let sinMatchOpl = 0;
   for (const fila of pendientes) {
     const opl = claveOplDesdeFila(fila, mapaOPL);
@@ -3393,7 +3407,7 @@ export async function generarExcelParticulares(range = {}, oplsSolicitados = nul
       sinMatchOpl += 1;
       continue;
     }
-    porOpl[canon].push(filaPendienteADtoParticular(fila));
+    porOpl[canon].push(filaPendienteADtoParticular(fila, corteIso));
   }
 
   // Orden estable dentro de cada hoja
@@ -3405,12 +3419,26 @@ export async function generarExcelParticulares(range = {}, oplsSolicitados = nul
     });
   });
 
+  const porOplOrdenado = general
+    ? Object.fromEntries(
+        Object.keys(porOpl)
+          .sort((a, b) => a.localeCompare(b, 'es'))
+          .map((k) => [k, porOpl[k]])
+      )
+    : porOpl;
+
   const buffer = await buildExcelParticularesBuffer({
     fechaIso: fechaOp,
     turno: turnoOp,
-    porOpl,
+    porOpl: porOplOrdenado,
+    general,
+    corteLabel: getSalidaAdicionalCorteLabel(),
   });
   const totalFilas = Object.values(porOpl).reduce((n, arr) => n + arr.length, 0);
+  const totalAdicionales = Object.values(porOpl).reduce(
+    (n, arr) => n + arr.filter((r) => r.adicional).length,
+    0
+  );
   const filename = `Particulares_pendientes_${fechaOp}.xlsx`;
   return {
     success: true,
@@ -3420,7 +3448,9 @@ export async function generarExcelParticulares(range = {}, oplsSolicitados = nul
       fecha: fechaOp,
       turno: turnoOp,
       opls: seleccion,
+      general,
       totalFilas,
+      totalAdicionales,
       totalProgramados,
       totalPendientes: pendientes.length,
       sinMatchOpl,

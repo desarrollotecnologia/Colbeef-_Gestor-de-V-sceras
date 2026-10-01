@@ -2,7 +2,8 @@
 
 - **Interfaz completa** del Apps Script (`client/gestor.html`): mismos módulos y flujos, conectada al backend por `POST /api/rpc` (shim `google.script.run`).
 - **Datos operativos**: se **leen directamente desde PostgreSQL/SIRT**. El único upload manual es el `.xlsx` de **Salidas de Cava Adicionales**.
-- **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/planilla`, `/api/adicionales`, `/api/historico`).
+- **API REST**: expone los endpoints del gestor (`/api/dashboard`, `/api/decomisos`, `/api/despachos`, `/api/opl`, `/api/crudas`, `/api/crudas/excel`, `/api/planilla`, `/api/adicionales`, `/api/historico`, `/api/auth`, `/api/usability`). Lista completa en [Endpoints](#endpoints).
+- **Persistencia propia**: MySQL `colbeef_gestor` en el 205, con respaldo en JSON (`server/data/`).
 
 ## Gestor (interfaz única)
 
@@ -149,12 +150,6 @@ orden:
 sc config colbeefsirtapi.exe depend= MySQL80
 ```
 
-O en un solo comando:
-
-```bash
-npm run dev
-```
-
 ## Producción
 
 ```bash
@@ -167,23 +162,23 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 
 ## Endpoints
 
-- `POST /api/rpc` — cuerpo JSON `{ "method": "...", "args": [...] }`; usado por `gestor.html` vía el shim `google.script.run`
-- `GET /api/health` — comprueba conexión a BD.
-- `GET /api/dashboard` — KPIs desde SIRT.
-- `GET /api/salidas` — productos en cava (`?date=YYYY-MM-DD` o `from`/`to`)
-- `GET /api/en-cava` — alias de salidas (inventario en cava)
-- `GET /api/decomisos`
-- `GET /api/decomisos/detalle` — decomisos SAI (ventana automática de 7 días hasta la fecha consultada)
-- `POST /api/decomisos/resumir`
-- `GET /api/decomisos/pdf`
-- `GET /api/despachos`
-- `POST /api/despachos/procesar`
+- `POST /api/rpc`: cuerpo JSON `{ "method": "...", "args": [...] }`. Lo usa `gestor.html` vía el shim `google.script.run`; solo acepta métodos de la lista blanca de `server/gestor/rpc.js`.
+- `GET /api/health`: comprueba la conexión a SIRT. `GET /api/info`: versión, build y enlace de red.
+- `POST /api/auth/login`, `POST /api/auth/logout`, `GET /api/auth/me`, `POST /api/auth/users` (admin). Solo aplican con `GESTOR_AUTH_REQUIRED=true`.
+- `GET /api/dashboard`: KPIs desde SIRT.
+- `GET /api/salidas`: productos en cava (`?date=YYYY-MM-DD` o `from`/`to`). `GET /api/en-cava` y `GET /api/stock`: inventario en cava.
+- `GET /api/decomisos`, `GET /api/decomisos/detalle` (decomisos SAI, ventana de 7 días hasta la fecha consultada), `POST /api/decomisos/resumir`, `GET /api/decomisos/pdf`
+- `GET /api/despachos`, `POST /api/despachos/procesar`, `GET /api/despachos/detalle/:puesto`, `GET /api/despachos-propietario`
 - `GET /api/opl/config`, `POST /api/opl/config`, `DELETE /api/opl/config/:idx`
 - `GET /api/opl/progreso`, `POST /api/opl/calcular`
-- `GET /api/crudas`
-- `GET /api/planilla`
-- `POST /api/adicionales`
-- `GET /api/historico/pdf`
+- `GET /api/crudas`: crudas asignadas al turno del día.
+- `GET /api/crudas/excel`: Excel con una hoja por OPL. Con `?modo=general` devuelve una sola hoja ordenada por OPL y puesto. Ambos llevan filtros y encabezados en verde; el total va en la cabecera `X-Crudas-Total`.
+- `GET /api/planilla`, `GET|POST /api/planilla/particulares`
+- `GET /api/planilla/excel-particulares`: una hoja por OPL, solo pendientes. Con `&general=1` (todos los OPL marcados) agrega de primera la hoja General. Las asignadas desde las 15:20 van en azul claro.
+- `POST /api/adicionales`: carga del `.xlsx` de salidas adicionales.
+- `GET /api/historico/pdf`, `GET /api/historial/pdf/:id`
+- `GET /api/categorias`, `GET /api/export/resumen.xlsx`, `GET /api/export/resumen.pdf`
+- `POST /api/usability/event`, `POST /api/usability/login`, `GET /api/usability/stats`, `GET /api/usability/export`, `GET /api/usability/export.xlsx`, `GET /api/usability/enlace`
 - `POST /api/limpiar`
 
 ## Lógica de datos
@@ -196,10 +191,17 @@ El gestor calcula el avance por operador logístico con **juegos completos** (4 
 
 | Concepto | Fuente |
 |----------|--------|
-| Pendientes | Juegos completos aún en cava del turno |
-| Despachados | Juegos completos con `fecha_salida` real en SIRT (mismo turno / ISODOW) |
-| Total | Pendientes + despachados |
-| Propietario → OPL | Excepciones en `constants.js` + default `TRANSCARNES` |
+| Día operativo | Empieza a las 4:00 (`GESTOR_DIA_OPERATIVO_CORTE_HORA`); lo anterior cuenta para el día previo. |
+| Pendientes | Animales con alguna pieza en cava y ninguna salida hoy. Incluye juegos partidos: si falta una pieza en cava, el animal sigue pendiente. |
+| Despachados | Juegos completos (4 tipos) con salida real en SIRT dentro del día operativo. |
+| Incompletos | Animales con alguna pieza salida hoy, pero no las 4. |
+| Adicionales | Asignaciones hechas a las 15:20 o después (`fecha_registro` + `hora_registro` de `ppel`; `GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). |
+| Meta del día | Máximo entre la meta congelada y `pendientes + despachados + incompletos`. Se guarda por fecha y turno (`oplBaselinesPorDia`, últimos 14 días), así que no baja al despachar ni al consultar otra fecha. |
+| Avance | `(meta − pendientes) / meta`. Se queda en 99 % mientras haya algo en cava. |
+| Crudas | VB con observación `CRUDAS` asignada al turno del día. La tarjeta, el módulo y los dos Excel usan el mismo criterio. |
+| Propietario → OPL | Excepciones en `constants.js`; si no hay excepción, `TRANSCARNES`. |
+
+El modal OPL consulta la misma fecha que el tablero.
 
 **Flujo en planta:** **Sincronizar SIRT** → **Procesar Despachos** → **Recalcular OPL** (modal OPL o tablero).
 
@@ -212,3 +214,12 @@ Excepciones OPL incluyen, entre otras: `VARGAS BLANCO REINALDO` → CAVA CAMILO,
 - `npm run probe` — lista tablas
 - `npm run search-tables` — tablas por palabras clave
 - `node scripts/describe-one.mjs esquema.tabla` — columnas
+- `node scripts/verificar-fechas-opl.mjs <fechas…>` — meta, pendientes y avance por OPL de varias fechas
+- `node scripts/probe-juego.mjs <animal>` — programación y movimientos de cava de cada pieza
+- `node scripts/probe-crudas-diferencia.mjs <fecha>` — diferencias entre crudas del módulo y de la tarjeta
+- `node scripts/test-crudas-excel.mjs` — arma los dos Excel de crudas con datos del 205
+
+## Documentación
+
+- [README general](../README.md)
+- [Diagramas](../docs/README.md): arquitectura, endpoints, pantallas, [flujo operativo](../docs/diagrams/04-flujo-operativo.md) y [cálculo de progreso](../docs/diagrams/05-calculo-progreso.md).

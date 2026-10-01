@@ -945,7 +945,9 @@
       <p style="font-size:0.84rem;color:var(--gris);margin-bottom:0.8rem;line-height:1.4;">
         Marca los OPLs que quieras como <strong>particulares</strong>. El Excel tendrá
         <strong>una hoja por OPL</strong> y solo lo <strong>pendiente</strong>
-        (lo pistoleado se va quitando en cada descarga).
+        (lo pistoleado se va quitando en cada descarga). Con <strong>todos</strong> marcados
+        se agrega la hoja <strong>General</strong>. Las asignadas desde las 15:20
+        (adicionales) salen en <span style="background:#bdd7ee;padding:0 0.25rem;border-radius:3px;">azul</span>.
       </p>
       <div id="particularesLista" style="max-height:320px;overflow:auto;border:1px solid var(--vc);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:1rem;background:#f8fbff;">
         <div class="empty-state">Cargando OPLs…</div>
@@ -3906,6 +3908,34 @@ function toggleParticularOpl(el, opl) {
     if (String(x).toUpperCase() === up) _particularesSeleccion.delete(x);
   }
   if (el.checked) _particularesSeleccion.add(opl);
+  _sincronizarParticularesTodos();
+}
+
+function _checksParticulares() {
+  return [...document.querySelectorAll('#particularesLista input[data-opl]')];
+}
+
+function _particularesTodosMarcados() {
+  var checks = _checksParticulares();
+  return checks.length > 0 && checks.every(function (c) { return c.checked; });
+}
+
+function _sincronizarParticularesTodos() {
+  var todos = document.getElementById('particularesTodos');
+  if (!todos) return;
+  var checks = _checksParticulares();
+  var marcados = checks.filter(function (c) { return c.checked; }).length;
+  todos.checked = checks.length > 0 && marcados === checks.length;
+  todos.indeterminate = marcados > 0 && marcados < checks.length;
+}
+
+function toggleParticularesTodos(el) {
+  _particularesSeleccion = new Set();
+  _checksParticulares().forEach(function (c) {
+    c.checked = el.checked;
+    if (el.checked) _particularesSeleccion.add(c.getAttribute('data-opl'));
+  });
+  _sincronizarParticularesTodos();
 }
 
 function renderParticularesLista(opls) {
@@ -3926,7 +3956,11 @@ function renderParticularesLista(opls) {
   });
   _particularesSeleccion = podada;
   var selUp = new Set([..._particularesSeleccion].map(function (x) { return String(x).toUpperCase(); }));
-  box.innerHTML = opls
+  box.innerHTML =
+    '<label style="display:flex;align-items:center;gap:0.55rem;padding:0.35rem 0.2rem 0.5rem;margin-bottom:0.3rem;border-bottom:1px solid var(--vc);cursor:pointer;font-size:0.88rem;font-weight:700;">' +
+    '<input type="checkbox" id="particularesTodos" onchange="toggleParticularesTodos(this)">' +
+    ' <span>Seleccionar todos <span style="font-weight:400;color:#6b7280;">(agrega la hoja General)</span></span></label>' +
+    opls
     .map(function (opl) {
       var checked = selUp.has(String(opl).toUpperCase()) ? ' checked' : '';
       return (
@@ -3941,6 +3975,7 @@ function renderParticularesLista(opls) {
       );
     })
     .join('');
+  _sincronizarParticularesTodos();
 }
 
 function abrirModalParticulares() {
@@ -4003,10 +4038,11 @@ function guardarParticularesSeleccion(silent) {
   });
 }
 
-function descargarExcelParticulares(opls) {
+function descargarExcelParticulares(opls, general) {
   var fecha = getFechaGlobalISO();
   var url = '/api/planilla/excel-particulares?date=' + encodeURIComponent(fecha);
   if (opls && opls.length) url += '&opls=' + encodeURIComponent(JSON.stringify(opls));
+  if (general) url += '&general=1';
   showSpinner('Generando Excel de particulares…');
   fetch(url)
     .then(function (r) {
@@ -4019,8 +4055,9 @@ function descargarExcelParticulares(opls) {
       var m = cd.match(/filename="?([^"]+)"?/i);
       var fname = (m && m[1]) || 'Particulares_pendientes_' + fecha + '.xlsx';
       var total = Number(r.headers.get('X-Particulares-Total') || -1);
+      var adicionales = Number(r.headers.get('X-Particulares-Adicionales') || 0);
       return r.blob().then(function (blob) {
-        return { blob: blob, fname: fname, total: total };
+        return { blob: blob, fname: fname, total: total, adicionales: adicionales };
       });
     })
     .then(function (pack) {
@@ -4042,7 +4079,9 @@ function descargarExcelParticulares(opls) {
       } else {
         showParticularesAlert(
           'success',
-          '📥 Excel descargado' + (pack.total > 0 ? ' · ' + pack.total + ' fila(s)' : '')
+          '📥 Excel descargado' +
+            (pack.total > 0 ? ' · ' + pack.total + ' fila(s)' : '') +
+            (pack.adicionales > 0 ? ' · ' + pack.adicionales + ' adicional(es) en azul' : '')
         );
       }
       if (window.ColbeefUsage) {
@@ -4061,10 +4100,15 @@ async function guardarYDescargarParticulares() {
     showParticularesAlert('warn', 'Selecciona al menos un OPL particular.');
     return;
   }
+  var general = _particularesTodosMarcados();
   var ok = await guardarParticularesSeleccion(true);
   if (!ok) return;
-  showParticularesAlert('success', '📥 Descargando Excel con ' + opls.length + ' hoja(s)…');
-  descargarExcelParticulares(opls);
+  showParticularesAlert(
+    'success',
+    '📥 Descargando Excel con ' + (opls.length + (general ? 1 : 0)) + ' hoja(s)' +
+      (general ? ' (incluye General)' : '') + '…'
+  );
+  descargarExcelParticulares(opls, general);
 }
 
 document.addEventListener('click', function (e) {

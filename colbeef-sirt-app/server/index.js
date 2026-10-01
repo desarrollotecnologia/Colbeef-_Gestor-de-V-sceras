@@ -655,7 +655,8 @@ app.get('/api/planilla/excel-particulares', async (req, res) => {
         opls = null;
       }
     }
-    const out = await gestor.generarExcelParticulares(range, opls);
+    const general = ['1', 'true', 'si'].includes(String(req.query.general || '').toLowerCase());
+    const out = await gestor.generarExcelParticulares(range, opls, { general });
     if (!out.success) {
       return res.status(400).json({ success: false, message: out.message });
     }
@@ -670,7 +671,11 @@ app.get('/api/planilla/excel-particulares', async (req, res) => {
     if (out.meta) {
       res.setHeader('X-Particulares-Total', String(out.meta.totalFilas || 0));
       res.setHeader('X-Particulares-Pendientes', String(out.meta.totalPendientes || 0));
-      res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Particulares-Total, X-Particulares-Pendientes');
+      res.setHeader('X-Particulares-Adicionales', String(out.meta.totalAdicionales || 0));
+      res.setHeader(
+        'Access-Control-Expose-Headers',
+        'Content-Disposition, X-Particulares-Total, X-Particulares-Pendientes, X-Particulares-Adicionales'
+      );
     }
     res.send(out.buffer);
   } catch (e) {

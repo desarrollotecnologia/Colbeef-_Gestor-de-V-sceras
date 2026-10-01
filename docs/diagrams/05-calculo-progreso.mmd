@@ -1,0 +1,35 @@
+flowchart TD
+  subgraph SIRT["SIRT (fecha de operación elegida)"]
+    prog["Programación del día<br/>ppel.fecha_programacion_despacho = fecha<br/>ppel.fecha_registro + hora_registro = hora de asignación"]
+    cava["Movimientos de cava<br/>último movimiento abierto = sigue en cava"]
+    sal["Salidas del día operativo<br/>fecha_salida entre fecha 4:00 y fecha+1 4:00"]
+  end
+
+  prog --> anim["Agrupa piezas por animal<br/>Cabeza · Patas y Manos · VB · VR"]
+  cava --> anim
+  sal --> anim
+
+  anim --> clas{"Estado del animal"}
+  clas -->|"Las 4 piezas salieron de planta"| desp["Despachado"]
+  clas -->|"Alguna pieza salió hoy, otras no"| inc["Incompleto del día"]
+  clas -->|"Tiene piezas en cava y ninguna salió hoy"| pend["Pendiente<br/>(incluye juegos partidos, p. ej. cabeza salió otro día)"]
+
+  anim --> hora{"Hora de asignación"}
+  hora -->|"antes de 15:20"| antes["Antes del corte"]
+  hora -->|"desde 15:20"| adi["Adicional"]
+
+  desp --> meta
+  inc --> meta
+  pend --> meta
+  meta["Meta del día por OPL = máx(meta congelada, pendientes + despachados + incompletos)<br/>se guarda por fecha y turno: no baja al despachar ni al consultar otra fecha"]
+
+  meta --> pct["Avance = (meta − pendientes) / meta<br/>máximo 99 % mientras quede algo en cava"]
+  pend --> total["Total a despachar = pendientes (incluye adicionales)"]
+  antes --> linea["Antes 15:20 + Adicionales = Total asignado"]
+  adi --> linea
+
+  subgraph CR["Crudas"]
+    vb["VB con observación CRUDAS en cava"] --> filt{"¿Asignada al turno del día?"}
+    filt -->|Sí| crud["Tarjeta Crudas = Módulo Crudas = Excel"]
+    filt -->|"No (otro día)"| fuera["No se muestra"]
+  end
