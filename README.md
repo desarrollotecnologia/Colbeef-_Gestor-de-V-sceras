@@ -73,7 +73,7 @@ En planta: **http://192.168.20.205:3001/gestor.html**
 - Consolidación de puestos por OPL, vista **por puesto** o **por zona**, y resumen general.
 - Configuración de plazas por puesto.
 - Exportación a PDF.
-- **Particulares**: se marcan OPL y se descarga un Excel multi-hoja solo con lo pendiente de los OPL elegidos. Con **Seleccionar todos** se agrega de primera la hoja **General** (todos los OPL, columna OPL, filtros, en orden de OPL). Las filas asignadas desde las 15:20 (adicionales) salen en azul claro, en la General y en la hoja de su OPL.
+- **Particulares**: se marcan OPL y se descarga un Excel multi-hoja solo con lo pendiente de los OPL elegidos. Con **Seleccionar todos** se agrega de primera la hoja **General** (todos los OPL, columna OPL, filtros, en orden de OPL). Todas las hojas traen **Fecha asignación** y **Hora asignación** (registro de la programación en SIRT). Las filas asignadas desde las 15:20 (adicionales) salen en azul claro, en la General y en la hoja de su OPL.
 
 ### Informe laboral
 

@@ -174,7 +174,7 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 - `GET /api/crudas`: crudas asignadas al turno del día.
 - `GET /api/crudas/excel`: Excel con una hoja por OPL. Con `?modo=general` devuelve una sola hoja ordenada por OPL y puesto. Ambos llevan filtros y encabezados en verde; el total va en la cabecera `X-Crudas-Total`.
 - `GET /api/planilla`, `GET|POST /api/planilla/particulares`
-- `GET /api/planilla/excel-particulares`: una hoja por OPL, solo pendientes. Con `&general=1` (todos los OPL marcados) agrega de primera la hoja General. Las asignadas desde las 15:20 van en azul claro.
+- `GET /api/planilla/excel-particulares`: una hoja por OPL, solo pendientes. Con `&general=1` (todos los OPL marcados) agrega de primera la hoja General. Cada fila trae fecha y hora de asignación; las asignadas desde las 15:20 van en azul claro.
 - `POST /api/adicionales`: carga del `.xlsx` de salidas adicionales.
 - `GET /api/historico/pdf`, `GET /api/historial/pdf/:id`
 - `GET /api/categorias`, `GET /api/export/resumen.xlsx`, `GET /api/export/resumen.pdf`

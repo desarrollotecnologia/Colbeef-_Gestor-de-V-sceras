@@ -17,6 +17,8 @@ const fila = (codigo, subproducto, puesto, adicional = false) => ({
   cava: 'Cava Paquete Visceral',
   estado: 'Pendiente',
   adicional,
+  fechaAsignacion: '30/09/2026',
+  horaAsignacion: adicional ? '16:05' : '09:40',
 });
 
 const porOpl = {
@@ -53,18 +55,21 @@ assert.deepStrictEqual(
 );
 
 const g = wb.worksheets[0];
+const COLS = 9;
 assert.deepStrictEqual(
-  [1, 2, 3, 4, 5, 6, 7].map((c) => g.getCell(3, c).value),
-  ['OPL', 'Código', 'Propietario', 'Subproducto', 'Puesto', 'Cava', 'Estado']
+  Array.from({ length: COLS }, (_, i) => g.getCell(3, i + 1).value),
+  ['OPL', 'Código', 'Propietario', 'Subproducto', 'Puesto', 'Cava', 'Estado', 'Fecha asignación', 'Hora asignación']
 );
-assert.strictEqual(String(g.autoFilter), `A3:G${3 + totalFilas}`, 'filtro cubre todas las filas de General');
+assert.strictEqual(String(g.autoFilter), `A3:I${3 + totalFilas}`, 'filtro cubre todas las filas de General');
+assert.strictEqual(g.getCell(4, 8).value, '30/09/2026');
 const oplsGeneral = [];
 let azulesGeneral = 0;
 for (let r = 4; r < 4 + totalFilas; r++) {
   oplsGeneral.push(g.getCell(r, 1).value);
   if (esAzul(g, r)) {
     azulesGeneral++;
-    for (let c = 1; c <= 7; c++) assert.strictEqual(g.getCell(r, c).fill.fgColor.argb, AZUL, 'fila completa en azul');
+    for (let c = 1; c <= COLS; c++) assert.strictEqual(g.getCell(r, c).fill.fgColor.argb, AZUL, 'fila completa en azul');
+    assert.strictEqual(g.getCell(r, 9).value, '16:05', 'hora de asignación de la adicional');
   }
 }
 assert.deepStrictEqual(oplsGeneral, [...oplsGeneral].sort((a, b) => a.localeCompare(b, 'es')), 'orden por OPL');
@@ -74,6 +79,7 @@ let azulesOpl = 0;
 wb.worksheets.slice(1).forEach((ws) => {
   const filas = porOpl[ws.name];
   assert.strictEqual(ws.getCell(3, 1).value, 'Código', `${ws.name} sin columna OPL`);
+  assert.strictEqual(ws.getCell(3, 8).value, 'Hora asignación', `${ws.name} con hora de asignación`);
   filas.forEach((f, i) => {
     assert.strictEqual(esAzul(ws, 4 + i), f.adicional, `${ws.name} fila ${i + 1}`);
     if (f.adicional) azulesOpl++;

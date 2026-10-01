@@ -93,8 +93,17 @@ function letraColumna(n) {
 }
 
 function escribirHoja(ws, { titulo, fechaIso, turno, filas, conOpl = false, corteLabel }) {
-  const headers = ['Código', 'Propietario', 'Subproducto', 'Puesto', 'Cava', 'Estado'];
-  const anchos = [18, 36, 18, 28, 20, 12];
+  const headers = [
+    'Código',
+    'Propietario',
+    'Subproducto',
+    'Puesto',
+    'Cava',
+    'Estado',
+    'Fecha asignación',
+    'Hora asignación',
+  ];
+  const anchos = [18, 36, 18, 28, 20, 12, 17, 16];
   if (conOpl) {
     headers.unshift('OPL');
     anchos.unshift(20);
@@ -137,6 +146,8 @@ function escribirHoja(ws, { titulo, fechaIso, turno, filas, conOpl = false, cort
       r.puesto || '',
       r.cava || '',
       r.estado || 'Pendiente',
+      r.fechaAsignacion || '',
+      r.horaAsignacion || '',
     ];
     if (conOpl) vals.unshift(r.opl || '');
     const fill = r.adicional ? FILL_ADICIONAL : idx % 2 === 1 ? FILL_ZEBRA : null;
@@ -144,6 +155,7 @@ function escribirHoja(ws, { titulo, fechaIso, turno, filas, conOpl = false, cort
       const cell = row.getCell(i + 1);
       cell.value = v;
       cell.font = { name: 'Calibri', size: 11 };
+      if (i >= vals.length - 2) cell.alignment = { horizontal: 'center' };
       if (fill) cell.fill = fill;
     });
   });

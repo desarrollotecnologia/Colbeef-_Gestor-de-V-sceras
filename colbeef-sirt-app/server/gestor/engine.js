@@ -3335,8 +3335,11 @@ function corteAdicionalIso(fechaOp) {
 
 function filaPendienteADtoParticular(fila, corteIso = '') {
   const registro = String(fila[COL_REGISTRO_ASIGNACION] ?? '').trim();
+  const m = registro.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/);
   return {
     adicional: Boolean(corteIso && registro && registro >= corteIso),
+    fechaAsignacion: m ? `${m[3]}/${m[2]}/${m[1]}` : '',
+    horaAsignacion: m && m[4] ? `${m[4]}:${m[5]}` : '',
     codigo: String(fila[3] ?? '').trim(),
     propietario: String(fila[4] ?? '').trim(),
     subproducto: String(fila[7] ?? '').trim(),
