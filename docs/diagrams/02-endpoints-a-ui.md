@@ -9,7 +9,7 @@ Qué método del servidor alimenta cada parte de `gestor.html`. Los nombres sin 
 flowchart LR
   subgraph L["Backend (RPC o REST)"]
     direction TB
-    dash["getDashboardData({date}) · GET /api/dashboard<br/>meta, pendientes, antes 15:20, adicionales,<br/>incompletos, crudas, todosOPL, progresoOPL"]
+    dash["getDashboardData({date}) · GET /api/dashboard<br/>meta, pendientes, antes 15:30, adicionales,<br/>incompletos, crudas, todosOPL, progresoOPL"]
     deco["prepararModuloDecomisosDesdeSIRT · generarPDFDecomisos<br/>cruce decomisos SAI × programación"]
     desp["prepararModuloDespachosDesdeSIRT · getDetallesPuesto<br/>agrupa por puesto y tipo"]
     oplcfg["getOplConfig · upsertOpl · eliminarOpl<br/>/api/opl/config"]
@@ -26,7 +26,7 @@ flowchart LR
     direction TB
     t1["Tarjeta 1: En cava · Decomisos · Crudas<br/>Adicionales · Incompletos<br/>dashSalidas · dashDecomisos · dashCrudas<br/>dashAdicionales · dashIncompletos"]
     t2["Tarjeta 2: Progreso OPL (mini)<br/>dashOplMini → modal OPL (fecha del tablero)"]
-    t3["Tarjeta 3: Total juegos a despachar<br/>Antes 15:20 + Adic. = Total asignado<br/>dashDespachos · dashDespachados · dashAdicTotal · dashTotalJuegos"]
+    t3["Tarjeta 3: Total juegos a despachar<br/>Antes 15:30 + Adic. = Total asignado<br/>dashDespachos · dashDespachados · dashAdicTotal · dashTotalJuegos"]
     bar["Barra Progreso de la operación<br/>progresoBarra · progresoMeta"]
     minc["Modal Incompletos<br/>juegos que salieron sin las 4 piezas"]
     ui_deco["Módulo Decomisos<br/>tabla + PDF al historial"]

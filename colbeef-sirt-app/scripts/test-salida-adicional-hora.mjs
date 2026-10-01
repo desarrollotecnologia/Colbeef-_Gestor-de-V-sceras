@@ -1,5 +1,5 @@
 /**
- * Salidas ≥ 15:20 se marcan adicional; antes no.
+ * Salidas ≥ 15:30 se marcan adicional; antes no.
  * node scripts/test-salida-adicional-hora.mjs
  */
 import assert from 'assert';
@@ -10,10 +10,10 @@ import {
 } from '../server/gestor/engineUtils.js';
 import { despachoCavaRowToDto } from '../server/gestor/sirtSync.js';
 
-assert.strictEqual(getSalidaAdicionalCorteLabel(), '15:20');
-assert.deepStrictEqual(parseHoraDesdeCelda('2026-09-17T15:20:00'), { h: 15, m: 20 });
-assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:19:59'), false);
-assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:20:00'), true);
+assert.strictEqual(getSalidaAdicionalCorteLabel(), '15:30');
+assert.deepStrictEqual(parseHoraDesdeCelda('2026-09-17T15:30:00'), { h: 15, m: 30 });
+assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:29:59'), false);
+assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:30:00'), true);
 assert.strictEqual(esSalidaAdicionalPorHora('17/09/2026 16:05'), true);
 assert.strictEqual(esSalidaAdicionalPorHora('17/09/2026 12:00'), false);
 assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17'), false, 'sin hora no marca');

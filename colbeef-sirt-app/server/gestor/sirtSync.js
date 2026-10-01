@@ -274,7 +274,7 @@ export function estadoCavaRowToDto(fila) {
 
 /**
  * Matriz Despachos_Cavas / salidas de cava.
- * Con fechaOp y hora de asignación, adicional = salida asignada desde el corte (15:20) de ese día.
+ * Con fechaOp y hora de asignación, adicional = salida asignada desde el corte (15:30) de ese día.
  */
 export function despachoCavaRowToDto(fila, opts = {}) {
   const tipo = String(fila[7] ?? '').trim();

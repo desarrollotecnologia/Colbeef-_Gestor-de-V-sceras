@@ -79,7 +79,7 @@ export const ESTADO_PENDIENTE = 'Cerrado con pendientes';
  * Override: GESTOR_SALIDA_ADICIONAL_HORA / GESTOR_SALIDA_ADICIONAL_MINUTO.
  */
 export const SALIDA_ADICIONAL_DESDE_HORA = 15;
-export const SALIDA_ADICIONAL_DESDE_MINUTO = 20;
+export const SALIDA_ADICIONAL_DESDE_MINUTO = 30;
 
 /** Textos históricos de observación que identifican una VB como cruda. */
 export const CRUDAS_VALORES = [

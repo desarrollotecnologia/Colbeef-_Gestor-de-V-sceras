@@ -22,8 +22,8 @@ flowchart TD
   clas -->|"Tiene piezas en cava y ninguna salió hoy"| pend["Pendiente<br/>(incluye juegos partidos, p. ej. cabeza salió otro día)"]
 
   anim --> hora{"Hora de asignación"}
-  hora -->|"antes de 15:20"| antes["Antes del corte"]
-  hora -->|"desde 15:20"| adi["Adicional"]
+  hora -->|"antes de 15:30"| antes["Antes del corte"]
+  hora -->|"desde 15:30"| adi["Adicional"]
 
   desp --> meta
   inc --> meta
@@ -32,7 +32,7 @@ flowchart TD
 
   meta --> pct["Avance = (meta − pendientes) / meta<br/>máximo 99 % mientras quede algo en cava"]
   pend --> total["Total a despachar = pendientes (incluye adicionales)"]
-  antes --> linea["Antes 15:20 + Adicionales = Total asignado"]
+  antes --> linea["Antes 15:30 + Adicionales = Total asignado"]
   adi --> linea
 
   subgraph CR["Crudas"]
@@ -48,7 +48,7 @@ flowchart TD
 |---|---|
 | Día operativo | Va de las 4:00 del día elegido a las 4:00 del día siguiente (`GESTOR_DIA_OPERATIVO_CORTE_HORA`). |
 | Juego | Un animal con sus 4 piezas: Cabeza, Patas y Manos, Vísceras Blancas, Vísceras Rojas. |
-| Adicional | Juego cuya salida se **asignó** (registro de la programación en SIRT) desde las 15:20 del día (`GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). No importa la hora de salida física. Una vez adicional, queda adicional. |
+| Adicional | Juego cuya salida se **asignó** (registro de la programación en SIRT) desde las 15:30 del día (`GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). No importa la hora de salida física. Una vez adicional, queda adicional. |
 | Despachado | Las 4 piezas salieron de planta en el día operativo. Los traslados internos entre cavas no cuentan. |
 | Incompleto | Salió alguna pieza del animal en el día, pero no las 4. |
 | Pendiente | El animal tiene piezas asignadas que siguen en cava y ninguna salió hoy. Incluye juegos partidos (por ejemplo, la cabeza salió otro día y quedan las vísceras). |

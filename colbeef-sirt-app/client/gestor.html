@@ -433,7 +433,7 @@
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#1e3a5f;">➕ Adicionales</div>
               <div class="split-valor" id="dashAdicionales" style="font-size:1.4rem;color:#1e3a5f;">—</div>
-              <div class="split-sub" id="dashAdicionalesSub">Juegos asignados desde las 15:20 (no bajan el total a despachar)</div>
+              <div class="split-sub" id="dashAdicionalesSub">Juegos asignados desde las <span class="lbl-corte-adi">15:30</span> (no bajan el total a despachar)</div>
             </div>
             <div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid rgba(116,198,157,0.25);">
               <div class="split-label" style="font-size:0.7rem;color:#b45309;">⚠ Incompletos</div>
@@ -459,7 +459,7 @@
         <div class="resumen-valor" id="dashDespachos" style="color:#dc2626;">—</div>
         <div class="resumen-sub" id="dashDespTurno"></div>
         <div style="margin-top:0.45rem;font-size:0.82rem;color:#4b6358;">
-          Antes 15:20: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
+          Antes <span class="lbl-corte-adi">15:30</span>: <strong id="dashDespachados" style="color:#16a34a;">—</strong>
           + Adic.: <strong id="dashAdicTotal" style="color:#1e3a5f;">—</strong>
           = Total asignado: <strong id="dashTotalJuegos">—</strong>
         </div>
@@ -605,12 +605,12 @@
       <span class="search-count" id="searchCount"></span>
     </div>
     <details class="ux-collapsible" open>
-      <summary>Juegos asignados del día — normales vs adicionales (asignados ≥ 15:20)</summary>
+      <summary>Juegos asignados del día — normales vs adicionales (asignados ≥ <span class="lbl-corte-adi">15:30</span>)</summary>
       <div class="ux-collapsible-body">
         <div class="adicionales-panel">
-          <h4>Asignación de salidas · corte adicionales <span id="corteAdicionalLbl">15:20</span></h4>
+          <h4>Asignación de salidas · corte adicionales <span id="corteAdicionalLbl">15:30</span></h4>
           <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
-            Juegos del día según la <strong>hora en que se les asignó la salida</strong>: hasta las <strong>15:19</strong> = normal · desde las <strong>15:20</strong> = adicional.
+            Juegos del día según la <strong>hora en que se les asignó la salida</strong>: hasta las <strong class="lbl-corte-adi-prev">15:29</strong> = normal · desde las <strong class="lbl-corte-adi">15:30</strong> = adicional.
             El estado indica si el juego sigue en cava o ya salió de planta.
           </p>
           <div class="adicionales-kpis">
@@ -946,7 +946,7 @@
         Marca los OPLs que quieras como <strong>particulares</strong>. El Excel tendrá
         <strong>una hoja por OPL</strong> y solo lo <strong>pendiente</strong>
         (lo pistoleado se va quitando en cada descarga). Con <strong>todos</strong> marcados
-        se agrega la hoja <strong>General</strong>. Las asignadas desde las 15:20
+        se agrega la hoja <strong>General</strong>. Las asignadas desde las <span class="lbl-corte-adi">15:30</span>
         (adicionales) salen en <span style="background:#bdd7ee;padding:0 0.25rem;border-radius:3px;">azul</span>.
       </p>
       <div id="particularesLista" style="max-height:320px;overflow:auto;border:1px solid var(--vc);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:1rem;background:#f8fbff;">
@@ -1671,7 +1671,8 @@ function updateDashboard(data) {
     setText('dashAdicionales', data.totalJuegosAdicionales != null ? adiJuegos : '—');
     var adiSub = document.getElementById('dashAdicionalesSub');
     if (adiSub) {
-      var corte = data.corteAdicional || '15:20';
+      var corte = data.corteAdicional || '15:30';
+      actualizarEtiquetasCorteAdicional(corte);
       var antes = Number(data.totalJuegosAntesCorte || 0);
       var totalAsig = Number(data.totalJuegosSalidaDia || antes + adiJuegos);
       var adiSalidos = Number(data.totalAdicionalesSalidos || 0);
@@ -2006,7 +2007,16 @@ function cargarVistaSalidasCava() {
     .consultarSalidasCavaDesdeSIRT(leerFechaGlobal());
 }
 
-window._salidasFisicasCache = { filas: [], filtro: 'todas', corte: '15:20' };
+window._salidasFisicasCache = { filas: [], filtro: 'todas', corte: '15:30' };
+
+function actualizarEtiquetasCorteAdicional(corte) {
+  var m = String(corte || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return;
+  var mins = (Number(m[1]) * 60 + Number(m[2]) + 1439) % 1440;
+  var prev = String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0');
+  document.querySelectorAll('.lbl-corte-adi').forEach(function (el) { el.textContent = corte; });
+  document.querySelectorAll('.lbl-corte-adi-prev').forEach(function (el) { el.textContent = prev; });
+}
 
 function filtrarSalidasFisicas(modo) {
   window._salidasFisicasCache.filtro = modo || 'todas';
@@ -2032,7 +2042,7 @@ function renderTablaSalidasFisicas() {
     tbody.innerHTML =
       '<tr><td colspan="6" class="empty-state">' +
       (filtro === 'adicionales'
-        ? 'Sin juegos asignados desde las ' + (cache.corte || '15:20') + '.'
+        ? 'Sin juegos asignados desde las ' + (cache.corte || '15:30') + '.'
         : 'Sin juegos asignados para la fecha.') +
       '</td></tr>';
     return;
@@ -2042,7 +2052,7 @@ function renderTablaSalidasFisicas() {
     .map(function (f) {
       var badge = f.adicional
         ? '<span class="badge-adicional" title="Asignado desde las ' +
-          escapeHtml(cache.corte || '15:20') +
+          escapeHtml(cache.corte || '15:30') +
           '">adicional</span>'
         : '<span style="color:#64748b;font-size:0.72rem;">normal</span>';
       var estado =
@@ -2095,7 +2105,7 @@ function cargarVistaSalidasFisicas() {
         }
         return;
       }
-      var corte = res.corteAdicional || '15:20';
+      var corte = res.corteAdicional || '15:30';
       window._salidasFisicasCache = {
         filas: res.filas || [],
         filtro: (window._salidasFisicasCache && window._salidasFisicasCache.filtro) || 'todas',
@@ -2103,6 +2113,7 @@ function cargarVistaSalidasFisicas() {
       };
       var lbl = document.getElementById('corteAdicionalLbl');
       if (lbl) lbl.textContent = corte;
+      actualizarEtiquetasCorteAdicional(corte);
       var setKpi = function (id, v) {
         var el = document.getElementById(id);
         if (el) el.textContent = v;

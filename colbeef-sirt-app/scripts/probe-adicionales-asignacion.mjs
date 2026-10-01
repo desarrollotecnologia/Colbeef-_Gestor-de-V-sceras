@@ -1,7 +1,7 @@
 /**
- * Solo lectura: juegos asignados antes / después del corte 15:20 según la hora de
+ * Solo lectura: juegos asignados antes / después del corte 15:30 según la hora de
  * registro de la programación (ppel.fecha_registro + hora_registro).
- * node scripts/probe-adicionales-asignacion.mjs 2026-09-26 [15:20]
+ * node scripts/probe-adicionales-asignacion.mjs 2026-09-26 [15:30]
  */
 import pg from 'pg';
 import dotenv from 'dotenv';
@@ -12,7 +12,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const fecha = process.argv[2] || '2026-09-26';
-const corte = process.argv[3] || '15:20';
+const corte = process.argv[3] || '15:30';
 const TIPOS = ['Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas'];
 
 const client = new pg.Client({

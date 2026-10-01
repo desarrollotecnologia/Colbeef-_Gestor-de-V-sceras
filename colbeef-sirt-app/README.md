@@ -174,7 +174,7 @@ Sirve API y archivos estáticos desde `client/dist` en el mismo puerto (`SERVER_
 - `GET /api/crudas`: crudas asignadas al turno del día.
 - `GET /api/crudas/excel`: Excel con una hoja por OPL. Con `?modo=general` devuelve una sola hoja ordenada por OPL y puesto. Ambos llevan filtros y encabezados en verde; el total va en la cabecera `X-Crudas-Total`.
 - `GET /api/planilla`, `GET|POST /api/planilla/particulares`
-- `GET /api/planilla/excel-particulares`: una hoja por OPL, solo pendientes. Con `&general=1` (todos los OPL marcados) agrega de primera la hoja General. Cada fila trae fecha y hora de asignación; las asignadas desde las 15:20 van en azul claro.
+- `GET /api/planilla/excel-particulares`: una hoja por OPL, solo pendientes. Con `&general=1` (todos los OPL marcados) agrega de primera la hoja General. Cada fila trae fecha y hora de asignación; las asignadas desde las 15:30 van en azul claro.
 - `POST /api/adicionales`: carga del `.xlsx` de salidas adicionales.
 - `GET /api/historico/pdf`, `GET /api/historial/pdf/:id`
 - `GET /api/categorias`, `GET /api/export/resumen.xlsx`, `GET /api/export/resumen.pdf`
@@ -195,7 +195,7 @@ El gestor calcula el avance por operador logístico con **juegos completos** (4 
 | Pendientes | Animales con alguna pieza en cava y ninguna salida hoy. Incluye juegos partidos: si falta una pieza en cava, el animal sigue pendiente. |
 | Despachados | Juegos completos (4 tipos) con salida real en SIRT dentro del día operativo. |
 | Incompletos | Animales con alguna pieza salida hoy, pero no las 4. |
-| Adicionales | Asignaciones hechas a las 15:20 o después (`fecha_registro` + `hora_registro` de `ppel`; `GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). |
+| Adicionales | Asignaciones hechas a las 15:30 o después (`fecha_registro` + `hora_registro` de `ppel`; `GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). |
 | Meta del día | Máximo entre la meta congelada y `pendientes + despachados + incompletos`. Se guarda por fecha y turno (`oplBaselinesPorDia`, últimos 14 días), así que no baja al despachar ni al consultar otra fecha. |
 | Avance | `(meta − pendientes) / meta`. Se queda en 99 % mientras haya algo en cava. |
 | Crudas | VB con observación `CRUDAS` asignada al turno del día. La tarjeta, el módulo y los dos Excel usan el mismo criterio. |

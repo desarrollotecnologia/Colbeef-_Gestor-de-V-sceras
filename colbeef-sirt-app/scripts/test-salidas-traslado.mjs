@@ -1,7 +1,7 @@
 /**
  * Caso 26/09.
  * - Traslados internos entre cavas no son despacho.
- * - Adicional = juego cuya salida se ASIGNÓ desde las 15:20 (no la hora del pistoleo).
+ * - Adicional = juego cuya salida se ASIGNÓ desde las 15:30 (no la hora del pistoleo).
  * - Adicionales quedan fijos aunque salgan de planta.
  * node scripts/test-salidas-traslado.mjs
  */
@@ -66,7 +66,7 @@ const tc = pack.todosOPL.find((p) => p.opl === 'TRANSCARNES');
 assert.ok(tc);
 assert.strictEqual(tc.total, 5, 'meta sin doble conteo');
 assert.strictEqual(tc.asignadosAntes, 3, 'A, B, C');
-assert.strictEqual(tc.adicionales, 2, 'D y E asignados desde 15:20');
+assert.strictEqual(tc.adicionales, 2, 'D y E asignados desde 15:30');
 assert.strictEqual(tc.asignadosAntes + tc.adicionales, tc.total);
 assert.strictEqual(tc.despachados, 3, 'B, C, D salieron de planta; A es traslado');
 assert.strictEqual(tc.pendientes, 2, 'A y E en cava');

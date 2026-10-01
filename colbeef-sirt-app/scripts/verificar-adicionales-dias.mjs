@@ -2,7 +2,7 @@
  * Solo lectura. Compara por día:
  *  - motor del gestor (programados + salidas reales de SIRT)
  *  - conteo independiente sobre la programación (ppel.fecha_registro + hora_registro)
- *  - regla anterior (adicional = salida física ≥ 15:20)
+ *  - regla anterior (adicional = salida física ≥ 15:30)
  * node scripts/verificar-adicionales-dias.mjs 2026-09-13 2026-09-28
  */
 import dotenv from 'dotenv';
@@ -41,7 +41,7 @@ async function conteoIndependiente(fecha) {
     `
     SELECT COALESCE(NULLIF(TRIM(pp.identificacion), ''), pp.id_producto::text) AS codigo,
            TRIM(tpp.nombre) AS tipo,
-           (ppel.fecha_registro + ppel.hora_registro) >= ($1::date + TIME '15:20') AS adicional
+           (ppel.fecha_registro + ppel.hora_registro) >= ($1::date + TIME '15:30') AS adicional
     FROM trazabilidad_proceso.parte_producto_empresa_local ppel
     JOIN trazabilidad_proceso.parte_producto_empresa ppe ON ppe.id = ppel.id_parte_producto_empresa
     JOIN trazabilidad_proceso.parte_producto pp

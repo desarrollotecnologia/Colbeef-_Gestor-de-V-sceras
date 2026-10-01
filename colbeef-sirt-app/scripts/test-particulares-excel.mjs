@@ -39,7 +39,7 @@ const buffer = await buildExcelParticularesBuffer({
   turno: 'SxD',
   porOpl,
   general: true,
-  corteLabel: '15:20',
+  corteLabel: '15:30',
 });
 const destino = path.join(os.tmpdir(), 'Particulares_prueba.xlsx');
 fs.writeFileSync(destino, buffer);

@@ -37,14 +37,14 @@ const FILL_ADICIONAL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF
  * @param {string} [opts.turno]
  * @param {Record<string, Array<object>>} opts.porOpl  filas DTO por nombre OPL (orden de claves = orden de hojas)
  * @param {boolean} [opts.general]  agrega de primera la hoja "General" con todos los OPL
- * @param {string} [opts.corteLabel]  hora desde la que una asignación es adicional (p. ej. 15:20)
+ * @param {string} [opts.corteLabel]  hora desde la que una asignación es adicional (p. ej. 15:30)
  */
 export async function buildExcelParticularesBuffer({
   fechaIso,
   turno = '',
   porOpl = {},
   general = false,
-  corteLabel = '15:20',
+  corteLabel = '15:30',
 }) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Colbeef Gestor Vísceras';

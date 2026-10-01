@@ -15,8 +15,8 @@ flowchart TD
   clas -->|"Tiene piezas en cava y ninguna salió hoy"| pend["Pendiente<br/>(incluye juegos partidos, p. ej. cabeza salió otro día)"]
 
   anim --> hora{"Hora de asignación"}
-  hora -->|"antes de 15:20"| antes["Antes del corte"]
-  hora -->|"desde 15:20"| adi["Adicional"]
+  hora -->|"antes de 15:30"| antes["Antes del corte"]
+  hora -->|"desde 15:30"| adi["Adicional"]
 
   desp --> meta
   inc --> meta
@@ -25,7 +25,7 @@ flowchart TD
 
   meta --> pct["Avance = (meta − pendientes) / meta<br/>máximo 99 % mientras quede algo en cava"]
   pend --> total["Total a despachar = pendientes (incluye adicionales)"]
-  antes --> linea["Antes 15:20 + Adicionales = Total asignado"]
+  antes --> linea["Antes 15:30 + Adicionales = Total asignado"]
   adi --> linea
 
   subgraph CR["Crudas"]

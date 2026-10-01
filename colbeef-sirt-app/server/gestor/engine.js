@@ -1323,7 +1323,7 @@ const COL_REGISTRO_ASIGNACION = 13;
 
 /**
  * Juegos completos del día según la hora en que se les asignó la salida (registro de la
- * programación en SIRT): antes del corte 15:20 = despacho normal; desde el corte = adicional.
+ * programación en SIRT): antes del corte 15:30 = despacho normal; desde el corte = adicional.
  * La hora de salida física no interviene. Sin hora de registro → antes del corte.
  */
 function clasificarJuegosPorAsignacion(filas, { fechaOp, getClave, incluirBases = null }) {
@@ -1370,7 +1370,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
   const programadosEnPaquete = filasParaProgresoOpl(programadosBruto);
   const salidasTurno = filasDespachoTurnoOperacion(salidasRealesDelDia(s, fechaOp), turnoOp);
-  // Salidas del día: meta baseline + partición antes/después del corte 15:20.
+  // Salidas del día: meta baseline + partición antes/después del corte 15:30.
   const salidasDespacho = filasParaProgresoOpl(salidasTurno);
   actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
   const totalsFrozen = obtenerOplTotalsJuego(s);
@@ -3354,7 +3354,7 @@ function filaPendienteADtoParticular(fila, corteIso = '') {
 /**
  * Excel particulares: una hoja por OPL seleccionado, solo pendientes.
  * Con `general` agrega de primera una hoja con todos los OPL. Las filas asignadas
- * desde el corte de adicionales (15:20) van en azul.
+ * desde el corte de adicionales (15:30) van en azul.
  * Opcionalmente refresca SIRT con `range.date` / `range.from`.
  * @returns {{ success, buffer?, filename?, meta?, message? }}
  */
@@ -3887,7 +3887,7 @@ export async function consultarSalidasCavaDesdeSIRT(range) {
 }
 
 /**
- * Salidas físicas (fecha_salida) del día: normales vs adicionales (≥ 15:20).
+ * Salidas físicas (fecha_salida) del día: normales vs adicionales (≥ 15:30).
  */
 export async function consultarSalidasFisicasDesdeSIRT(range) {
   const filtro = normalizarRangoFechas(range || {});
@@ -3915,7 +3915,7 @@ export async function consultarSalidasFisicasDesdeSIRT(range) {
 }
 
 /**
- * Juegos asignados del día con su hora de asignación: normal (< 15:20) o adicional (≥ 15:20),
+ * Juegos asignados del día con su hora de asignación: normal (< 15:30) o adicional (≥ 15:30),
  * y si siguen en cava o ya salieron de planta.
  */
 export async function consultarJuegosAsignadosDelDia(range) {

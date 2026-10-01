@@ -34,9 +34,9 @@ En planta: **http://192.168.20.205:3001/gestor.html**
 ### Dashboard operativo
 
 - Campo **Fecha operación**: el tablero, la tarjeta OPL y el modal OPL muestran siempre esa fecha. Antes de las 4:00 el día operativo sigue siendo el anterior.
-- Tarjeta 1: **En cava**, **Decomisos**, **Crudas** (VB crudas del turno), **Adicionales** (asignados desde las 15:20) e **Incompletos** (salieron sin las 4 piezas; clic para ver el detalle).
+- Tarjeta 1: **En cava**, **Decomisos**, **Crudas** (VB crudas del turno), **Adicionales** (asignados desde las 15:30) e **Incompletos** (salieron sin las 4 piezas; clic para ver el detalle).
 - Tarjeta 2: **Progreso OPL** resumido; clic para abrir el modal con el detalle y la configuración.
-- Tarjeta 3: **Total juegos a despachar** (todo lo que sigue en cava, adicionales incluidos) y la línea **Antes 15:20 + Adic. = Total asignado**.
+- Tarjeta 3: **Total juegos a despachar** (todo lo que sigue en cava, adicionales incluidos) y la línea **Antes 15:30 + Adic. = Total asignado**.
 - Barra **Progreso de la operación** con la meta, lo salido, los incompletos y lo pendiente.
 - La meta de cada fecha queda **congelada**: no baja al despachar y no se pierde al consultar otra fecha.
 
@@ -73,7 +73,7 @@ En planta: **http://192.168.20.205:3001/gestor.html**
 - Consolidación de puestos por OPL, vista **por puesto** o **por zona**, y resumen general.
 - Configuración de plazas por puesto.
 - Exportación a PDF.
-- **Particulares**: se marcan OPL y se descarga un Excel multi-hoja solo con lo pendiente de los OPL elegidos. Con **Seleccionar todos** se agrega de primera la hoja **General** (todos los OPL, columna OPL, filtros, en orden de OPL). Todas las hojas traen **Fecha asignación** y **Hora asignación** (registro de la programación en SIRT). Las filas asignadas desde las 15:20 (adicionales) salen en azul claro, en la General y en la hoja de su OPL.
+- **Particulares**: se marcan OPL y se descarga un Excel multi-hoja solo con lo pendiente de los OPL elegidos. Con **Seleccionar todos** se agrega de primera la hoja **General** (todos los OPL, columna OPL, filtros, en orden de OPL). Todas las hojas traen **Fecha asignación** y **Hora asignación** (registro de la programación en SIRT). Las filas asignadas desde las 15:30 (adicionales) salen en azul claro, en la General y en la hoja de su OPL.
 
 ### Informe laboral
 
@@ -183,7 +183,7 @@ Colbeef-_Gestor-de-V-sceras/
     │   ├── gestorDb.js      # pool MySQL propio
     │   ├── gestor/
     │   │   ├── engine.js            # reglas de negocio
-    │   │   ├── engineUtils.js       # fechas, día operativo, corte 15:20, turnos
+    │   │   ├── engineUtils.js       # fechas, día operativo, corte 15:30, turnos
     │   │   ├── constants.js         # tipos de pieza, cavas de despacho, turnos, OPL
     │   │   ├── sirtSync.js          # consultas SIRT
     │   │   ├── store.js             # estado + metas congeladas por fecha
@@ -252,7 +252,7 @@ Complete `.env` con los datos del entorno. **No publique este archivo en Git.**
 | Variable | Descripción | Predeterminado |
 |---|---|---|
 | `GESTOR_DIA_OPERATIVO_CORTE_HORA` | Hora en que empieza el día operativo | `4` |
-| `GESTOR_SALIDA_ADICIONAL_HORA` / `_MINUTO` | Corte de adicionales por hora de asignación | `15` / `20` |
+| `GESTOR_SALIDA_ADICIONAL_HORA` / `_MINUTO` | Corte de adicionales por hora de asignación | `15` / `30` |
 | `GESTOR_CAVA_DESPACHO` | Cavas cuyo pistoleo cuenta como despacho (lista o prefijo) | `Cava Paquete Visceral,Despacho contenedor paquete visceral` |
 | `SIRT_DESPACHOS_FUENTE` | `programado` · `erp` · `riel` | `programado` |
 | `SIRT_PROGRAMACION_MODO` | `fecha` (programación exacta del día) o `isodow` | `fecha` |
@@ -332,7 +332,7 @@ Un juego es un animal con sus cuatro piezas: **Cabeza**, **Patas y manos**, **V�
 
 ### Adicionales
 
-- Un juego es **adicional** si su salida se **asignó** en SIRT (registro de la programación) **desde las 15:20** del día.
+- Un juego es **adicional** si su salida se **asignó** en SIRT (registro de la programación) **desde las 15:30** del día.
 - La hora de salida física no interviene. Una vez adicional, queda adicional.
 - Los adicionales **no bajan** el total a despachar: siguen contando mientras estén en cava.
 

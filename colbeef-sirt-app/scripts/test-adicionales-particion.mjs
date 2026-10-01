@@ -7,8 +7,8 @@ import assert from 'assert';
 import { esSalidaAdicionalPorHora } from '../server/gestor/engineUtils.js';
 import { construirProgresoOplDesdeDespachos, GESTOR_BUILD } from '../server/gestor/engine.js';
 
-assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:19:00'), false);
-assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:20:00'), true);
+assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:29:00'), false);
+assert.strictEqual(esSalidaAdicionalPorHora('2026-09-17T15:30:00'), true);
 assert.ok(
   String(GESTOR_BUILD).includes('v24') ||
     String(GESTOR_BUILD).includes('v25') ||
@@ -61,8 +61,8 @@ const programados = [
 
 const salidas = [
   ...piezas('2609-010', '2026-09-17T14:00:00', TIPOS),
-  ...piezas('2609-011', '2026-09-17T15:19:00', TIPOS),
-  ...piezas('2609-012', '2026-09-17T15:20:00', TIPOS),
+  ...piezas('2609-011', '2026-09-17T15:29:00', TIPOS),
+  ...piezas('2609-012', '2026-09-17T15:30:00', TIPOS),
   ...piezas('2609-013', '2026-09-17T16:05:00', TIPOS),
   // incompleto: falta Patas (como el caso 23/09)
   ...piezas('2609-08186', '2026-09-17T20:01:00', [
@@ -95,7 +95,7 @@ assert.deepStrictEqual(pack.salidasIncompletas[0].tiposFaltantes, ['Patas y Mano
 const tc = pack.todosOPL.find((p) => p.opl === 'TRANSCARNES');
 assert.ok(tc);
 assert.strictEqual(tc.despachados, 4, 'todos los juegos completos que salieron');
-assert.strictEqual(tc.adicionales, 0, 'sin hora de asignación ≥ 15:20 no hay adicionales');
+assert.strictEqual(tc.adicionales, 0, 'sin hora de asignación ≥ 15:30 no hay adicionales');
 assert.strictEqual(tc.asignadosAntes, 7, '3 en cava + 4 salidos');
 assert.strictEqual(tc.incompletos, 1);
 // 3 aún en cava programados → pendientes = 3 (incompleto NO cuelga)

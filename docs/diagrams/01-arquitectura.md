@@ -16,7 +16,7 @@ flowchart TB
     rpc["gestor/rpc.js<br/>métodos permitidos por RPC"]
     subgraph MOTOR["Motor del gestor"]
       eng["gestor/engine.js<br/>tablero · OPL · adicionales · incompletos<br/>decomisos · despachos · crudas · planilla"]
-      utils["engineUtils.js · constants.js<br/>día operativo 4:00 · corte 15:20 · turnos"]
+      utils["engineUtils.js · constants.js<br/>día operativo 4:00 · corte 15:30 · turnos"]
       sync["gestor/sirtSync.js<br/>SQL parametrizado → matrices del motor"]
     end
     subgraph SALIDAS["Generación de archivos"]

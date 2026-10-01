@@ -449,10 +449,10 @@ export function addDaysIsoLocal(iso, delta) {
   return fechaIsoLocalDesdeDate(d);
 }
 
-/** Hora/minuto desde los que una salida física cuenta como adicional (15:20 por defecto). */
+/** Hora/minuto desde los que una salida física cuenta como adicional (15:30 por defecto). */
 export function getSalidaAdicionalCorte() {
   const horaDef = 15;
-  const minDef = 20;
+  const minDef = 30;
   let hora = Number(process.env.GESTOR_SALIDA_ADICIONAL_HORA);
   let minuto = Number(process.env.GESTOR_SALIDA_ADICIONAL_MINUTO);
   if (!Number.isFinite(hora)) hora = horaDef;
@@ -482,7 +482,7 @@ export function parseHoraDesdeCelda(celda) {
 }
 
 /**
- * Salida física adicional: fecha_salida con hora >= corte (por defecto 15:20).
+ * Salida física adicional: fecha_salida con hora >= corte (por defecto 15:30).
  * Sin hora en la celda → no se marca adicional.
  */
 export function esSalidaAdicionalPorHora(celda, corte = getSalidaAdicionalCorte()) {
@@ -494,7 +494,7 @@ export function esSalidaAdicionalPorHora(celda, corte = getSalidaAdicionalCorte(
 /**
  * Minutos desde las 00:00 del día operativo; -1 sin hora.
  * La madrugada (antes del corte del día operativo) pertenece al día anterior,
- * así que 00:34 vale 24:34 y queda después de las 15:20.
+ * así que 00:34 vale 24:34 y queda después de las 15:30.
  */
 export function minutosOperativosDesdeCelda(celda, corteDiaHora = getDiaOperativoCorteHora()) {
   const hm = parseHoraDesdeCelda(celda);
