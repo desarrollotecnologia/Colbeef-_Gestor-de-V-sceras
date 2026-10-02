@@ -7,7 +7,7 @@ Cómo salen los números del tablero y del modal OPL (`construirProgresoOplDesde
 ```mermaid
 flowchart TD
   subgraph SIRT["SIRT (fecha de operación elegida)"]
-    prog["Programación del día<br/>ppel.fecha_programacion_despacho = fecha<br/>ppel.fecha_registro + hora_registro = hora de asignación"]
+    prog["Programación del día<br/>ppel.fecha_programacion_despacho = fecha<br/>hora de asignación = primera programación para la fecha<br/>(auditoría a_parte_producto_empresa_local)"]
     cava["Movimientos de cava<br/>último movimiento abierto = sigue en cava"]
     sal["Salidas del día operativo<br/>fecha_salida entre fecha 4:00 y fecha+1 4:00"]
   end
@@ -48,7 +48,7 @@ flowchart TD
 |---|---|
 | Día operativo | Va de las 4:00 del día elegido a las 4:00 del día siguiente (`GESTOR_DIA_OPERATIVO_CORTE_HORA`). |
 | Juego | Un animal con sus 4 piezas: Cabeza, Patas y Manos, Vísceras Blancas, Vísceras Rojas. |
-| Adicional | Juego cuya salida se **asignó** (registro de la programación en SIRT) desde las 15:30 del día (`GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). No importa la hora de salida física. Una vez adicional, queda adicional. |
+| Adicional | Juego cuya salida se **asignó** desde las 15:30. Cuenta la primera vez que la pieza quedó programada para esa fecha (auditoría de SIRT): editar el puesto u otro dato después del corte no la vuelve adicional del día (`GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). No importa la hora de salida física. Una vez adicional, queda adicional. |
 | Despachado | Las 4 piezas salieron de planta en el día operativo. Los traslados internos entre cavas no cuentan. |
 | Incompleto | Salió alguna pieza del animal en el día, pero no las 4. |
 | Pendiente | El animal tiene piezas asignadas que siguen en cava y ninguna salió hoy. Incluye juegos partidos (por ejemplo, la cabeza salió otro día y quedan las vísceras). |

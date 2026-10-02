@@ -1,6 +1,6 @@
 flowchart TD
   subgraph SIRT["SIRT (fecha de operación elegida)"]
-    prog["Programación del día<br/>ppel.fecha_programacion_despacho = fecha<br/>ppel.fecha_registro + hora_registro = hora de asignación"]
+    prog["Programación del día<br/>ppel.fecha_programacion_despacho = fecha<br/>hora de asignación = primera programación para la fecha<br/>(auditoría a_parte_producto_empresa_local)"]
     cava["Movimientos de cava<br/>último movimiento abierto = sigue en cava"]
     sal["Salidas del día operativo<br/>fecha_salida entre fecha 4:00 y fecha+1 4:00"]
   end

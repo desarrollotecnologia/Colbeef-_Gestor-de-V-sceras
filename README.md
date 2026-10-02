@@ -51,7 +51,7 @@ En planta: **http://192.168.20.205:3001/gestor.html**
 - Carga y proceso de la programación del turno desde SIRT.
 - Tabla por puesto con Cabeza, Patas y manos, Vísceras blancas y Vísceras rojas; juegos completos e incompletos.
 - Modal de detalle por puesto (propietario, decomisos).
-- Panel **Juegos asignados del día**: normales vs adicionales según la hora de asignación, con estado (en cava / salió).
+- Panel **Juegos asignados del día**: normales vs adicionales según la hora de asignación, con estado (en cava / salió). La hora de asignación es la **primera** vez que la pieza quedó programada para ese día, tomada de la auditoría de SIRT: cambiar el puesto u otro dato después del corte no convierte un juego normal en adicional.
 - Detalle línea a línea de la programación SIRT con exportación CSV.
 
 ### Progreso OPL
@@ -253,6 +253,8 @@ Complete `.env` con los datos del entorno. **No publique este archivo en Git.**
 |---|---|---|
 | `GESTOR_DIA_OPERATIVO_CORTE_HORA` | Hora en que empieza el día operativo | `4` |
 | `GESTOR_SALIDA_ADICIONAL_HORA` / `_MINUTO` | Corte de adicionales por hora de asignación | `15` / `30` |
+| `GESTOR_ADICIONAL_POR_PRIMERA_PROGRAMACION` | Hora de asignación = primera vez que la pieza quedó programada para la fecha (auditoría SIRT); editar después del corte no la vuelve adicional | `true` |
+| `GESTOR_AUDITORIA_VENTANA_CAMBIOS` | Últimos cambios de la auditoría que se revisan (≈ 2 meses) | `400000` |
 | `GESTOR_CAVA_DESPACHO` | Cavas cuyo pistoleo cuenta como despacho (lista o prefijo) | `Cava Paquete Visceral,Despacho contenedor paquete visceral` |
 | `SIRT_DESPACHOS_FUENTE` | `programado` · `erp` · `riel` | `programado` |
 | `SIRT_PROGRAMACION_MODO` | `fecha` (programación exacta del día) o `isodow` | `fecha` |

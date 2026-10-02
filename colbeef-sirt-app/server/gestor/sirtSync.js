@@ -521,6 +521,73 @@ export async function consultarDecomisosDesdeSirt(range = {}) {
 }
 
 /**
+ * SIRT sobrescribe fecha_registro/hora_registro de la programación cada vez que se edita
+ * (p. ej. cambio de puesto), así que una programación normal editada tarde parecería
+ * adicional. La auditoría (a_parte_producto_empresa_local) guarda cada versión: la hora
+ * real de asignación es la primera vez que la pieza quedó programada para esa fecha.
+ * La tabla no tiene índice por id, así que se acota a los últimos cambios vía id_a (pk).
+ */
+const AUDITORIA_VENTANA_CAMBIOS = Math.max(
+  10000,
+  Number(process.env.GESTOR_AUDITORIA_VENTANA_CAMBIOS || 400000)
+);
+const cachePrimeraProgramacion = new Map();
+let auditoriaSinPermiso = false;
+
+function auditoriaPrimeraProgramacionActiva() {
+  return (
+    !auditoriaSinPermiso &&
+    String(process.env.GESTOR_ADICIONAL_POR_PRIMERA_PROGRAMACION ?? 'true').toLowerCase() !== 'false'
+  );
+}
+
+async function ajustarRegistroAsignacionPorAuditoria(rows) {
+  if (!rows?.length || !auditoriaPrimeraProgramacionActiva()) return rows;
+  const { hora, minuto } = getSalidaAdicionalCorte();
+  const hhmm = `${String(hora).padStart(2, '0')}:${String(minuto).padStart(2, '0')}:00`;
+  const aCorregir = [];
+  const pendientes = new Map();
+  for (const r of rows) {
+    if (!r.id_ppel || !r.fecha_prog_iso || !r.registro_asignacion) continue;
+    const reg = r.registro_asignacion instanceof Date ? r.registro_asignacion : new Date(r.registro_asignacion);
+    if (Number.isNaN(reg.getTime()) || reg < new Date(`${r.fecha_prog_iso}T${hhmm}`)) continue;
+    const k = `${r.id_ppel}|${r.fecha_prog_iso}`;
+    aCorregir.push({ r, reg, k });
+    if (!cachePrimeraProgramacion.has(k)) pendientes.set(k, [Number(r.id_ppel), r.fecha_prog_iso]);
+  }
+  if (pendientes.size) {
+    try {
+      const lista = [...pendientes.values()];
+      const { rows: hist } = await query(
+        `SELECT a.id, a.fecha_programacion_despacho::date::text AS fecha,
+                MIN(a.fecha + a.hora::time) AS primera
+           FROM a_trazabilidad_proceso.a_parte_producto_empresa_local a
+          WHERE a.id_a > (SELECT MAX(id_a) FROM a_trazabilidad_proceso.a_parte_producto_empresa_local) - $3::int
+            AND (a.id, a.fecha_programacion_despacho::date) IN (
+              SELECT * FROM unnest($1::int[], $2::date[])
+            )
+          GROUP BY 1, 2`,
+        [lista.map((x) => x[0]), lista.map((x) => x[1]), AUDITORIA_VENTANA_CAMBIOS]
+      );
+      if (cachePrimeraProgramacion.size > 50000) cachePrimeraProgramacion.clear();
+      pendientes.forEach((_, k) => cachePrimeraProgramacion.set(k, null));
+      hist.forEach((h) => {
+        cachePrimeraProgramacion.set(`${h.id}|${h.fecha}`, h.primera ? new Date(h.primera) : null);
+      });
+    } catch (e) {
+      if (e?.code === '42501' || e?.code === '42P01') auditoriaSinPermiso = true;
+      console.warn('[sirtSync] auditoría de programación no disponible:', e?.message || e);
+      return rows;
+    }
+  }
+  for (const { r, reg, k } of aCorregir) {
+    const primera = cachePrimeraProgramacion.get(k);
+    if (primera && primera < reg) r.registro_asignacion = primera;
+  }
+  return rows;
+}
+
+/**
  * Salida física cava–riel (fecha_salida ya registrada en SIRT).
  * Fuente alternativa: SIRT_DESPACHOS_FUENTE=riel
  *
@@ -563,7 +630,9 @@ export async function fetchDespachosCavaRielRows(range = {}) {
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
       ${SQL_PUESTO_LOGISTICO} AS puesto_turno,
-      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion
+      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion,
+      ppel.id AS id_ppel,
+      ppel.fecha_programacion_despacho::date::text AS fecha_prog_iso
     ${SQL_CAVA_FROM}
     LEFT JOIN trazabilidad_proceso.cava c
       ON c.id = ppcr.id_cava
@@ -584,6 +653,7 @@ export async function fetchDespachosCavaRielRows(range = {}) {
   const params = [SALIDAS_CAVA_LOOKBACK_DAYS, from, to, fechaOp, corte];
   if (modo === 'isodow') params.push(PROGRAMACION_REZAGO_DAYS);
   const { rows } = await query(sql, params);
+  await ajustarRegistroAsignacionPorAuditoria(rows);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r, { fechaSalida: true }));
 }
 
@@ -623,7 +693,9 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
       COALESCE(pp.observaciones, '')::text AS observaciones,
       COALESCE(c.nombre, 'Cava Principal')::text AS cava_nombre,
       ${SQL_PUESTO_LOGISTICO} AS puesto_turno,
-      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion
+      (ppel.fecha_registro + ppel.hora_registro) AS registro_asignacion,
+      ppel.id AS id_ppel,
+      ppel.fecha_programacion_despacho::date::text AS fecha_prog_iso
     FROM trazabilidad_proceso.parte_producto_cava_riel ppcr
     JOIN trazabilidad_proceso.parte_producto pp
       ON pp.id = ppcr.id_parte_producto
@@ -657,6 +729,7 @@ async function fetchDespachosProgramadosCavaRows(range = {}) {
   const params = [fechaOp];
   if (modo === 'isodow') params.push(PROGRAMACION_REZAGO_DAYS);
   const { rows } = await query(sql, params);
+  await ajustarRegistroAsignacionPorAuditoria(rows);
   return rows.map((r) => mapFilaDespachoCavaMatrix(r));
 }
 

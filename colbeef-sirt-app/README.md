@@ -195,7 +195,7 @@ El gestor calcula el avance por operador logístico con **juegos completos** (4 
 | Pendientes | Animales con alguna pieza en cava y ninguna salida hoy. Incluye juegos partidos: si falta una pieza en cava, el animal sigue pendiente. |
 | Despachados | Juegos completos (4 tipos) con salida real en SIRT dentro del día operativo. |
 | Incompletos | Animales con alguna pieza salida hoy, pero no las 4. |
-| Adicionales | Asignaciones hechas a las 15:30 o después (`fecha_registro` + `hora_registro` de `ppel`; `GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). |
+| Adicionales | Asignaciones hechas a las 15:30 o después (`GESTOR_SALIDA_ADICIONAL_HORA/MINUTO`). La hora es la primera vez que la pieza quedó programada para esa fecha según la auditoría `a_trazabilidad_proceso.a_parte_producto_empresa_local`, porque SIRT sobrescribe `fecha_registro` + `hora_registro` de `ppel` en cada edición. Se desactiva con `GESTOR_ADICIONAL_POR_PRIMERA_PROGRAMACION=false`. |
 | Meta del día | Máximo entre la meta congelada y `pendientes + despachados + incompletos`. Se guarda por fecha y turno (`oplBaselinesPorDia`, últimos 14 días), así que no baja al despachar ni al consultar otra fecha. |
 | Avance | `(meta − pendientes) / meta`. Se queda en 99 % mientras haya algo en cava. |
 | Crudas | VB con observación `CRUDAS` asignada al turno del día. La tarjeta, el módulo y los dos Excel usan el mismo criterio. |
