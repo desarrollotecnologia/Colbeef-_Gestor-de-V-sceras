@@ -426,32 +426,6 @@ function contarJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
   return conteo;
 }
 
-/** Bases de animal con juego completo por clave OPL (para baseline congelado). */
-function agruparJuegosCompletosPorClave(rows, cols, getClave, turno = '') {
-  const grupos = {};
-  (rows || []).forEach((fila) => {
-    const id = String(fila[cols.id] ?? '').trim();
-    const tipo = String(fila[cols.tipo] ?? '').trim();
-    const puesto = cols.puesto !== undefined ? String(fila[cols.puesto] ?? '').trim() : '';
-    if (!id || !TIPOS_PRODUCTO.includes(tipo)) return;
-    if (turno && puesto && !puesto.includes(turno)) return;
-    const base = codigoBase(id);
-    if (!base) return;
-    const clave = String(getClave(fila) || '').trim();
-    if (!clave) return;
-    if (!grupos[clave]) grupos[clave] = {};
-    if (!grupos[clave][base]) grupos[clave][base] = new Set();
-    grupos[clave][base].add(tipo);
-  });
-  const sets = {};
-  Object.keys(grupos).forEach((clave) => {
-    sets[clave] = new Set(
-      Object.keys(grupos[clave]).filter((base) => tieneJuegoCompleto(grupos[clave][base]))
-    );
-  });
-  return sets;
-}
-
 export { contarJuegosCompletosPorClave, construirResumenDespachosDesdeFilas };
 
 /** Agrupa subproductos únicos (animal+tipo) por clave OPL / propietario. */
@@ -1083,44 +1057,6 @@ function limpiarOplTotalsJuego(s) {
   delete s.oplTotalsSubproducto;
 }
 
-/**
- * Congela meta OPL del turno:
- * - total: animales con ≥1 pieza en Paquete Visceral (incluye incompletos)
- * - completo: juegos con las 4 piezas (base para despachados reales)
- */
-function actualizarBaselineOplJuegosSync(s, turno, programadosTurno, salidasDelDia) {
-  asegurarBaselineOplDelDia(s, s.lastSyncRange?.from, turno);
-  const totals = obtenerOplTotalsJuego(s);
-  const totalsComplete = obtenerOplTotalsJuegoCompleto(s);
-  const mapaOPL = cargarMapaOPL(s);
-  const claveOpl = (fila) => claveOplDesdeFila(fila, mapaOPL);
-  const progPaquete = filasParaProgresoOpl(programadosTurno || []);
-  const salPaquete = filasParaProgresoOpl(salidasDelDia || []);
-  const progSet = agruparAnimalesConPiezasPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
-  const salSet = agruparAnimalesConPiezasPorClave(salPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
-  const progComplete = agruparJuegosCompletosPorClave(progPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
-  const salComplete = agruparJuegosCompletosPorClave(salPaquete, COLS_DESPACHO_CAVA, claveOpl, '');
-
-  const opls = new Set([
-    ...Object.keys(progSet),
-    ...Object.keys(salSet),
-    ...Object.keys(progComplete),
-    ...Object.keys(salComplete),
-    ...Object.keys(totals),
-    ...Object.keys(totalsComplete),
-  ]);
-  opls.forEach((opl) => {
-    const unionAny = new Set([...(progSet[opl] || []), ...(salSet[opl] || [])]);
-    if (unionAny.size > 0) {
-      totals[opl] = Math.max(Number(totals[opl] || 0), unionAny.size);
-    }
-    const unionComplete = new Set([...(progComplete[opl] || []), ...(salComplete[opl] || [])]);
-    if (unionComplete.size > 0) {
-      totalsComplete[opl] = Math.max(Number(totalsComplete[opl] || 0), unionComplete.size);
-    }
-  });
-}
-
 /** Conserva el máximo de juegos vistos por propietario durante la operación. */
 function actualizarBaselineOplDesdeDespachosSync(s, turno) {
   asegurarBaselineOplDelDia(s, s.lastSyncRange?.from);
@@ -1370,11 +1306,7 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   const programadosBruto = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp);
   const programadosEnPaquete = filasParaProgresoOpl(programadosBruto);
   const salidasTurno = filasDespachoTurnoOperacion(salidasRealesDelDia(s, fechaOp), turnoOp);
-  // Salidas del día: meta baseline + partición antes/después del corte 15:30.
   const salidasDespacho = filasParaProgresoOpl(salidasTurno);
-  actualizarBaselineOplJuegosSync(s, turnoOp, programadosBruto, salidasDespacho);
-  const totalsFrozen = obtenerOplTotalsJuego(s);
-  const totalsCompleteFrozen = obtenerOplTotalsJuegoCompleto(s);
 
   // Pendientes = animales con piezas asignadas que siguen en cava, estén las 4 o no
   // (p. ej. la cabeza salió otro día y quedan VB/VR/patas). Si alguna pieza salió hoy,
@@ -1407,8 +1339,6 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
   });
 
   const opls = new Set([
-    ...Object.keys(totalsFrozen),
-    ...Object.keys(totalsCompleteFrozen),
     ...Object.keys(pendSets),
     ...Object.keys(salAntesOpl),
     ...Object.keys(salAdiOpl),
@@ -1428,18 +1358,11 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     const adiSet = asig.adicionales[opl] || new Set();
     const antesSet = asig.antes[opl] || new Set();
     const adicionalesPendientes = [...pendSet].filter((b) => adiSet.has(b)).length;
-    // Meta = juegos completos del turno (no inflar con incompletos sueltos).
-    const totalMeta = Math.max(
-      Number(totalsCompleteFrozen[opl] || 0),
-      Number(totalsFrozen[opl] || 0),
-      pendComplete + salidos + inc
-    );
+    // Meta = juegos asignados hoy en SIRT (antes del corte + adicionales), recalculada en
+    // cada consulta: congelar el máximo visto dejaba juegos que SIRT ya había quitado o que
+    // se contaron con datos de otra fecha, y Antes + Adic. no cuadraba con el total.
+    const totalMeta = Math.max(antesSet.size + adiSet.size, pendComplete + salidos);
     if (totalMeta <= 0) return;
-    totalsFrozen[opl] = Math.max(Number(totalsFrozen[opl] || 0), totalMeta);
-    totalsCompleteFrozen[opl] = Math.max(
-      Number(totalsCompleteFrozen[opl] || 0),
-      pendComplete + salidos
-    );
     const despachados = Math.min(salidos, totalMeta);
     // Pendientes = solo lo que sigue en cava (incompletos ya salidos no quedan “colgados”).
     const pendientes = pendComplete;
@@ -1462,7 +1385,6 @@ export function construirProgresoOplDesdeDespachos(s, turno, fecha) {
     todosOPL.push(item);
     if (pendientes > 0) progreso.push(item);
   });
-  guardarBaselineOplActual(s);
 
   todosOPL.sort((a, b) => b.pendientes - a.pendientes || b.total - a.total || a.opl.localeCompare(b.opl));
   progreso.sort((a, b) => b.pendientes - a.pendientes || a.opl.localeCompare(b.opl));
@@ -2018,13 +1940,12 @@ export async function getDashboardData(range) {
       const adicionalesPendientes = Number(oplLive.totalAdicionalesPendientes || 0);
       const salidosDia = Number(oplLive.totalDespachados || 0);
       const despachados = asignadosAntes;
-      // Meta del día.
-      const juegosEnCava = Math.max(
-        Number(kpiFrozen.totalJuegos || 0),
-        Number(rd.totalJuegos || 0),
-        Number(oplLive.totalJuegos || 0),
-        asignadosAntes + adicionalesAsig
-      );
+      // Meta del día = Antes del corte + Adicionales, para que el tablero siempre cuadre.
+      const totalAsignado = asignadosAntes + adicionalesAsig;
+      const juegosEnCava =
+        totalAsignado > 0
+          ? totalAsignado
+          : Math.max(Number(kpiFrozen.totalJuegos || 0), Number(rd.totalJuegos || 0));
       // Total a despachar = todo lo que sigue en cava (asignados antes del corte + adicionales).
       const pendientesTodos = Math.max(0, Number(oplLive.totalPendientes ?? 0));
       const pendientes = pendientesTodos;

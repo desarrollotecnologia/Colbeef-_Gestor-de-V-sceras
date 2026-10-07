@@ -60,7 +60,7 @@ const pack = construirProgresoOplDesdeDespachos(
 );
 const row = pack.todosOPL.find((p) => p.opl === opl);
 assert.ok(row, 'OPL presente');
-assert.strictEqual(row.total, 3, 'TOTAL congelado 3');
+assert.strictEqual(row.total, 3, 'TOTAL = 2 salidos + 1 en cava');
 assert.strictEqual(row.despachados, 2, '2 salidas paquete visceral 1 y 2');
 assert.strictEqual(row.pendientes, 1, 'PENDIENTES = TOTAL − DESPACHADOS');
 assert.strictEqual(row.total, row.despachados + row.pendientes, 'desp + pend = total');
@@ -85,12 +85,13 @@ const packSinSalidaReal = construirProgresoOplDesdeDespachos(
 );
 const row3 = packSinSalidaReal.todosOPL.find((p) => p.opl === opl);
 assert.ok(row3);
-assert.strictEqual(row3.total, 103, 'TOTAL se mantiene en 103');
-assert.strictEqual(row3.despachados, 102, '102 ya salieron de cava; 1 sigue');
+// Una meta congelada vieja (103) no infla el total: manda lo que SIRT tiene asignado hoy.
+assert.strictEqual(row3.total, 1, 'TOTAL = asignados vivos, ignora meta congelada');
+assert.strictEqual(row3.despachados, 0, 'sin salidas reales no hay despachados');
 assert.strictEqual(row3.pendientes, 1);
-assert.strictEqual(row3.progreso, 99);
+assert.strictEqual(row3.progreso, 0);
 
-// Con despachados parciales: TOTAL fijo, pendientes = total − desp
+// Con despachados parciales: total = despachados + pendientes
 const salidas25 = juego(animalSalido).map((f) => {
   const c = f.slice();
   c[0] = '2026-08-25T12:00:00';
@@ -115,8 +116,8 @@ const packParcial = construirProgresoOplDesdeDespachos(
 );
 const rowP = packParcial.todosOPL.find((p) => p.opl === opl);
 assert.ok(rowP);
-assert.strictEqual(rowP.total, 103);
-assert.strictEqual(rowP.despachados, 102, 'meta completa 103 − 1 en cava = 102 despachados');
+assert.strictEqual(rowP.total, 2, '1 salido + 1 en cava, no la meta vieja de 103');
+assert.strictEqual(rowP.despachados, 1, 'solo cuenta la salida real del día');
 assert.strictEqual(rowP.pendientes, 1, '1 juego sigue en cava');
 assert.strictEqual(rowP.despachados + rowP.pendientes, rowP.total);
 

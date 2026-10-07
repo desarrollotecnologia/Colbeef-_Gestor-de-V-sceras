@@ -11,7 +11,7 @@ flowchart TD
   C --> D["El tablero consulta SIRT en vivo<br/>y detecta el turno (LxM, MxM, …)"]
 
   D --> E["Dashboard"]
-  E --> E1["Meta del día congelada<br/>Antes 15:30 + Adicionales = Total asignado"]
+  E --> E1["Meta del día desde SIRT<br/>Antes 15:30 + Adicionales = Total asignado"]
   E --> E2["Total a despachar = juegos aún en cava"]
   E --> E3["Progreso general y por OPL"]
 
@@ -65,4 +65,4 @@ flowchart TD
 8. **Planilla**: procesar, configurar plazas si hace falta, exportar PDF y Excel de particulares.
 9. **Informe laboral**: completar y generar el PNG.
 
-Para revisar un día anterior basta con cambiar la fecha: su meta congelada se conserva y no afecta la del día en curso.
+Para revisar un día anterior basta con cambiar la fecha: su meta se recalcula desde SIRT y no afecta la del día en curso.

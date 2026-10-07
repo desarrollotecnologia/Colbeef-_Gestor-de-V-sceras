@@ -38,7 +38,7 @@ En planta: **http://192.168.20.205:3001/gestor.html**
 - Tarjeta 2: **Progreso OPL** resumido; clic para abrir el modal con el detalle y la configuración.
 - Tarjeta 3: **Total juegos a despachar** (todo lo que sigue en cava, adicionales incluidos) y la línea **Antes 15:30 + Adic. = Total asignado**.
 - Barra **Progreso de la operación** con la meta, lo salido, los incompletos y lo pendiente.
-- La meta de cada fecha queda **congelada**: no baja al despachar y no se pierde al consultar otra fecha.
+- La meta del día es siempre **Antes 15:30 + Adicionales**, recalculada con lo que SIRT tiene asignado en cada consulta: no baja al despachar y, si SIRT quita una programación, deja de contarla.
 
 ### Decomisos
 
@@ -345,18 +345,19 @@ Un juego es un animal con sus cuatro piezas: **Cabeza**, **Patas y manos**, **V�
 | Despachado | Las 4 piezas salieron de planta en el día operativo (los traslados internos no cuentan) |
 | Incompleto | Salió alguna pieza en el día, pero no las 4 |
 | Pendiente | Tiene piezas asignadas en cava y ninguna salió hoy (incluye juegos partidos) |
-| Meta | Máximo entre la meta congelada y `pendientes + despachados + incompletos` |
+| Meta | Juegos asignados hoy en SIRT: `antes del corte + adicionales` (por OPL y en el tablero) |
 | Total a despachar | Pendientes (adicionales incluidos) |
 | Avance | `(meta − pendientes) / meta`, con tope de 99 % mientras quede algo en cava |
 
 La salida cuenta solo cuando SIRT registra `fecha_salida`; retirar físicamente un producto sin registrarlo no suma.
 
-### Metas congeladas por fecha
+### Meta del día
 
-- La meta de cada **fecha y turno** se guarda (últimos 14 días) en el estado del gestor.
-- No baja mientras avanza el despacho y sube si entra programación adicional.
-- Consultar otra fecha **no** borra la meta del día en curso; al volver se recupera.
-- Lo mismo aplica a los totales **En cava**, **Decomisos** y **Crudas** del tablero.
+- La meta se recalcula en cada consulta con la programación y las salidas de SIRT de esa fecha, así que **Antes + Adic. = Total asignado** siempre cuadra.
+- No baja al despachar: lo que sale sigue contando como asignado del día.
+- Sube si entra programación nueva y baja solo si SIRT quita o mueve la programación a otra fecha.
+- Antes se guardaba el máximo visto por OPL y nunca bajaba; eso dejaba juegos de más (p. ej. 06/10: 554 + 0 = 570).
+- Los totales **Decomisos** y **Crudas** siguen guardados por fecha y turno (últimos 14 días), filtrados a los animales vigentes.
 
 ### Crudas
 

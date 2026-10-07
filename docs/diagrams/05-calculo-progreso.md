@@ -28,7 +28,7 @@ flowchart TD
   desp --> meta
   inc --> meta
   pend --> meta
-  meta["Meta del día por OPL = máx(meta congelada, pendientes + despachados + incompletos)<br/>se guarda por fecha y turno: no baja al despachar ni al consultar otra fecha"]
+  meta["Meta del día por OPL = asignados antes del corte + adicionales<br/>se recalcula desde SIRT en cada consulta: no baja al despachar"]
 
   meta --> pct["Avance = (meta − pendientes) / meta<br/>máximo 99 % mientras quede algo en cava"]
   pend --> total["Total a despachar = pendientes (incluye adicionales)"]
@@ -52,7 +52,7 @@ flowchart TD
 | Despachado | Las 4 piezas salieron de planta en el día operativo. Los traslados internos entre cavas no cuentan. |
 | Incompleto | Salió alguna pieza del animal en el día, pero no las 4. |
 | Pendiente | El animal tiene piezas asignadas que siguen en cava y ninguna salió hoy. Incluye juegos partidos (por ejemplo, la cabeza salió otro día y quedan las vísceras). |
-| Meta del día | Máximo entre la meta congelada y `pendientes + despachados + incompletos`. Se guarda por fecha y turno (últimos 14 días): no baja al despachar ni al consultar otra fecha. |
+| Meta del día | Juegos asignados hoy en SIRT: `antes del corte + adicionales`, recalculada en cada consulta. No baja al despachar; solo baja si SIRT quita o mueve la programación. |
 | Total a despachar | Pendientes en cava, adicionales incluidos. |
 | Avance | `(meta − pendientes) / meta`. Se queda en 99 % mientras haya algo en cava. |
 | Crudas | VB con observación `CRUDAS` asignada al turno del día. La tarjeta, el módulo y los dos Excel usan el mismo criterio. |

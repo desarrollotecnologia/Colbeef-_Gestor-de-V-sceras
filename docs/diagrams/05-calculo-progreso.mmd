@@ -21,7 +21,7 @@ flowchart TD
   desp --> meta
   inc --> meta
   pend --> meta
-  meta["Meta del día por OPL = máx(meta congelada, pendientes + despachados + incompletos)<br/>se guarda por fecha y turno: no baja al despachar ni al consultar otra fecha"]
+  meta["Meta del día por OPL = asignados antes del corte + adicionales<br/>se recalcula desde SIRT en cada consulta: no baja al despachar"]
 
   meta --> pct["Avance = (meta − pendientes) / meta<br/>máximo 99 % mientras quede algo en cava"]
   pend --> total["Total a despachar = pendientes (incluye adicionales)"]
