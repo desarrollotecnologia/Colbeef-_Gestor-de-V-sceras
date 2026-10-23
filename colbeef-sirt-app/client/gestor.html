@@ -854,7 +854,7 @@
       <div style="display:flex;gap:0.6rem;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-secondary" id="btnProcesarPlanilla" onclick="procesarPlanilla()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Procesar Planilla</button>
         <button class="btn btn-secondary" onclick="abrirModalPlazas()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">⚙️ Configurar Plazas</button>
-        <button class="btn btn-secondary" id="btnParticularesPlanilla" onclick="abrirModalParticulares()" style="padding:0.5rem 1.1rem;font-size:0.85rem;background:#ff9800;color:#fff;border:none;" title="Elegir OPLs y descargar Excel multi-hoja solo con lo pendiente">📥 Descargar particulares</button>
+        <button class="btn btn-secondary" id="btnParticularesPlanilla" onclick="abrirModalParticulares()" style="padding:0.5rem 1.1rem;font-size:0.85rem;background:#ff9800;color:#fff;border:none;" title="Excel multi-hoja foto del día (columna Estado: En cava / Despachado)">📥 Descargar particulares</button>
         <button class="btn btn-primary" onclick="exportarPlanillaPDF()" style="padding:0.5rem 1.1rem;font-size:0.85rem;">🖨️ Exportar PDF</button>
       </div>
     </div>
@@ -944,10 +944,12 @@
       </div>
       <p style="font-size:0.84rem;color:var(--gris);margin-bottom:0.8rem;line-height:1.4;">
         Marca los OPLs que quieras como <strong>particulares</strong>. El Excel tendrá
-        <strong>una hoja por OPL</strong> y solo lo <strong>pendiente</strong>
-        (lo pistoleado se va quitando en cada descarga). Con <strong>todos</strong> marcados
-        se agrega la hoja <strong>General</strong>. Las asignadas desde las <span class="lbl-corte-adi">15:30</span>
-        (adicionales) salen en <span style="background:#bdd7ee;padding:0 0.25rem;border-radius:3px;">azul</span>.
+        <strong>una hoja por OPL</strong> con la <strong>foto del día</strong>
+        (columna <strong>Estado: En cava / Despachado</strong>). Filtra por «En cava» para ver lo pendiente.
+        Con <strong>todos</strong> marcados se agrega la hoja <strong>General</strong>.
+        Adicionales (≥ <span class="lbl-corte-adi">15:30</span>) en
+        <span style="background:#bdd7ee;padding:0 0.25rem;border-radius:3px;">azul</span>;
+        despachadas en <span style="background:#e5e7eb;padding:0 0.25rem;border-radius:3px;">gris</span>.
       </p>
       <div id="particularesLista" style="max-height:320px;overflow:auto;border:1px solid var(--vc);border-radius:10px;padding:0.6rem 0.8rem;margin-bottom:1rem;background:#f8fbff;">
         <div class="empty-state">Cargando OPLs…</div>
@@ -3886,7 +3888,7 @@ function exportarPlanillaPDF() {
     .generarHTMLPlanillaPDF(_planillaOplActivo);
 }
 
-// ── Particulares (Excel multi-hoja, solo pendientes) ──
+// ── Particulares (Excel multi-hoja, foto del día con Estado) ──
 var _particularesSeleccion = new Set();
 
 function showParticularesAlert(tipo, msg) {

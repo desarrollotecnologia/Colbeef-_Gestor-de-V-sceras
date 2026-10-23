@@ -3226,27 +3226,34 @@ export async function setOplsParticulares(opls) {
 }
 
 /**
- * Filas programadas del turno aún sin pistoleo (fecha_salida).
- * Misma base que la planilla: no exige Cava Paquete Visceral (hoy el
- * programado SIRT suele venir en Recepción VB/VR / Cabezas-Patas).
+ * Foto del día para particulares: en cava (programados sin salida) + despachadas
+ * del día. Misma idea que Despacho Canales (columna Estado).
  */
-function filasPendientesParticularesSync(s) {
+function filasFotoDiaParticularesSync(s) {
   const fechaOp =
     String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
   const turnoOp =
     String(s.resumenDespachos?.turno || '').trim() ||
     resolverTurnoOperacion(s.lastSyncRange || {}, s.despachosCavas || []);
-  const programados = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp).filter(
-    (fila) => {
-      const id = String(fila[3] ?? '').trim();
-      const tipo = String(fila[7] ?? '').trim();
-      const puesto = String(fila[9] ?? '').trim();
-      return id && puesto && TIPOS_PRODUCTO.includes(tipo);
-    }
-  );
+  const esFilaValida = (fila) => {
+    const id = String(fila[3] ?? '').trim();
+    const tipo = String(fila[7] ?? '').trim();
+    const puesto = String(fila[9] ?? '').trim();
+    return id && puesto && TIPOS_PRODUCTO.includes(tipo);
+  };
+  const programados = filasDespachoTurnoOperacion(s.despachosCavas || [], turnoOp).filter(esFilaValida);
   const salidasDia = salidasRealesDelDia(s, fechaOp);
-  const pendientes = despachosProgramadosSinSalidasDelDia(programados, salidasDia);
-  return { pendientes, fechaOp, turnoOp, totalProgramados: programados.length };
+  const despachadas = filasDespachoTurnoOperacion(salidasDia, turnoOp).filter(esFilaValida);
+  const enCava = despachosProgramadosSinSalidasDelDia(programados, salidasDia);
+  return {
+    enCava,
+    despachadas,
+    fechaOp,
+    turnoOp,
+    totalProgramados: programados.length,
+    totalEnCava: enCava.length,
+    totalDespachadas: despachadas.length,
+  };
 }
 
 function corteAdicionalIso(fechaOp) {
@@ -3254,7 +3261,7 @@ function corteAdicionalIso(fechaOp) {
   return `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
 }
 
-function filaPendienteADtoParticular(fila, corteIso = '') {
+function filaADtoParticular(fila, corteIso = '', estado = 'En cava') {
   const registro = String(fila[COL_REGISTRO_ASIGNACION] ?? '').trim();
   const m = registro.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T\s](\d{2}):(\d{2}))?/);
   return {
@@ -3268,15 +3275,19 @@ function filaPendienteADtoParticular(fila, corteIso = '') {
     puesto: String(fila[9] ?? '').trim(),
     cava: String(fila[6] ?? '').trim(),
     destino: String(fila[8] ?? '').trim(),
-    estado: 'Pendiente',
+    estado: estado === 'Despachado' ? 'Despachado' : 'En cava',
   };
 }
 
+/** @deprecated usar filaADtoParticular */
+function filaPendienteADtoParticular(fila, corteIso = '') {
+  return filaADtoParticular(fila, corteIso, 'En cava');
+}
+
 /**
- * Excel particulares: una hoja por OPL seleccionado, solo pendientes.
- * Con `general` agrega de primera una hoja con todos los OPL. Las filas asignadas
- * desde el corte de adicionales (15:30) van en azul.
- * Opcionalmente refresca SIRT con `range.date` / `range.from`.
+ * Excel particulares: una hoja por OPL (foto del día: en cava + despachadas).
+ * Columna Estado = En cava | Despachado. Con `general` agrega hoja General.
+ * Filas adicionales (asignadas ≥ corte) van en azul; despachadas en gris.
  * @returns {{ success, buffer?, filename?, meta?, message? }}
  */
 export async function generarExcelParticulares(
@@ -3293,6 +3304,10 @@ export async function generarExcelParticulares(
   }
 
   const s = await loadState();
+  // Asegura salidas del día para marcar Despachado (foto del día).
+  await sincronizarSalidasCavaDiaEnSesion(s, s.lastSyncRange || filtro || {});
+  await saveState(s);
+
   const origen =
     Array.isArray(oplsSolicitados) && oplsSolicitados.length
       ? oplsSolicitados
@@ -3314,7 +3329,15 @@ export async function generarExcelParticulares(
     };
   }
 
-  const { pendientes, fechaOp, turnoOp, totalProgramados } = filasPendientesParticularesSync(s);
+  const {
+    enCava,
+    despachadas,
+    fechaOp,
+    turnoOp,
+    totalProgramados,
+    totalEnCava,
+    totalDespachadas,
+  } = filasFotoDiaParticularesSync(s);
   const mapaOPL = cargarMapaOPL(s);
   const seleccionUp = new Map(seleccion.map((o) => [o.toUpperCase(), o]));
   const porOpl = {};
@@ -3324,19 +3347,24 @@ export async function generarExcelParticulares(
 
   const corteIso = corteAdicionalIso(fechaOp);
   let sinMatchOpl = 0;
-  for (const fila of pendientes) {
+  const acumular = (fila, estado) => {
     const opl = claveOplDesdeFila(fila, mapaOPL);
     const canon = seleccionUp.get(String(opl).toUpperCase());
     if (!canon) {
       sinMatchOpl += 1;
-      continue;
+      return;
     }
-    porOpl[canon].push(filaPendienteADtoParticular(fila, corteIso));
-  }
+    porOpl[canon].push(filaADtoParticular(fila, corteIso, estado));
+  };
+  for (const fila of enCava) acumular(fila, 'En cava');
+  for (const fila of despachadas) acumular(fila, 'Despachado');
 
-  // Orden estable dentro de cada hoja
+  // Orden: En cava primero, luego Despachado; código / subproducto
   Object.keys(porOpl).forEach((opl) => {
     porOpl[opl].sort((a, b) => {
+      const ea = a.estado === 'Despachado' ? 1 : 0;
+      const eb = b.estado === 'Despachado' ? 1 : 0;
+      if (ea !== eb) return ea - eb;
       const c = String(a.codigo).localeCompare(String(b.codigo), 'es');
       if (c) return c;
       return String(a.subproducto).localeCompare(String(b.subproducto), 'es');
@@ -3363,7 +3391,15 @@ export async function generarExcelParticulares(
     (n, arr) => n + arr.filter((r) => r.adicional).length,
     0
   );
-  const filename = `Particulares_pendientes_${fechaOp}.xlsx`;
+  const nEnCava = Object.values(porOpl).reduce(
+    (n, arr) => n + arr.filter((r) => r.estado !== 'Despachado').length,
+    0
+  );
+  const nDesp = Object.values(porOpl).reduce(
+    (n, arr) => n + arr.filter((r) => r.estado === 'Despachado').length,
+    0
+  );
+  const filename = `Particulares_foto_dia_${fechaOp}.xlsx`;
   return {
     success: true,
     buffer,
@@ -3376,7 +3412,9 @@ export async function generarExcelParticulares(
       totalFilas,
       totalAdicionales,
       totalProgramados,
-      totalPendientes: pendientes.length,
+      totalEnCava: nEnCava || totalEnCava,
+      totalDespachadas: nDesp || totalDespachadas,
+      totalPendientes: nEnCava || totalEnCava,
       sinMatchOpl,
       porOpl: Object.fromEntries(
         Object.entries(porOpl).map(([k, v]) => [k, v.length])

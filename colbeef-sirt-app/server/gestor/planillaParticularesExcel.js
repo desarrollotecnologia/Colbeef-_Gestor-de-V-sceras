@@ -1,5 +1,5 @@
 /**
- * Excel multi-hoja de OPLs particulares (solo pendientes).
+ * Excel multi-hoja de OPLs particulares (foto del día: En cava + Despachado).
  */
 import ExcelJS from 'exceljs';
 
@@ -30,6 +30,7 @@ function styleHeaderRow(row) {
 const VERDE = 'FF259C39';
 const FILL_ZEBRA = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE8F5E9' } };
 const FILL_ADICIONAL = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFBDD7EE' } };
+const FILL_DESPACHADO = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } };
 
 /**
  * @param {object} opts
@@ -53,14 +54,14 @@ export async function buildExcelParticularesBuffer({
   const entradas = Object.entries(porOpl);
 
   if (!entradas.length) {
-    const ws = wb.addWorksheet('Sin pendientes');
+    const ws = wb.addWorksheet('Sin datos');
     ws.mergeCells('A1:F1');
     ws.getCell('A1').value = 'PARTICULARES';
     ws.getCell('A1').font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 16, name: 'Calibri' };
     ws.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: VERDE } };
     ws.getCell('A1').alignment = { horizontal: 'center' };
     ws.mergeCells('A2:F2');
-    ws.getCell('A2').value = `Sin OPLs / sin pendientes · ${fechaIso}`;
+    ws.getCell('A2').value = `Sin OPLs / sin registros · ${fechaIso}`;
     return Buffer.from(await wb.xlsx.writeBuffer());
   }
 
@@ -122,12 +123,16 @@ function escribirHoja(ws, { titulo, fechaIso, turno, filas, conOpl = false, cort
   ws.getRow(1).height = 28;
 
   const nAdicionales = filas.filter((r) => r.adicional).length;
+  const nEnCava = filas.filter((r) => String(r.estado || '') !== 'Despachado').length;
+  const nDesp = filas.filter((r) => String(r.estado || '') === 'Despachado').length;
   ws.mergeCells(`A2:${ultima}2`);
   const c2 = ws.getCell('A2');
   const turnoTxt = turno || 'Todos';
   c2.value =
-    `Subproductos pendientes · ${fechaIso} · turno ${turnoTxt} · ${filas.length} registros` +
-    ` · Azul = adicional (asignado desde las ${corteLabel}): ${nAdicionales}`;
+    `Foto del día · ${fechaIso} · turno ${turnoTxt} · ${filas.length} registros` +
+    ` · En cava: ${nEnCava} · Despachado: ${nDesp}` +
+    ` · Filtra Estado = «En cava» para ver lo pendiente` +
+    ` · Azul = adicional (≥ ${corteLabel}): ${nAdicionales} · Gris = despachado`;
   c2.font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF374151' } };
   c2.alignment = { horizontal: 'center' };
 
@@ -137,25 +142,34 @@ function escribirHoja(ws, { titulo, fechaIso, turno, filas, conOpl = false, cort
   });
   styleHeaderRow(hr);
 
+  const colEstado = headers.indexOf('Estado') + 1;
   filas.forEach((r, idx) => {
     const row = ws.getRow(4 + idx);
+    const estado = r.estado === 'Despachado' ? 'Despachado' : 'En cava';
     const vals = [
       r.codigo || '',
       r.propietario || '',
       r.subproducto || r.descripcion || '',
       r.puesto || '',
       r.cava || '',
-      r.estado || 'Pendiente',
+      estado,
       r.fechaAsignacion || '',
       r.horaAsignacion || '',
     ];
     if (conOpl) vals.unshift(r.opl || '');
-    const fill = r.adicional ? FILL_ADICIONAL : idx % 2 === 1 ? FILL_ZEBRA : null;
+    const fill =
+      estado === 'Despachado'
+        ? FILL_DESPACHADO
+        : r.adicional
+          ? FILL_ADICIONAL
+          : idx % 2 === 1
+            ? FILL_ZEBRA
+            : null;
     vals.forEach((v, i) => {
       const cell = row.getCell(i + 1);
       cell.value = v;
       cell.font = { name: 'Calibri', size: 11 };
-      if (i >= vals.length - 2) cell.alignment = { horizontal: 'center' };
+      if (i >= vals.length - 2 || i + 1 === colEstado) cell.alignment = { horizontal: 'center' };
       if (fill) cell.fill = fill;
     });
   });
