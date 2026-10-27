@@ -150,10 +150,10 @@ export function layoutEtiqueta(et) {
     .replace(/\^/g, ' ')
     .replace(/~/g, ' ')
     .trim();
-  const b1 = 520;
-  const bQr = 880;
-  const b3 = 1120;
-  const b4 = 1520;
+  const b1 = 480;
+  const bQr = 980;
+  const b3 = 1200;
+  const b4 = 1560;
   const c4 = 40;
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
