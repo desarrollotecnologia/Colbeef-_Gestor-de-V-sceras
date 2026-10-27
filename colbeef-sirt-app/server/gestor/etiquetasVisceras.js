@@ -151,9 +151,9 @@ export function layoutEtiqueta(et) {
     .replace(/~/g, ' ')
     .trim();
   const b1 = 520;
-  const bQr = 900;
-  const b3 = 1080;
-  const b4 = 1500;
+  const bQr = 880;
+  const b3 = 1120;
+  const b4 = 1520;
   const c4 = 40;
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
@@ -187,7 +187,7 @@ export function layoutEtiqueta(et) {
     },
     // QR en el hueco después del código de barras (antes de cava)
     ...(qrTexto
-      ? [{ tipo: 'qr', x: bQr, y: 28, h: 130, mag: 2, texto: qrTexto }]
+      ? [{ tipo: 'qr', x: bQr, y: 18, h: 160, mag: 3, texto: qrTexto }]
       : []),
     // Bloque 3 — cava / zona / despacho (como Canales; CAM no pisa Cliente)
     {
