@@ -243,15 +243,61 @@ function layoutsConCopias(datos, copias) {
   return datos.flatMap((d) => Array.from({ length: n }, () => d.layout));
 }
 
-function sinLayout(datos) {
-  return datos.map(({ layout, ...rest }) => rest);
+/** Muestra fija de las 4 manillas (diseño opción 1) para la vista previa. */
+export function muestraCuatroManillas() {
+  const base = {
+    puesto: '02072',
+    turno: 'LxM',
+    puestoTurno: '02072 /LxM/',
+    puesto_turno: '02072 /LxM/',
+    codigoAnimal: '2610-09188',
+    codigo_animal: '2610-09188',
+    ubicacion: 'CPV2',
+    zona: 'San Francisco',
+    fechaProgramacion: '2026-10-23',
+    fecha_programacion: '2026-10-23',
+    cliente: 'LOZANO GALVIS',
+    opl: 'TRANSCARNES',
+    destino: 'San Francisco',
+    direccion: 'San Francisco',
+    enCava: true,
+    en_cava: true,
+  };
+  const piezas = [
+    { tipo: 'Cabeza', cam: 'CAB', codigoBarras: '2610-09188-60' },
+    { tipo: 'Patas y Manos', cam: 'PyM', codigoBarras: '2610-09188-61' },
+    { tipo: 'Visceras Blancas', cam: 'VB', codigoBarras: '2610-09188-6114' },
+    { tipo: 'Visceras Rojas', cam: 'VR', codigoBarras: '2610-09188-6493' },
+  ];
+  return piezas.map((p) => {
+    const datos = {
+      ...base,
+      ...p,
+      codigo_barras: p.codigoBarras,
+      cuarto: p.tipo,
+    };
+    datos.layout = etiquetas.layoutEtiqueta(datos);
+    return datos;
+  });
 }
 
 export async function getEtiqueta(codigo) {
   const datos = await buscarEtiquetas(codigo);
   return {
     success: true,
-    etiquetas: sinLayout(datos),
+    etiquetas: datos,
+    zpl: etiquetas.zplLote(datos.map((d) => d.layout)),
+    impresora: etiquetas.configImpresora(),
+  };
+}
+
+export async function getMuestraEtiquetas() {
+  await getRolloColumnas();
+  const datos = muestraCuatroManillas();
+  return {
+    success: true,
+    muestra: true,
+    etiquetas: datos,
     zpl: etiquetas.zplLote(datos.map((d) => d.layout)),
     impresora: etiquetas.configImpresora(),
   };

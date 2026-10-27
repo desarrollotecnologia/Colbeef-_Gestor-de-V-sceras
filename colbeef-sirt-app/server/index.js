@@ -605,6 +605,14 @@ app.get('/api/crudas', async (_req, res) => {
 });
 
 /** Reetiquetado de paquetes viscerales (Zebra ZPL, rollo 4 manillas). */
+app.get('/api/etiqueta/muestra', async (_req, res) => {
+  try {
+    res.json(await reetiquetado.getMuestraEtiquetas());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
 app.get('/api/etiqueta', async (req, res) => {
   try {
     res.json(await reetiquetado.getEtiqueta(String(req.query.codigo || '')));

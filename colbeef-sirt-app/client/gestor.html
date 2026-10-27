@@ -243,19 +243,23 @@
     .et-opciones select{padding:0.3rem 0.5rem;border:2px solid var(--vc);border-radius:8px;font-family:inherit;}
     .zb-bar{display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.55rem 0.8rem;margin-bottom:1rem;font-size:0.85rem;}
     .zb-estado{flex:1;min-width:220px;font-weight:600;color:#334155;}
-    .et-grid{display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:1.5rem;}
-    .et-card{display:flex;flex-direction:column;gap:0.55rem;min-width:280px;max-width:100%;}
-    .et-label{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.7rem 0.85rem;box-shadow:var(--sombra);font-family:ui-monospace,Consolas,monospace;}
-    .et-top{display:flex;justify-content:space-between;gap:0.8rem;margin-bottom:0.55rem;border-bottom:2px solid #e2e8f0;padding-bottom:0.45rem;}
-    .et-barras{height:28px;min-width:140px;background:repeating-linear-gradient(90deg,#000 0 2px,#fff 2px 3px,#000 3px 4px,#fff 4px 7px,#000 7px 10px,#fff 10px 12px);border-radius:2px;}
-    .et-ubic{text-align:right;font-weight:700;font-size:0.95rem;line-height:1.25;}
-    .et-cuarto{font-size:0.78rem;color:#64748b;margin-top:0.25rem;}
-    .et-puesto{font-size:1.05rem;font-weight:700;margin-bottom:0.35rem;}
-    .et-animal{font-size:1.35rem;font-weight:800;letter-spacing:0.02em;margin:0.35rem 0 0.15rem;}
-    .et-tipo{font-size:0.9rem;font-weight:600;color:#1e3a5f;}
+    .et-grid{display:flex;flex-direction:column;gap:0.85rem;margin-bottom:1.5rem;overflow-x:auto;}
+    .et-card{display:flex;flex-direction:column;gap:0.45rem;max-width:100%;}
+    .et-tira{position:relative;flex:none;width:1053px;height:98.5px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;box-shadow:var(--sombra);font-family:Arial,Helvetica,sans-serif;color:#000;overflow:hidden;}
+    .et-tira .et-txt{position:absolute;white-space:nowrap;line-height:1;font-weight:600;}
+    .et-tira .et-barras{position:absolute;background:repeating-linear-gradient(90deg,#000 0 2px,#fff 2px 3px,#000 3px 4px,#fff 4px 7px,#000 7px 10px,#fff 10px 12px);}
+    .et-tira .et-logo{position:absolute;top:0;bottom:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#cbd5e1;font-size:30px;font-weight:800;border-left:1px dashed #e2e8f0;}
+    .et-tira .et-logo small{font-size:9px;font-weight:600;}
+    .et-tira .et-linea{position:absolute;background:#000;}
+    .et-cap{font-size:0.78rem;color:var(--gris);margin-bottom:0.15rem;}
     .et-meta{font-size:0.78rem;color:var(--gris);line-height:1.45;}
     .et-meta strong{color:#1f2937;}
     .et-aviso{color:#b45309;font-weight:600;}
+    .etl-box{background:#fff;border:1px solid #bfdbfe;border-radius:12px;box-shadow:var(--sombra);padding:1rem 1.2rem;margin-bottom:1.2rem;}
+    .etl-box h3{color:var(--vp);font-size:1.05rem;margin:0 0 0.35rem;}
+    .etl-ayuda{color:var(--gris);font-size:0.84rem;margin:0 0 0.8rem;line-height:1.4;}
+    .etl-box textarea{width:100%;min-height:110px;padding:0.65rem 0.8rem;border:2px solid var(--vc);border-radius:10px;font-family:ui-monospace,Consolas,monospace;font-size:0.9rem;resize:vertical;box-sizing:border-box;}
+    .etl-acciones{display:flex;justify-content:flex-end;align-items:center;gap:0.8rem;flex-wrap:wrap;margin-top:0.75rem;font-size:0.88rem;}
 
     /* ── INFORME: INPUTS ── */
     .inf-input{padding:0.7rem 1rem;border-radius:10px;border:2px solid var(--vc);font-size:0.95rem;width:100%;transition:border-color 0.2s;}
@@ -964,6 +968,22 @@
       <button type="button" class="btn btn-secondary btn-sm" onclick="calibrarEtiquetas()" title="Imprime una regla para ubicar las tiras">📏 Calibración</button>
     </div>
 
+    <div class="etl-box">
+      <h3>🖨️ Imprimir lote (varios animales)</h3>
+      <p class="etl-ayuda">
+        Pega varios códigos (uno por línea). Cada animal imprime sus 4 piezas en una pasada del rollo.
+        Ejemplo: 10 animales = 10 pasadas · 40 etiquetas. <strong>Copias</strong> repite cada juego.
+      </p>
+      <textarea id="etLoteCodigos" placeholder="2610-09188&#10;2610-09189&#10;2610-09190"></textarea>
+      <div class="etl-acciones">
+        <label>Copias del lote <input type="number" id="etLoteCopias" min="1" max="20" value="1" style="width:60px;padding:0.25rem 0.4rem;border:2px solid var(--vc);border-radius:8px;"></label>
+        <span id="etLoteResumen" style="color:var(--gris);"></span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="contarLoteEtiquetas()">🔢 Contar</button>
+        <button type="button" class="btn btn-primary btn-sm" onclick="imprimirLoteEtiquetas()">🖨️ Imprimir lote</button>
+      </div>
+    </div>
+
+    <h3 style="color:var(--vp);font-size:1rem;margin:0.4rem 0 0.5rem;">🔫 Reimprimir una (pistoleo)</h3>
     <div class="et-scan">
       <div class="search-bar">
         <span class="s-icon">🔫</span>
@@ -978,11 +998,12 @@
     <div class="et-opciones">
       <label><input type="checkbox" id="etAutoImprimir"> Imprimir al pistolear</label>
       <label>Copias <input type="number" id="etCopias" min="1" max="20" value="1"></label>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="mostrarMuestraEtiquetas()">👁️ Ver muestra 4 manillas</button>
       <span id="etImpresora"></span>
     </div>
 
     <div class="et-grid" id="etPreview">
-      <div class="empty-state" style="width:100%;">Pistolea un código para ver la etiqueta.</div>
+      <div class="empty-state" style="width:100%;">Cargando muestra del diseño…</div>
     </div>
 
     <h3 style="color:var(--vp);font-size:1rem;margin-bottom:0.6rem;">Impresas en esta sesión</h3>
@@ -4401,7 +4422,8 @@ function mostrarResumenGeneralPlanilla() {
 // ══════════════════════════════════════════════════════
 // REETIQUETADO (Zebra ZPL · rollo 4 manillas)
 // ══════════════════════════════════════════════════════
-var ET = { etiquetas: [], codigo: '', historial: [] };
+var ET = { etiquetas: [], codigo: '', historial: [], esMuestra: false };
+var ET_ESCALA = 0.5;
 
 function etVal(obj, camel, snake) {
   if (!obj) return '';
@@ -4417,6 +4439,69 @@ async function etApiError(r) {
   } catch (_) {
     return 'HTTP ' + r.status;
   }
+}
+
+function tiraEtiquetaHtml(layout) {
+  var px = function (v) {
+    return (Number(v || 0) * ET_ESCALA).toFixed(1) + 'px';
+  };
+  var html = (layout || [])
+    .map(function (el) {
+      if (el.tipo === 'linea') {
+        return (
+          '<div class="et-linea" style="left:' +
+          px(el.x) +
+          ';top:' +
+          px(el.y) +
+          ';width:' +
+          px(el.largo) +
+          ';height:' +
+          px(el.h) +
+          ';"></div>'
+        );
+      }
+      if (el.tipo === 'barras') {
+        var ancho = (11 * String(el.texto || '').length + 35) * (el.modulo || 2);
+        return (
+          '<div class="et-barras" title="' +
+          escapeHtml(el.texto || '') +
+          '" style="left:' +
+          px(el.x) +
+          ';top:' +
+          px(el.y) +
+          ';width:' +
+          px(ancho) +
+          ';height:' +
+          px(el.h) +
+          ';"></div>'
+        );
+      }
+      var sx = el.w && el.h ? Number(el.w) / Number(el.h) : 1;
+      var stretch =
+        sx !== 1
+          ? 'transform:scaleX(' + sx.toFixed(2) + ');transform-origin:left top;'
+          : '';
+      return (
+        '<div class="et-txt" style="left:' +
+        px(el.x) +
+        ';top:' +
+        px(el.y) +
+        ';font-size:' +
+        px(el.h) +
+        ';' +
+        stretch +
+        '">' +
+        escapeHtml(el.texto || '') +
+        '</div>'
+      );
+    })
+    .join('');
+  return (
+    html +
+    '<div class="et-logo" style="left:' +
+    px(1750) +
+    ';">Colbeef<small>logo preimpreso</small></div>'
+  );
 }
 
 async function cargarConfigEtiquetas() {
@@ -4444,6 +4529,9 @@ async function cargarConfigEtiquetas() {
     }
   } catch (e) {
     if (estado) estado.textContent = 'Sin impresora: ' + (e.message || e);
+  }
+  if (!ET.etiquetas.length || ET.esMuestra) {
+    await mostrarMuestraEtiquetas();
   }
 }
 
@@ -4476,6 +4564,26 @@ async function calibrarEtiquetas() {
   }
 }
 
+async function mostrarMuestraEtiquetas() {
+  try {
+    var r = await fetch('/api/etiqueta/muestra');
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    ET.etiquetas = j.etiquetas || [];
+    ET.codigo = '';
+    ET.esMuestra = true;
+    renderEtiquetas();
+  } catch (e) {
+    var box = document.getElementById('etPreview');
+    if (box) {
+      box.innerHTML =
+        '<div class="empty-state" style="width:100%;">No se pudo cargar la muestra: ' +
+        escapeHtml(e.message || String(e)) +
+        '</div>';
+    }
+  }
+}
+
 async function buscarEtiqueta() {
   var codigo = (document.getElementById('etCodigo').value || '').trim();
   if (!codigo) return;
@@ -4486,6 +4594,7 @@ async function buscarEtiqueta() {
     var j = await r.json();
     ET.etiquetas = j.etiquetas || [];
     ET.codigo = codigo;
+    ET.esMuestra = false;
     var imp = j.impresora || {};
     var span = document.getElementById('etImpresora');
     if (span) {
@@ -4500,6 +4609,7 @@ async function buscarEtiqueta() {
     }
   } catch (e) {
     ET.etiquetas = [];
+    ET.esMuestra = false;
     renderEtiquetas();
     alert('Reetiquetado: ' + (e.message || e));
   } finally {
@@ -4511,66 +4621,156 @@ async function buscarEtiqueta() {
 
 function renderEtiquetas() {
   var hay = ET.etiquetas.length > 0;
-  document.getElementById('etBtnImprimir').disabled = !hay;
-  document.getElementById('etBtnZpl').disabled = !hay;
+  var real = hay && !ET.esMuestra;
+  document.getElementById('etBtnImprimir').disabled = !real;
+  document.getElementById('etBtnZpl').disabled = !real;
   var box = document.getElementById('etPreview');
   if (!hay) {
-    box.innerHTML = '<div class="empty-state" style="width:100%;">Pistolea un código para ver la etiqueta.</div>';
+    box.innerHTML =
+      '<div class="empty-state" style="width:100%;">Pistolea un código o pulsa «Ver muestra 4 manillas».</div>';
     return;
   }
-  box.innerHTML = ET.etiquetas
-    .map(function (e) {
-      var ubic = etVal(e, 'ubicacion', 'ubicacion') || '—';
-      var cam = etVal(e, 'cam', 'cam') || '';
-      var puesto = etVal(e, 'puestoTurno', 'puesto_turno') || '—';
-      var animal = etVal(e, 'codigoAnimal', 'codigo_animal') || '';
-      var tipo = etVal(e, 'tipo', 'tipo') || '';
-      var barras = etVal(e, 'codigoBarras', 'codigo_barras') || '';
-      var cava = etVal(e, 'cava', 'cava') || '';
-      var fecha = etVal(e, 'fechaProgramacion', 'fecha_programacion') || '';
-      var enCava = e.enCava != null ? e.enCava : e.en_cava;
-      var cruda = e.cruda ? ' · <span class="et-aviso">CRUDAS</span>' : '';
-      return (
-        '<div class="et-card">' +
-        '<div class="et-label">' +
-        '<div class="et-top">' +
-        '<div><div class="et-barras" title="' +
-        escapeHtml(barras) +
-        '"></div><div class="et-cuarto">' +
-        escapeHtml(tipo) +
-        cruda +
-        '</div></div>' +
-        '<div class="et-ubic">' +
-        escapeHtml(ubic) +
-        '<br>' +
-        escapeHtml(cam) +
-        '</div></div>' +
-        '<div class="et-puesto">' +
-        escapeHtml(puesto) +
-        '</div>' +
-        '<div class="et-barras" title="' +
-        escapeHtml(barras) +
-        '"></div>' +
-        '<div class="et-animal">' +
-        escapeHtml(animal) +
-        '</div>' +
-        '<div class="et-tipo">' +
-        escapeHtml(tipo) +
-        '</div></div>' +
-        '<div class="et-meta">Código: <strong>' +
-        escapeHtml(barras) +
-        '</strong><br>' +
-        escapeHtml(cava || 'Sin cava') +
-        (fecha ? ' · programada ' + escapeHtml(fecha) : '') +
-        '<br>' +
-        (enCava ? '' : '<span class="et-aviso">⚠ No está en cava (ya salió o sin ubicación)</span><br>') +
-        (etVal(e, 'turno', 'turno')
-          ? ''
-          : '<span class="et-aviso">⚠ Sin programación de despacho: no lleva turno</span>') +
-        '</div></div>'
-      );
+  var titulo = ET.esMuestra
+    ? '<div class="et-cap" style="margin-bottom:0.5rem;"><strong>Muestra del diseño</strong> · 4 manillas del mismo animal (Cabeza, Patas y Manos, VB, VR). Así salen en una pasada del rollo.</div>'
+    : '<div class="et-cap" style="margin-bottom:0.5rem;"><strong>' +
+      ET.etiquetas.length +
+      ' etiqueta(s)</strong> · vista previa de la tira (igual que Despacho Canales).</div>';
+  box.innerHTML =
+    titulo +
+    ET.etiquetas
+      .map(function (e, i) {
+        var barras = etVal(e, 'codigoBarras', 'codigo_barras') || '';
+        var tipo = etVal(e, 'tipo', 'tipo') || '';
+        var cava = etVal(e, 'cava', 'cava') || '';
+        var fecha = etVal(e, 'fechaProgramacion', 'fecha_programacion') || '';
+        var enCava = e.enCava != null ? e.enCava : e.en_cava;
+        var layout = e.layout || [];
+        return (
+          '<div class="et-card">' +
+          '<div class="et-cap">Manilla ' +
+          (i + 1) +
+          ' · ' +
+          escapeHtml(tipo) +
+          (ET.esMuestra ? ' (ejemplo)' : '') +
+          '</div>' +
+          '<div class="et-tira">' +
+          tiraEtiquetaHtml(layout) +
+          '</div>' +
+          '<div class="et-meta">Código: <strong>' +
+          escapeHtml(barras) +
+          '</strong>' +
+          (cava ? ' · ' + escapeHtml(cava) : '') +
+          (fecha ? ' · programada ' + escapeHtml(fecha) : '') +
+          (ET.esMuestra
+            ? ''
+            : enCava
+              ? ''
+              : '<br><span class="et-aviso">⚠ No está en cava (ya salió o sin ubicación)</span>') +
+          (ET.esMuestra || etVal(e, 'turno', 'turno')
+            ? ''
+            : '<br><span class="et-aviso">⚠ Sin programación de despacho: no lleva turno</span>') +
+          '</div></div>'
+        );
+      })
+      .join('');
+}
+
+function leerCodigosLote() {
+  var raw = (document.getElementById('etLoteCodigos').value || '').trim();
+  if (!raw) return [];
+  var vistos = {};
+  return raw
+    .split(/[\n,;]+/)
+    .map(function (c) {
+      return String(c || '').trim();
     })
-    .join('');
+    .filter(function (c) {
+      if (!c || vistos[c]) return false;
+      vistos[c] = true;
+      return true;
+    });
+}
+
+function contarLoteEtiquetas() {
+  var codigos = leerCodigosLote();
+  var copias = Math.max(
+    1,
+    Math.min(parseInt(document.getElementById('etLoteCopias').value, 10) || 1, 20)
+  );
+  var el = document.getElementById('etLoteResumen');
+  if (!el) return;
+  if (!codigos.length) {
+    el.textContent = 'Sin códigos';
+    return;
+  }
+  el.textContent =
+    codigos.length +
+    ' animal(es) × ~4 piezas × ' +
+    copias +
+    ' copia(s) ≈ ' +
+    codigos.length * 4 * copias +
+    ' etiquetas (' +
+    codigos.length * copias +
+    ' pasadas)';
+}
+
+async function imprimirLoteEtiquetas() {
+  var codigos = leerCodigosLote();
+  if (!codigos.length) {
+    alert('Pega al menos un código de animal (uno por línea).');
+    return;
+  }
+  var copias = Math.max(
+    1,
+    Math.min(parseInt(document.getElementById('etLoteCopias').value, 10) || 1, 20)
+  );
+  contarLoteEtiquetas();
+  if (
+    !confirm(
+      '¿Imprimir lote de ' +
+        codigos.length +
+        ' código(s) × ' +
+        copias +
+        ' copia(s)?\nCada animal son 4 manillas.'
+    )
+  ) {
+    return;
+  }
+  showSpinner('Imprimiendo lote…');
+  try {
+    var r = await fetch('/api/etiqueta/imprimir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigos: codigos, copias: copias }),
+    });
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    var hora = new Date().toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    (j.codigos || []).forEach(function (c) {
+      ET.historial.unshift({
+        hora: hora,
+        copias: copias,
+        e: { codigoBarras: c, tipo: 'Lote', ubicacion: '—' },
+      });
+    });
+    ET.historial = ET.historial.slice(0, 200);
+    renderHistorialEtiquetas();
+    alert(
+      '🖨️ Lote: ' +
+        (j.impresas || 0) +
+        ' etiqueta(s) → ' +
+        (j.destino || 'impresora') +
+        (j.columnas ? ' · rollo ' + j.columnas : '')
+    );
+  } catch (e) {
+    alert('Lote: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+  }
 }
 
 function copiasEtiqueta() {
@@ -4579,7 +4779,10 @@ function copiasEtiqueta() {
 }
 
 async function imprimirEtiquetasActuales() {
-  if (!ET.etiquetas.length) return;
+  if (!ET.etiquetas.length || ET.esMuestra) {
+    alert('Pistolea un código real de SIRT antes de imprimir (la muestra es solo de diseño).');
+    return;
+  }
   // Si se pistoleó el animal (sin sufijo), un solo código trae las 4 y llena el rollo.
   var escaneado = String(ET.codigo || '').replace(/\s+/g, '');
   var codigos;
