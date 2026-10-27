@@ -195,95 +195,95 @@ export function layoutEtiqueta(et) {
     ...(qrTexto
       ? [{ tipo: 'qr', x: bQr, y: 18, h: 160, mag: 3, texto: qrTexto }]
       : []),
-    // Bloque 3 — despacho + datos de beneficio / pieza
+    // Bloque 3 — zona + dirección en grande (donde iba Despacho) + pie / sexo / fechas
     {
       tipo: 'texto',
       x: b3,
-      y: 6,
-      h: 22,
+      y: 4,
+      h: 20,
       texto: corto(tipoLabel, 22),
     },
     {
       tipo: 'texto',
       x: b3 + 300,
-      y: 6,
-      h: 26,
+      y: 4,
+      h: 24,
       texto: zplTxt(et.cam || tipoCorto(et.tipo)),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 36,
-      h: 28,
-      w: 36,
-      texto: `Despacho: ${despacho}`,
+      y: 30,
+      h: 36,
+      w: 44,
+      texto: corto(et.destino || et.zona || '-', 20),
     },
     {
       tipo: 'texto',
       x: b3,
       y: 72,
-      h: 28,
-      w: 36,
+      h: 20,
+      texto: corto(et.direccion || '', 36),
+    },
+    {
+      tipo: 'texto',
+      x: b3,
+      y: 98,
+      h: 24,
+      w: 30,
       texto: `Pie: ${corto(pie, 14)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 100,
-      h: 20,
+      y: 124,
+      h: 16,
       texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 128,
-      h: 20,
+      y: 146,
+      h: 16,
       texto: `F.B: ${fb}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 154,
-      h: 20,
+      y: 166,
+      h: 16,
       texto: `F.V: ${fv}`,
     },
-    // Bloque 4 — cliente / OPL / zona + dirección
+    // Bloque 4 — cliente / OPL / despacho
     {
       tipo: 'texto',
       x: b4,
-      y: 6,
+      y: 8,
       h: 18,
       texto: corto(`Cliente ${et.cliente || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 32,
+      y: 36,
       h: 18,
       texto: corto(`OPL ${et.opl || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 58,
+      y: 64,
       h: 18,
-      texto: corto(`Zona ${et.destino || et.zona || '-'}`, c4),
+      texto: corto(`Despacho ${despacho}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 84,
-      h: 17,
-      texto: corto(et.direccion || '', 44),
-    },
-    {
-      tipo: 'texto',
-      x: b4,
-      y: 112,
+      y: 92,
       h: 17,
       texto: corto(
-        et.direccion && String(et.direccion).length > 44
-          ? String(et.direccion).slice(44, 88)
+        et.direccion && String(et.direccion).length > 36
+          ? String(et.direccion).slice(36, 80)
           : '',
         44
       ),
