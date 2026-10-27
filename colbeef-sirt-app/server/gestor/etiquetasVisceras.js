@@ -329,6 +329,24 @@ export function zplLote(layouts) {
   return formatos.join('\n');
 }
 
+/**
+ * Meta por pasada (^XA…^XZ), alineada con zplLote.
+ * slotsCodigo: un código de animal por layout (vacío = separadora).
+ */
+export function metaPasadas(slotsCodigo = [], fecha = '') {
+  const n = Math.max(1, Number(configImpresora().columnas || 4));
+  const out = [];
+  for (let i = 0; i < slotsCodigo.length; i += n) {
+    const chunk = slotsCodigo.slice(i, i + n).filter(Boolean);
+    const uniq = [...new Set(chunk.map((c) => String(c || '').trim().toUpperCase()).filter(Boolean))];
+    out.push({
+      codigos: uniq,
+      marcas: fecha ? uniq.map((codigo) => ({ codigo, fecha })) : [],
+    });
+  }
+  return out;
+}
+
 export function zplCalibracion() {
   const cfg = configImpresora();
   const lineas = encabezado(cfg);

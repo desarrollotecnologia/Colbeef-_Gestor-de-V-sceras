@@ -82,6 +82,8 @@ export function defaultState() {
     oplsParticulares: [],
     /** Rollo Zebra del reetiquetado: 4 (definitivo) o 2 (rollos viejos). */
     etiquetasRolloColumnas: 4,
+    /** Códigos de animal ya impresos por fecha: { 'YYYY-MM-DD': { '2610-09188': iso } }. */
+    etiquetasImpresas: {},
     historialPdf: [],
     fechaInicioOperacion: null,
     /**
@@ -106,6 +108,7 @@ function normalizeState(raw) {
   }
   if (!s.plazasMap || typeof s.plazasMap !== 'object') s.plazasMap = {};
   if (!Array.isArray(s.oplsParticulares)) s.oplsParticulares = [];
+  if (!s.etiquetasImpresas || typeof s.etiquetasImpresas !== 'object') s.etiquetasImpresas = {};
   delete s.oplTotalsSubproducto;
   return s;
 }

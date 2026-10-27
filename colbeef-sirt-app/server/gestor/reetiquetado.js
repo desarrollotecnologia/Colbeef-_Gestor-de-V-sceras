@@ -15,9 +15,100 @@ import {
   parsePuestoOperacion,
   formatearCodigoSucursal,
 } from './engineUtils.js';
-import { loadState } from './store.js';
+import { loadState, saveState } from './store.js';
 import * as etiquetas from './etiquetasVisceras.js';
 import { consultarJuegosAsignadosDelDia } from './engine.js';
+
+const ETIQUETAS_DIAS_GUARDADOS = 15;
+
+function fechaKey(fecha) {
+  return String(fecha || '').trim().slice(0, 10);
+}
+
+export async function getEtiquetasImpresas(fecha) {
+  const s = await loadState().catch(() => null);
+  const bag = (s && s.etiquetasImpresas) || {};
+  return { ...(bag[fechaKey(fecha)] || {}) };
+}
+
+export async function marcarEtiquetasImpresas(fecha, codigos = []) {
+  const key = fechaKey(fecha);
+  if (!key) {
+    const err = new Error('Fecha requerida para marcar impresas');
+    err.status = 400;
+    throw err;
+  }
+  const s = await loadState();
+  if (!s.etiquetasImpresas || typeof s.etiquetasImpresas !== 'object') s.etiquetasImpresas = {};
+  const dia = { ...(s.etiquetasImpresas[key] || {}) };
+  const ahora = new Date().toISOString();
+  let n = 0;
+  for (const c of codigos || []) {
+    const cod = String(c || '').trim().toUpperCase();
+    if (!cod) continue;
+    dia[cod] = ahora;
+    n += 1;
+  }
+  s.etiquetasImpresas[key] = dia;
+  const keys = Object.keys(s.etiquetasImpresas).sort();
+  while (keys.length > ETIQUETAS_DIAS_GUARDADOS) {
+    delete s.etiquetasImpresas[keys.shift()];
+  }
+  await saveState(s);
+  return { success: true, fecha: key, marcadas: n, total: Object.keys(dia).length };
+}
+
+export async function limpiarEtiquetasImpresas(fecha, codigos = null) {
+  const key = fechaKey(fecha);
+  if (!key) {
+    const err = new Error('Fecha requerida para limpiar marcas');
+    err.status = 400;
+    throw err;
+  }
+  const s = await loadState();
+  if (!s.etiquetasImpresas || typeof s.etiquetasImpresas !== 'object') s.etiquetasImpresas = {};
+  const dia = { ...(s.etiquetasImpresas[key] || {}) };
+  let limpiadas = 0;
+  if (!codigos || !codigos.length) {
+    limpiadas = Object.keys(dia).length;
+    delete s.etiquetasImpresas[key];
+  } else {
+    for (const c of codigos) {
+      const cod = String(c || '').trim().toUpperCase();
+      if (cod && dia[cod]) {
+        delete dia[cod];
+        limpiadas += 1;
+      }
+    }
+    if (Object.keys(dia).length) s.etiquetasImpresas[key] = dia;
+    else delete s.etiquetasImpresas[key];
+  }
+  await saveState(s);
+  return {
+    success: true,
+    fecha: key,
+    limpiadas,
+    quedan: Object.keys(s.etiquetasImpresas[key] || {}).length,
+  };
+}
+
+function ordenarFilasEtiqueta(filas, orden) {
+  const modo = String(orden || 'puesto').toLowerCase() === 'cliente' ? 'cliente' : 'puesto';
+  return [...filas].sort((a, b) => {
+    if (modo === 'cliente') {
+      return (
+        String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
+        String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es') ||
+        String(a.codigo || '').localeCompare(String(b.codigo || ''))
+      );
+    }
+    return (
+      String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es') ||
+      String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
+      String(a.codigo || '').localeCompare(String(b.codigo || ''))
+    );
+  });
+}
 
 const TIPOS_SQL = `('Cabeza', 'Patas y Manos', 'Visceras Blancas', 'Visceras Rojas')`;
 const RE_CODIGO = /^(\d{4}-\d{3,6})(?:-(\d{2,6}))?$/i;
@@ -513,6 +604,8 @@ export async function imprimirEtiquetas({
   codigos = [],
   copias = 1,
   soloZpl = false,
+  fecha = '',
+  marcar = true,
 } = {}) {
   const lista = (codigos || []).map((c) => String(c || '').trim()).filter(Boolean);
   if (!lista.length) {
@@ -521,26 +614,43 @@ export async function imprimirEtiquetas({
     throw err;
   }
   const datos = [];
+  const slotsAnimal = [];
   for (const c of lista.slice(0, 200)) {
-    datos.push(...(await buscarEtiquetas(c)));
+    const piezas = await buscarEtiquetas(c);
+    datos.push(...piezas);
+    const animal = codigoBase(c) || String(c).trim().toUpperCase();
+    for (const p of piezas) {
+      slotsAnimal.push(codigoBase(p.codigoAnimal || p.codigo_animal || animal) || animal);
+    }
   }
   const nCopias = Math.max(1, Math.min(Number(copias || 1), 20));
   const layouts = layoutsConCopias(datos, nCopias);
+  const slotsConCopias = slotsAnimal.flatMap((s) => Array.from({ length: nCopias }, () => s));
   const zpl = etiquetas.zplLote(layouts);
+  const fechaMark = fechaKey(fecha) || fechaKey(new Date().toISOString());
+  const pasadas = etiquetas.metaPasadas(slotsConCopias, fechaMark);
   const cfg = etiquetas.configImpresora();
+  const animales = [...new Set(slotsAnimal.map((c) => String(c || '').toUpperCase()).filter(Boolean))];
   const base = {
     success: true,
     impresas: datos.length,
+    juegos: animales.length,
     copias: nCopias,
     codigos: datos.map((d) => d.codigoBarras),
+    codigosAnimales: animales,
     columnas: cfg.columnas,
     impresora: cfg,
     zpl,
+    pasadas,
+    fecha: fechaMark,
   };
   if (soloZpl) {
     return { ...base, modo: 'solo_zpl', destino: 'cliente' };
   }
   const envio = await etiquetas.enviarZpl(zpl);
+  if (marcar && animales.length) {
+    await marcarEtiquetasImpresas(fechaMark, animales).catch(() => null);
+  }
   return { ...base, ...envio };
 }
 
@@ -601,14 +711,15 @@ function esTempranaPuesto(puesto) {
 /**
  * Pendientes en cava para imprimir por OPL.
  * modo: normal | tempranas | adicionales
- * - normal: sin tempranas ni adicionales (van por sus botones)
- * - tempranas: catálogo PUESTOS_TEMPRANAS + marcador TEMP1 / temp 1
- * - adicionales: solo asignados desde el corte (15:30)
+ * orden: puesto (puesto→cliente→código) | cliente
+ * soloNuevas: excluye ya marcadas como impresas ese día
  */
 export async function listarPendientesEtiquetas({
   fecha = '',
   modo = 'normal',
   opls = null,
+  orden = 'puesto',
+  soloNuevas = false,
 } = {}) {
   const out = await consultarJuegosAsignadosDelDia(fecha ? { date: fecha, from: fecha, to: fecha } : {});
   if (!out.success) return out;
@@ -621,12 +732,15 @@ export async function listarPendientesEtiquetas({
   const oplFiltro = Array.isArray(opls) && opls.length
     ? new Set(opls.map((o) => String(o || '').trim().toUpperCase()).filter(Boolean))
     : null;
+  const impresasMap = await getEtiquetasImpresas(out.fecha);
+  const ordenNorm = String(orden || 'puesto').toLowerCase() === 'cliente' ? 'cliente' : 'puesto';
 
-  const enCava = (out.filas || [])
+  let enCava = (out.filas || [])
     .filter((f) => String(f.estado || '') === 'En cava')
     .map((f) => {
       const temprana = esTempranaPuesto(f.puesto);
       const adicional = Boolean(f.adicional);
+      const cod = String(f.codigo || '').trim().toUpperCase();
       return {
         codigo: f.codigo,
         propietario: f.propietario,
@@ -635,22 +749,25 @@ export async function listarPendientesEtiquetas({
         horaAsignacion: f.horaAsignacion || '',
         adicional,
         temprana,
+        yaImpresa: Boolean(impresasMap[cod]),
         tipoSalida: adicional ? 'adicional' : temprana ? 'temprana' : 'normal',
       };
     });
 
-  let filtradas;
   if (modoNorm === 'tempranas') {
-    filtradas = enCava.filter((f) => f.temprana && !f.adicional);
+    enCava = enCava.filter((f) => f.temprana && !f.adicional);
   } else if (modoNorm === 'adicionales') {
-    filtradas = enCava.filter((f) => f.adicional);
+    enCava = enCava.filter((f) => f.adicional);
   } else {
-    // Lote normal: excluye tempranas y adicionales (botones aparte, como Canales)
-    filtradas = enCava.filter((f) => !f.temprana && !f.adicional);
+    enCava = enCava.filter((f) => !f.temprana && !f.adicional);
   }
   if (oplFiltro) {
-    filtradas = filtradas.filter((f) => oplFiltro.has(String(f.opl || '').toUpperCase()));
+    enCava = enCava.filter((f) => oplFiltro.has(String(f.opl || '').toUpperCase()));
   }
+  const totalConImpresas = enCava.length;
+  const yaImpresas = enCava.filter((f) => f.yaImpresa).length;
+  let filtradas = soloNuevas ? enCava.filter((f) => !f.yaImpresa) : enCava;
+  filtradas = ordenarFilasEtiqueta(filtradas, ordenNorm);
 
   const porOpl = new Map();
   filtradas.forEach((f) => {
@@ -661,6 +778,7 @@ export async function listarPendientesEtiquetas({
         total: 0,
         tempranas: 0,
         adicionales: 0,
+        yaImpresas: 0,
         codigos: [],
         clientes: new Map(),
       });
@@ -669,6 +787,7 @@ export async function listarPendientesEtiquetas({
     g.total += 1;
     if (f.temprana) g.tempranas += 1;
     if (f.adicional) g.adicionales += 1;
+    if (f.yaImpresa) g.yaImpresas += 1;
     g.codigos.push(f.codigo);
     const cli = f.propietario || 'SIN CLIENTE';
     if (!g.clientes.has(cli)) {
@@ -686,15 +805,14 @@ export async function listarPendientesEtiquetas({
       total: g.total,
       tempranas: g.tempranas,
       adicionales: g.adicionales,
-      codigos: g.codigos.sort(),
-      clientes: [...g.clientes.values()]
-        .map((c) => ({
-          cliente: c.cliente,
-          total: c.total,
-          puestos: [...c.puestos],
-          codigos: c.codigos.sort(),
-        }))
-        .sort((a, b) => a.cliente.localeCompare(b.cliente, 'es')),
+      yaImpresas: g.yaImpresas,
+      codigos: g.codigos,
+      clientes: [...g.clientes.values()].map((c) => ({
+        cliente: c.cliente,
+        total: c.total,
+        puestos: [...c.puestos],
+        codigos: c.codigos,
+      })),
     }))
     .sort((a, b) => a.opl.localeCompare(b.opl, 'es'));
 
@@ -703,13 +821,17 @@ export async function listarPendientesEtiquetas({
     success: true,
     fecha: out.fecha,
     modo: modoNorm,
+    orden: ordenNorm,
+    soloNuevas: Boolean(soloNuevas),
     corteAdicional: out.corteAdicional,
     puestosTempranas: [...PUESTOS_TEMPRANAS],
     totalJuegos,
+    totalConImpresas,
+    yaImpresas,
     totalEtiquetasEstimadas: totalJuegos * 4,
     totalPasadas: totalJuegos,
     opls: oplsOut,
-    codigos: filtradas.map((f) => f.codigo).sort(),
+    codigos: filtradas.map((f) => f.codigo),
     mensaje:
       modoNorm === 'tempranas'
         ? `Tempranas en cava: ${totalJuegos} juego(s)`
@@ -736,7 +858,9 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
         ? 'No hay tempranas pendientes en cava para imprimir'
         : lista.modo === 'adicionales'
           ? `No hay adicionales (≥ ${lista.corteAdicional}) pendientes en cava`
-          : 'No hay juegos del lote normal pendientes en cava'
+          : payload.soloNuevas || payload.solo_nuevas
+            ? 'No hay juegos nuevos pendientes (todas ya están marcadas como impresas)'
+            : 'No hay juegos del lote normal pendientes en cava'
     );
     err.status = 400;
     throw err;
@@ -749,14 +873,19 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
     err.status = 400;
     throw err;
   }
+  const soloZpl = Boolean(payload.soloZpl || payload.solo_zpl);
   const print = await imprimirEtiquetas({
     codigos,
     copias: payload.copias || 1,
-    soloZpl: Boolean(payload.soloZpl || payload.solo_zpl),
+    soloZpl,
+    fecha: lista.fecha,
+    // Con Browser Print se marca pasada a pasada desde el cliente
+    marcar: !soloZpl,
   });
   return {
     ...print,
     modo: lista.modo,
+    orden: lista.orden,
     fecha: lista.fecha,
     juegos: codigos.length,
     codigosAnimales: codigos,

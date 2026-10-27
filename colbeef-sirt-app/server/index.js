@@ -645,10 +645,45 @@ app.post('/api/etiqueta/imprimir', async (req, res) => {
       codigos: req.body?.codigos || [],
       copias: req.body?.copias || 1,
       soloZpl,
+      fecha: req.body?.fecha || req.body?.date || '',
+      marcar: req.body?.marcar !== false && !soloZpl,
     });
     auditRest(req, 'etiquetaImprimir', 'reetiquetado', (out.codigos || []).join(','), {
       n: out.impresas || 0,
       soloZpl,
+    });
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/marcar', async (req, res) => {
+  try {
+    const marcas = Array.isArray(req.body?.marcas) ? req.body.marcas : [];
+    const fecha =
+      req.body?.fecha ||
+      (marcas[0] && marcas[0].fecha) ||
+      '';
+    const codigos = marcas.length
+      ? marcas.map((m) => m.codigo || m).filter(Boolean)
+      : req.body?.codigos || [];
+    const out = await reetiquetado.marcarEtiquetasImpresas(fecha, codigos);
+    auditRest(req, 'etiquetaMarcar', 'reetiquetado', fecha, { n: out.marcadas || 0 });
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/limpiar-marcas', async (req, res) => {
+  try {
+    const out = await reetiquetado.limpiarEtiquetasImpresas(
+      req.body?.fecha || req.body?.date || '',
+      req.body?.codigos || null
+    );
+    auditRest(req, 'etiquetaLimpiarMarcas', 'reetiquetado', out.fecha || '', {
+      n: out.limpiadas || 0,
     });
     res.json(out);
   } catch (e) {
@@ -694,10 +729,17 @@ app.get('/api/etiqueta/pendientes', async (req, res) => {
           .map((s) => s.trim())
           .filter(Boolean)
       : null;
+    const soloNuevas =
+      req.query.soloNuevas === '1' ||
+      req.query.soloNuevas === 'true' ||
+      req.query.solo_nuevas === '1' ||
+      req.query.solo_nuevas === 'true';
     res.json(
       await reetiquetado.listarPendientesEtiquetas({
         fecha: String(req.query.fecha || req.query.date || ''),
         modo: String(req.query.modo || 'normal'),
+        orden: String(req.query.orden || 'puesto'),
+        soloNuevas,
         opls,
       })
     );
@@ -712,6 +754,8 @@ app.post('/api/etiqueta/pendientes/imprimir', async (req, res) => {
     const out = await reetiquetado.imprimirPendientesEtiquetas({
       fecha: req.body?.fecha || req.body?.date || '',
       modo: req.body?.modo || 'normal',
+      orden: req.body?.orden || 'puesto',
+      soloNuevas: Boolean(req.body?.soloNuevas || req.body?.solo_nuevas),
       opls: req.body?.opls || null,
       copias: req.body?.copias || 1,
       soloZpl,

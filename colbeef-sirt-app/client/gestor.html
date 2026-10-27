@@ -364,6 +364,13 @@
     .modal-overlay.show{display:flex;}
     .modal-box{background:white;border-radius:var(--radio);padding:2rem;max-width:720px;width:100%;max-height:82vh;overflow-y:auto;box-shadow:0 24px 60px rgba(0,0,0,0.22);}
     .modal-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.2rem;gap:1rem;}
+    .print-job-msg{font-size:1.05rem;font-weight:700;color:var(--vp);margin:0.4rem 0;}
+    .print-job-sub{font-size:0.88rem;color:var(--gris);margin-bottom:0.7rem;}
+    .print-job-bar{height:10px;background:#e5e7eb;border-radius:999px;overflow:hidden;margin-bottom:0.8rem;}
+    .print-job-bar > div{height:100%;width:0;background:#16a34a;transition:width 0.2s;}
+    .print-job-hint{font-size:0.82rem;color:#64748b;line-height:1.4;margin:0 0 1rem;}
+    .print-job-acciones{display:flex;gap:0.5rem;flex-wrap:wrap;justify-content:flex-end;}
+    .badge-impresa{display:inline-block;font-size:0.68rem;background:#94a3b8;color:#fff;border-radius:4px;padding:0 5px;margin-left:0.3rem;vertical-align:middle;}
     .modal-title{font-size:0.95rem;font-weight:700;color:var(--vp);flex:1;word-break:break-word;line-height:1.4;}
     .modal-close{background:none;border:none;font-size:1.5rem;cursor:pointer;color:var(--gris);padding:0 0.3rem;}
 
@@ -1001,6 +1008,13 @@
         <button type="button" class="btn btn-secondary btn-sm" onclick="cargarEtiquetasOpl(true)">🔄 Cargar OPL</button>
         <button type="button" class="btn btn-secondary btn-sm" id="etlBtnTempranas" onclick="etlToggleTempranas()">⏱ Tempranas</button>
         <button type="button" class="btn btn-secondary btn-sm" id="etlBtnAdicionales" onclick="etlToggleAdicionales()">➕ Adicionales</button>
+        <label>Orden
+          <select id="etlOrden" onchange="cargarEtiquetasOpl(false)">
+            <option value="puesto" selected>Por puesto / destino</option>
+            <option value="cliente">Por cliente</option>
+          </select>
+        </label>
+        <label title="Oculta los que ya se marcaron impresos hoy"><input type="checkbox" id="etlSoloNuevas" checked onchange="cargarEtiquetasOpl(false)"> Solo las que no se han impreso</label>
         <span id="etlModoTxt" style="color:var(--gris);font-size:0.8rem;">Modo: lote normal</span>
       </div>
       <div id="etlLista" class="etl-lista" style="max-height:320px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:0.7rem;">
@@ -1009,6 +1023,7 @@
       <div class="etl-acciones">
         <span id="etlResumen" style="color:var(--gris);flex:1;"></span>
         <button type="button" class="btn btn-secondary btn-sm" onclick="etlPasarATextarea()" title="Copia los códigos marcados al cuadro de abajo">⬇️ A lote manual</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="etlBtnLimpiar" onclick="limpiarMarcasEtiquetasOpl()" title="Si Browser Print dijo OK pero no salieron, borra las marcas del día para poder reimprimir">↺ Permitir reimprimir</button>
         <button type="button" class="btn btn-primary btn-sm" id="etlBtnImprimir" onclick="imprimirEtiquetasOpl()" disabled>🖨️ Imprimir</button>
       </div>
     </div>
@@ -1090,6 +1105,22 @@
     </div>
     <p id="historialFiltroMeta" style="font-size:0.8rem;color:var(--gris);margin:0 0 0.8rem;"></p>
     <div id="historialContainer"><p class="empty-state">Cargando...</p></div>
+  </div>
+
+  <!-- MODAL PROGRESO IMPRESIÓN (pausa / restantes) -->
+  <div class="modal-overlay" id="modalPrintJob">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header">
+        <div class="modal-title" id="printJobTitulo">Imprimiendo etiquetas…</div>
+      </div>
+      <div class="print-job-msg" id="printJobMsg">Enviadas 0 / 0</div>
+      <div class="print-job-sub" id="printJobSub"></div>
+      <div class="print-job-bar"><div id="printJobBar"></div></div>
+      <p class="print-job-hint" id="printJobHint">
+        Si se acaba el rollo, pulsa <strong>Pausar</strong>, pon rollo nuevo, usa <strong>Calibración</strong> y luego <strong>Continuar</strong>.
+      </p>
+      <div class="print-job-acciones" id="printJobAcciones"></div>
+    </div>
   </div>
 
   <!-- MODAL PARTICULARES (Planilla) -->
@@ -4741,8 +4772,220 @@ async function zbEnviar(zpl) {
   }
 }
 
-/** Imprime: primero Zebra del PC (Browser Print); si no hay, servidor (ZEBRA_HOST). */
-async function imprimirEtiquetasApi(endpoint, body) {
+var PRINT_JOB = {
+  activo: false,
+  pausado: false,
+  cancelar: false,
+  partes: [],
+  pasadas: [],
+  idx: 0,
+  enviadas: 0,
+  total: 0,
+  waitContinue: null,
+};
+
+function _printJobPartes(zpl) {
+  var bloques = String(zpl || '')
+    .split(/(?=\^XA)/)
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(function (s) {
+      return s.indexOf('^XA') === 0;
+    });
+  return bloques.length ? bloques : [String(zpl || '')];
+}
+
+function _printJobMostrar(estado) {
+  var m = document.getElementById('modalPrintJob');
+  if (!m) return;
+  m.classList.add('show');
+  var total = PRINT_JOB.total || 0;
+  var env = PRINT_JOB.enviadas || 0;
+  var faltan = Math.max(0, total - env);
+  var tit = document.getElementById('printJobTitulo');
+  if (tit) {
+    tit.textContent =
+      estado === 'pausado'
+        ? 'Impresión en pausa'
+        : estado === 'listo'
+          ? 'Impresión terminada'
+          : estado === 'cancelado'
+            ? 'Impresión detenida'
+            : 'Imprimiendo etiquetas…';
+  }
+  var msg = document.getElementById('printJobMsg');
+  if (msg) msg.textContent = 'Enviadas ' + env + ' / ' + total;
+  var sub = document.getElementById('printJobSub');
+  if (sub) {
+    sub.textContent = faltan
+      ? estado === 'pausado' || estado === 'cancelado'
+        ? 'Faltan ' + faltan + ' juego(s). Cuadra el rollo, calibra si hace falta y continúa.'
+        : 'Pasada ' + Math.min(PRINT_JOB.idx + 1, PRINT_JOB.partes.length) + ' de ' + PRINT_JOB.partes.length
+      : estado === 'listo'
+        ? 'Todas las del lote se enviaron a la Zebra.'
+        : '';
+  }
+  var bar = document.getElementById('printJobBar');
+  if (bar) bar.style.width = (total ? Math.round((env / total) * 100) : 0) + '%';
+  var acc = document.getElementById('printJobAcciones');
+  if (!acc) return;
+  if (estado === 'imprimiendo') {
+    acc.innerHTML =
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="printJobPausar()">⏸ Pausar</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="printJobCancelar()">⏹ Cancelar resto</button>';
+  } else if (estado === 'pausado') {
+    acc.innerHTML =
+      '<button type="button" class="btn btn-primary btn-sm" onclick="printJobContinuar()">▶ Continuar</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="printJobCancelar()">⏹ Cancelar resto</button>' +
+      '<button type="button" class="btn btn-secondary btn-sm" onclick="calibrarEtiquetas()">📏 Calibración</button>';
+  } else {
+    acc.innerHTML =
+      '<button type="button" class="btn btn-primary btn-sm" onclick="printJobCerrar()">Listo</button>';
+  }
+}
+
+function printJobPausar() {
+  if (!PRINT_JOB.activo) return;
+  PRINT_JOB.pausado = true;
+  _printJobMostrar('pausado');
+}
+
+function printJobContinuar() {
+  PRINT_JOB.pausado = false;
+  if (PRINT_JOB.waitContinue) {
+    var r = PRINT_JOB.waitContinue;
+    PRINT_JOB.waitContinue = null;
+    r();
+  }
+  if (PRINT_JOB.activo) _printJobMostrar('imprimiendo');
+}
+
+function printJobCancelar() {
+  PRINT_JOB.cancelar = true;
+  PRINT_JOB.pausado = false;
+  if (PRINT_JOB.waitContinue) {
+    var r = PRINT_JOB.waitContinue;
+    PRINT_JOB.waitContinue = null;
+    r();
+  }
+}
+
+function printJobCerrar() {
+  var m = document.getElementById('modalPrintJob');
+  if (m) m.classList.remove('show');
+  PRINT_JOB.activo = false;
+}
+
+function _printJobEsperaPausa() {
+  if (!PRINT_JOB.pausado) return Promise.resolve();
+  _printJobMostrar('pausado');
+  return new Promise(function (resolve) {
+    PRINT_JOB.waitContinue = resolve;
+  });
+}
+
+async function _printJobMarcar(marcas) {
+  if (!(marcas || []).length) return;
+  try {
+    await fetch('/api/etiqueta/marcar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ marcas: marcas }),
+    });
+  } catch (e) {
+    console.warn('marcar pasada', e);
+  }
+}
+
+/** Envía ZPL pasada a pasada; marca solo lo enviado; permite pausar. */
+async function zbEnviarConProgreso(zpl, pasadas) {
+  if (!ZB.device) {
+    throw new Error('No hay Zebra en este equipo (revisa Browser Print y pulsa «Buscar»)');
+  }
+  var partes = _printJobPartes(zpl);
+  var meta =
+    Array.isArray(pasadas) && pasadas.length
+      ? pasadas
+      : partes.map(function () {
+          return { codigos: [], marcas: [] };
+        });
+  while (meta.length < partes.length) meta.push({ codigos: [], marcas: [] });
+  var totalEtq = meta.reduce(function (s, p) {
+    return s + ((p.codigos && p.codigos.length) || (p.marcas && p.marcas.length) || 0);
+  }, 0);
+
+  PRINT_JOB.activo = true;
+  PRINT_JOB.pausado = false;
+  PRINT_JOB.cancelar = false;
+  PRINT_JOB.partes = partes;
+  PRINT_JOB.pasadas = meta;
+  PRINT_JOB.idx = 0;
+  PRINT_JOB.enviadas = 0;
+  PRINT_JOB.total = totalEtq;
+  PRINT_JOB.waitContinue = null;
+  _printJobMostrar('imprimiendo');
+
+  var error = null;
+  for (var i = 0; i < partes.length; i++) {
+    PRINT_JOB.idx = i;
+    await _printJobEsperaPausa();
+    if (PRINT_JOB.cancelar) break;
+    _printJobMostrar('imprimiendo');
+    try {
+      var r = await zbFetch(
+        '/write',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify({ device: ZB.device, data: partes[i] }),
+        },
+        60000
+      );
+      if (!r.ok) throw new Error('La Zebra rechazó el trabajo: ' + ((await r.text()) || 'HTTP ' + r.status));
+    } catch (e) {
+      error = e.message || String(e);
+      break;
+    }
+    var marcas = (meta[i] && meta[i].marcas) || [];
+    var nCod =
+      (meta[i] && meta[i].codigos && meta[i].codigos.length) || marcas.length || 0;
+    await _printJobMarcar(marcas);
+    PRINT_JOB.enviadas += nCod;
+    _printJobMostrar('imprimiendo');
+  }
+
+  var faltan = Math.max(0, PRINT_JOB.total - PRINT_JOB.enviadas);
+  var estadoFinal = error ? 'cancelado' : PRINT_JOB.cancelar || faltan ? 'cancelado' : 'listo';
+  var hint = document.getElementById('printJobHint');
+  if (hint) {
+    if (error) {
+      hint.textContent =
+        'Error al enviar: ' + error + (faltan ? ' Quedaron ' + faltan + ' pendientes.' : '');
+    } else if (faltan) {
+      hint.textContent =
+        'Quedaron ' +
+        faltan +
+        ' sin enviar. Con «Solo las que no se han impreso» puedes sacar solo las restantes.';
+    } else {
+      hint.textContent =
+        'Lote completo enviado. Si alguna no salió en papel, usa «Permitir reimprimir».';
+    }
+  }
+  _printJobMostrar(estadoFinal);
+  PRINT_JOB.activo = false;
+  return {
+    enviadas: PRINT_JOB.enviadas,
+    total: PRINT_JOB.total,
+    faltan: faltan,
+    cancelado: !!PRINT_JOB.cancelar || !!error,
+    error: error,
+  };
+}
+
+/** Imprime: Zebra del PC (Browser Print + progreso) o servidor (ZEBRA_HOST). */
+async function imprimirEtiquetasApi(endpoint, body, opts) {
+  var conProgreso = !opts || opts.progreso !== false;
   if (!ZB.device) await zbDetectar();
   if (ZB.modo === 'servidor') {
     var rs = await fetch(endpoint, {
@@ -4766,7 +5009,30 @@ async function imprimirEtiquetasApi(endpoint, body) {
   });
   if (!r.ok) throw new Error(await etApiError(r));
   var j = await r.json();
+  if (conProgreso && (j.pasadas || []).length) {
+    var prog = await zbEnviarConProgreso(j.zpl, j.pasadas);
+    return Object.assign({}, j, {
+      destino: ZB.device.name,
+      modo: 'browser_print',
+      enviadas: prog.enviadas,
+      faltan: prog.faltan,
+      cancelado: prog.cancelado,
+      progreso: prog,
+    });
+  }
   await zbEnviar(j.zpl);
+  if ((j.pasadas || []).length) {
+    var marcasAll = j.pasadas.flatMap(function (p) {
+      return p.marcas || [];
+    });
+    await _printJobMarcar(marcasAll);
+  } else if ((j.codigosAnimales || []).length) {
+    await _printJobMarcar(
+      (j.codigosAnimales || []).map(function (c) {
+        return { codigo: c, fecha: j.fecha || '' };
+      })
+    );
+  }
   return Object.assign({}, j, { destino: ZB.device.name, modo: 'browser_print' });
 }
 
@@ -4994,11 +5260,16 @@ async function cargarEtiquetasOpl(forzar) {
   }
   var fecha = (fechaEl && fechaEl.value) || '';
   var modo = etlModoActual();
+  var orden = ((document.getElementById('etlOrden') || {}).value || 'puesto');
+  var soloNuevas = !!(document.getElementById('etlSoloNuevas') || {}).checked;
   showSpinner('Cargando pendientes por OPL…');
   try {
     var url =
       '/api/etiqueta/pendientes?modo=' +
       encodeURIComponent(modo) +
+      '&orden=' +
+      encodeURIComponent(orden) +
+      (soloNuevas ? '&soloNuevas=1' : '') +
       (fecha ? '&fecha=' + encodeURIComponent(fecha) : '');
     var r = await fetch(url);
     if (!r.ok) throw new Error(await etApiError(r));
@@ -5069,7 +5340,9 @@ function renderEtiquetasOpl() {
     (d.totalJuegos || 0) +
     ' juegos · ~' +
     (d.totalEtiquetasEstimadas || 0) +
-    ' etiquetas</span></label>';
+    ' etiquetas' +
+    (d.yaImpresas ? ' · ' + d.yaImpresas + ' ya impresas ocultas/marcadas' : '') +
+    '</span></label>';
   opls.forEach(function (o, i) {
     var sel = ETL.oplsSel.has(o.opl);
     var abierto = ETL.abiertos.has(o.opl);
@@ -5082,6 +5355,7 @@ function renderEtiquetasOpl() {
       escapeHtml(o.opl) +
       (o.tempranas ? ' <span class="badge-temprana">' + o.tempranas + '</span>' : '') +
       (o.adicionales ? ' <span class="badge-adi-etl">' + o.adicionales + '</span>' : '') +
+      (o.yaImpresas ? ' <span class="badge-impresa">' + o.yaImpresas + ' imp.</span>' : '') +
       '</span><span class="etl-cant">' +
       (o.clientes || []).length +
       ' cliente(s) · ' +
@@ -5168,6 +5442,39 @@ function etlPasarATextarea() {
   alert('Se copiaron ' + codigos.length + ' animal(es) al lote manual.');
 }
 
+async function limpiarMarcasEtiquetasOpl() {
+  var fecha = ((document.getElementById('etlFecha') || {}).value || '').trim();
+  if (!fecha) {
+    alert('Indica la fecha del lote.');
+    return;
+  }
+  if (
+    !confirm(
+      '¿Borrar las marcas de «ya impresas» del ' +
+        fecha +
+        '?\nAsí puedes volver a imprimir con «Solo las que no se han impreso».'
+    )
+  ) {
+    return;
+  }
+  showSpinner('Limpiando marcas…');
+  try {
+    var r = await fetch('/api/etiqueta/limpiar-marcas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fecha: fecha }),
+    });
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    alert('Se limpiaron ' + (j.limpiadas || 0) + ' marca(s).');
+    await cargarEtiquetasOpl(true);
+  } catch (e) {
+    alert('Limpiar marcas: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+  }
+}
+
 async function imprimirEtiquetasOpl() {
   var codigos = etlCodigosSeleccionados();
   if (!codigos.length) return;
@@ -5175,6 +5482,8 @@ async function imprimirEtiquetasOpl() {
   var corte = (ETL.datos && ETL.datos.corteAdicional) || '15:30';
   var tipo =
     modo === 'tempranas' ? ' tempranas' : modo === 'adicionales' ? ' adicionales (≥ ' + corte + ')' : '';
+  var orden = ((document.getElementById('etlOrden') || {}).value || 'puesto');
+  var soloNuevas = !!(document.getElementById('etlSoloNuevas') || {}).checked;
   if (
     !confirm(
       '¿Imprimir ' +
@@ -5183,9 +5492,9 @@ async function imprimirEtiquetasOpl() {
         tipo +
         '?\n≈ ' +
         codigos.length * 4 +
-        ' etiquetas · ' +
-        codigos.length +
-        ' pasadas del rollo de 4.'
+        ' etiquetas · orden ' +
+        (orden === 'cliente' ? 'por cliente' : 'por puesto') +
+        (soloNuevas ? ' · solo nuevas' : '')
     )
   ) {
     return;
@@ -5195,6 +5504,8 @@ async function imprimirEtiquetasOpl() {
     var j = await imprimirEtiquetasApi('/api/etiqueta/pendientes/imprimir', {
       fecha: (document.getElementById('etlFecha') || {}).value || '',
       modo: modo,
+      orden: orden,
+      soloNuevas: soloNuevas,
       opls: [...ETL.oplsSel],
       copias: 1,
     });
@@ -5212,13 +5523,17 @@ async function imprimirEtiquetasOpl() {
     });
     ET.historial = ET.historial.slice(0, 200);
     renderHistorialEtiquetas();
+    var extra = j.cancelado
+      ? '\n⚠ Lote incompleto: faltan ' + (j.faltan || 0) + '.'
+      : '';
     alert(
       '🖨️ ' +
         (j.juegos || codigos.length) +
         ' juego(s) · ' +
         (j.impresas || 0) +
         ' etiqueta(s) → ' +
-        (j.destino || 'impresora')
+        (j.destino || 'impresora') +
+        extra
     );
     await cargarEtiquetasOpl(true);
   } catch (e) {
@@ -5294,6 +5609,7 @@ async function imprimirLoteEtiquetas() {
     var j = await imprimirEtiquetasApi('/api/etiqueta/imprimir', {
       codigos: codigos,
       copias: copias,
+      fecha: ((document.getElementById('etlFecha') || {}).value || ''),
     });
     var hora = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
@@ -5349,6 +5665,7 @@ async function imprimirEtiquetasActuales() {
     var j = await imprimirEtiquetasApi('/api/etiqueta/imprimir', {
       codigos: codigos,
       copias: copias,
+      fecha: ((document.getElementById('etlFecha') || {}).value || ''),
     });
     var hora = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
