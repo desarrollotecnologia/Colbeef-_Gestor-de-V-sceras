@@ -400,7 +400,11 @@ export async function setRolloColumnas(columnas) {
   } catch (_) {
     /* memoria alcanza si no hay store */
   }
-  return { success: true, columnas: n };
+  return {
+    success: true,
+    columnas: n,
+    impresora: etiquetas.configImpresora(),
+  };
 }
 
 etiquetas.setColumnasProvider(() => rolloColumnasMem || Number(process.env.ZEBRA_ETQ_COLUMNAS || 4) || 4);
@@ -505,7 +509,11 @@ export async function getEtiquetaZpl(codigo, copias = 1) {
   return { zpl, filename: `reetiquetado_${nombre || 'etiqueta'}.zpl`, datos };
 }
 
-export async function imprimirEtiquetas({ codigos = [], copias = 1 } = {}) {
+export async function imprimirEtiquetas({
+  codigos = [],
+  copias = 1,
+  soloZpl = false,
+} = {}) {
   const lista = (codigos || []).map((c) => String(c || '').trim()).filter(Boolean);
   if (!lista.length) {
     const err = new Error('Sin códigos para imprimir');
@@ -519,23 +527,38 @@ export async function imprimirEtiquetas({ codigos = [], copias = 1 } = {}) {
   const nCopias = Math.max(1, Math.min(Number(copias || 1), 20));
   const layouts = layoutsConCopias(datos, nCopias);
   const zpl = etiquetas.zplLote(layouts);
-  const envio = await etiquetas.enviarZpl(zpl);
   const cfg = etiquetas.configImpresora();
-  return {
+  const base = {
     success: true,
     impresas: datos.length,
     copias: nCopias,
     codigos: datos.map((d) => d.codigoBarras),
     columnas: cfg.columnas,
-    ...envio,
+    impresora: cfg,
+    zpl,
   };
+  if (soloZpl) {
+    return { ...base, modo: 'solo_zpl', destino: 'cliente' };
+  }
+  const envio = await etiquetas.enviarZpl(zpl);
+  return { ...base, ...envio };
 }
 
-export async function calibrarImpresora() {
+export async function calibrarImpresora({ soloZpl = false } = {}) {
   await getRolloColumnas();
   const zpl = etiquetas.zplCalibracion();
+  const cfg = etiquetas.configImpresora();
+  if (soloZpl) {
+    return {
+      success: true,
+      modo: 'solo_zpl',
+      destino: 'cliente',
+      zpl,
+      impresora: cfg,
+    };
+  }
   const envio = await etiquetas.enviarZpl(zpl);
-  return { success: true, ...envio, impresora: etiquetas.configImpresora() };
+  return { success: true, ...envio, impresora: cfg };
 }
 
 export async function getConfigImpresora() {
@@ -729,6 +752,7 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
   const print = await imprimirEtiquetas({
     codigos,
     copias: payload.copias || 1,
+    soloZpl: Boolean(payload.soloZpl || payload.solo_zpl),
   });
   return {
     ...print,

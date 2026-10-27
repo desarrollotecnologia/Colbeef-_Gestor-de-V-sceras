@@ -640,12 +640,15 @@ app.get('/api/etiqueta/zpl', async (req, res) => {
 
 app.post('/api/etiqueta/imprimir', async (req, res) => {
   try {
+    const soloZpl = Boolean(req.body?.soloZpl || req.body?.solo_zpl);
     const out = await reetiquetado.imprimirEtiquetas({
       codigos: req.body?.codigos || [],
       copias: req.body?.copias || 1,
+      soloZpl,
     });
     auditRest(req, 'etiquetaImprimir', 'reetiquetado', (out.codigos || []).join(','), {
       n: out.impresas || 0,
+      soloZpl,
     });
     res.json(out);
   } catch (e) {
@@ -669,9 +672,15 @@ app.post('/api/etiqueta/rollo', async (req, res) => {
   }
 });
 
-app.post('/api/etiqueta/calibrar', async (_req, res) => {
+app.post('/api/etiqueta/calibrar', async (req, res) => {
   try {
-    res.json(await reetiquetado.calibrarImpresora());
+    const soloZpl = Boolean(
+      req.body?.soloZpl ||
+        req.body?.solo_zpl ||
+        req.query.solo_zpl === 'true' ||
+        req.query.soloZpl === 'true'
+    );
+    res.json(await reetiquetado.calibrarImpresora({ soloZpl }));
   } catch (e) {
     apiError(res, e);
   }
@@ -699,14 +708,17 @@ app.get('/api/etiqueta/pendientes', async (req, res) => {
 
 app.post('/api/etiqueta/pendientes/imprimir', async (req, res) => {
   try {
+    const soloZpl = Boolean(req.body?.soloZpl || req.body?.solo_zpl);
     const out = await reetiquetado.imprimirPendientesEtiquetas({
       fecha: req.body?.fecha || req.body?.date || '',
       modo: req.body?.modo || 'normal',
       opls: req.body?.opls || null,
       copias: req.body?.copias || 1,
+      soloZpl,
     });
     auditRest(req, 'etiquetaPendientesImprimir', 'reetiquetado', out.modo || '', {
       n: out.juegos || 0,
+      soloZpl,
     });
     res.json(out);
   } catch (e) {

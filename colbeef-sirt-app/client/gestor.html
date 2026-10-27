@@ -243,6 +243,10 @@
     .et-opciones select{padding:0.3rem 0.5rem;border:2px solid var(--vc);border-radius:8px;font-family:inherit;}
     .zb-bar{display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.55rem 0.8rem;margin-bottom:1rem;font-size:0.85rem;}
     .zb-estado{flex:1;min-width:220px;font-weight:600;color:#334155;}
+    .zb-estado.ok{color:#15803d;}
+    .zb-estado.mal{color:#b91c1c;}
+    .zb-estado a{color:#1d4ed8;text-decoration:underline;}
+    #zbImpresora{max-width:260px;padding:0.25rem 0.4rem;border:2px solid var(--vc);border-radius:8px;font-size:0.85rem;}
     .et-grid{display:flex;flex-direction:column;gap:0.85rem;margin-bottom:1.5rem;overflow-x:auto;}
     .et-card{display:flex;flex-direction:column;gap:0.45rem;max-width:100%;}
     .et-tira{position:relative;flex:none;width:1053px;height:98.5px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;box-shadow:var(--sombra);font-family:Arial,Helvetica,sans-serif;color:#000;overflow:hidden;}
@@ -973,14 +977,15 @@
     </p>
 
     <div class="zb-bar">
-      <span id="zbEstado" class="zb-estado">Cargando impresora…</span>
+      <span id="zbEstado" class="zb-estado">Buscando Zebra en este equipo…</span>
+      <select id="zbImpresora" onchange="zbElegir(this.value)" style="display:none;" title="Zebra detectada por Browser Print"></select>
       <label title="Rollo físico: 4 es el definitivo; 2 para rollos viejos">Rollo
         <select id="zbRollo" onchange="cambiarRolloEtiquetas(this.value)">
           <option value="4">4 manillas</option>
           <option value="2">2 manillas</option>
         </select>
       </label>
-      <button type="button" class="btn btn-secondary btn-sm" onclick="cargarConfigEtiquetas()">🔄 Buscar</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="zbDetectar()" title="Busca la Zebra con Browser Print en este PC">🔄 Buscar</button>
       <button type="button" class="btn btn-secondary btn-sm" onclick="calibrarEtiquetas()" title="Imprime una regla para ubicar las tiras">📏 Calibración</button>
     </div>
 
@@ -1603,7 +1608,9 @@ function showReetiquetado() {
       fechaEl.value = typeof getFechaGlobalISO === 'function' ? getFechaGlobalISO() : '';
     } catch (_) {}
   }
-  cargarConfigEtiquetas();
+  cargarConfigEtiquetas().then(function () {
+    return zbDetectar();
+  });
   setTimeout(function () {
     var el = document.getElementById('etCodigo');
     if (el) el.focus();
@@ -4564,31 +4571,222 @@ function tiraEtiquetaHtml(layout) {
   );
 }
 
+// Zebra del equipo (Browser Print en 127.0.0.1) · si no hay, usa ZEBRA_HOST del servidor
+var ZB = {
+  url: location.protocol === 'https:' ? 'https://127.0.0.1:9101' : 'http://127.0.0.1:9100',
+  devices: [],
+  device: null,
+  buscado: false,
+  servidor: null,
+  error: '',
+  get modo() {
+    return !this.device && this.servidor && this.servidor.modo === 'red' ? 'servidor' : 'local';
+  },
+};
+var ZB_DESCARGA =
+  'https://www.zebra.com/us/en/support-downloads/software/printer-software/browser-print.html';
+
+async function zbFetch(path, opts, ms) {
+  var ctl = new AbortController();
+  var t = setTimeout(function () {
+    ctl.abort();
+  }, ms || 4000);
+  try {
+    return await fetch(ZB.url + path, Object.assign({}, opts || {}, { signal: ctl.signal }));
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+function zbDestinoTexto() {
+  if (ZB.modo === 'servidor') {
+    return (
+      'la Zebra en red (' +
+      (ZB.servidor.host || '') +
+      ':' +
+      (ZB.servidor.puerto || 9100) +
+      ')'
+    );
+  }
+  return ZB.device
+    ? 'la Zebra de este equipo (' + ZB.device.name + ')'
+    : 'la Zebra de este equipo';
+}
+
+function renderZb() {
+  var est = document.getElementById('zbEstado');
+  var sel = document.getElementById('zbImpresora');
+  if (!est) return;
+  if (sel) {
+    sel.style.display = ZB.device && ZB.devices.length > 1 ? '' : 'none';
+    sel.innerHTML = ZB.devices
+      .map(function (d) {
+        return (
+          '<option value="' +
+          escapeHtml(d.uid) +
+          '"' +
+          (ZB.device && d.uid === ZB.device.uid ? ' selected' : '') +
+          '>' +
+          escapeHtml(d.name) +
+          '</option>'
+        );
+      })
+      .join('');
+  }
+  var span = document.getElementById('etImpresora');
+  if (ZB.modo === 'servidor') {
+    est.className = 'zb-estado';
+    est.textContent = '🖥️ Se imprime en ' + zbDestinoTexto();
+    if (span) span.textContent = 'Destino: red ' + (ZB.servidor.host || '') + ':' + (ZB.servidor.puerto || 9100);
+  } else if (ZB.device) {
+    est.className = 'zb-estado ok';
+    est.textContent =
+      '🟢 Zebra de este equipo: ' +
+      ZB.device.name +
+      (ZB.device.connection ? ' (' + ZB.device.connection + ')' : '');
+    if (span) span.textContent = 'Destino: ' + ZB.device.name;
+  } else {
+    est.className = 'zb-estado mal';
+    est.innerHTML = ZB.error
+      ? '🔴 ' + escapeHtml(ZB.error)
+      : '🔴 No se encontró Zebra en este equipo. Instala <a href="' +
+        ZB_DESCARGA +
+        '" target="_blank" rel="noopener">Zebra Browser Print</a>, conecta la impresora, permite esta página y pulsa «Buscar».';
+    if (span) {
+      span.textContent = ZB.servidor && ZB.servidor.modo === 'red'
+        ? 'Respaldo servidor: ' + (ZB.servidor.host || '') + ':' + (ZB.servidor.puerto || 9100)
+        : 'Sin destino local';
+    }
+  }
+}
+
+async function zbDetectar() {
+  ZB.buscado = true;
+  ZB.error = '';
+  var est = document.getElementById('zbEstado');
+  if (est) {
+    est.className = 'zb-estado';
+    est.textContent = 'Buscando Zebra en este equipo…';
+  }
+  ZB.devices = [];
+  ZB.device = null;
+  try {
+    var r = await zbFetch('/available');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    var j = await r.json();
+    ZB.devices = (j.printer || j.deviceList || []).filter(function (d) {
+      return !d.deviceType || d.deviceType === 'printer';
+    });
+    if (!ZB.devices.length) {
+      var t = await (await zbFetch('/default?type=printer')).text();
+      if (t) ZB.devices = [JSON.parse(t)];
+    }
+    var uid = localStorage.getItem('gestor_zebra_uid');
+    ZB.device = ZB.devices.find(function (d) {
+      return d.uid === uid;
+    }) || ZB.devices[0] || null;
+    if (!ZB.device) {
+      ZB.error =
+        'Browser Print responde, pero no hay impresora. Revisa cable/USB y el icono de Browser Print.';
+    }
+  } catch (e) {
+    ZB.devices = [];
+    ZB.device = null;
+    ZB.error =
+      'Zebra Browser Print no responde en este equipo. Ábrelo (bandeja del sistema), permite esta página y pulsa «Buscar».';
+  }
+  renderZb();
+}
+
+function zbElegir(uid) {
+  ZB.device =
+    ZB.devices.find(function (d) {
+      return d.uid === uid;
+    }) || ZB.device;
+  if (ZB.device) localStorage.setItem('gestor_zebra_uid', ZB.device.uid);
+  renderZb();
+}
+
+async function zbEnviar(zpl) {
+  if (!ZB.device) {
+    throw new Error('No hay Zebra en este equipo (revisa Browser Print y pulsa «Buscar»)');
+  }
+  var bloques = String(zpl || '')
+    .split(/(?=\^XA)/)
+    .map(function (s) {
+      return s.trim();
+    })
+    .filter(function (s) {
+      return s.indexOf('^XA') === 0;
+    });
+  var partes = bloques.length ? bloques : [String(zpl || '')];
+  for (var i = 0; i < partes.length; i++) {
+    var r;
+    try {
+      r = await zbFetch(
+        '/write',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+          body: JSON.stringify({ device: ZB.device, data: partes[i] }),
+        },
+        60000
+      );
+    } catch (e) {
+      throw new Error('Zebra Browser Print no respondió en este equipo');
+    }
+    if (!r.ok) {
+      throw new Error('La Zebra rechazó el trabajo: ' + ((await r.text()) || 'HTTP ' + r.status));
+    }
+  }
+}
+
+/** Imprime: primero Zebra del PC (Browser Print); si no hay, servidor (ZEBRA_HOST). */
+async function imprimirEtiquetasApi(endpoint, body) {
+  if (!ZB.device) await zbDetectar();
+  if (ZB.modo === 'servidor') {
+    var rs = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    if (!rs.ok) throw new Error(await etApiError(rs));
+    return rs.json();
+  }
+  if (!ZB.device) {
+    throw new Error(
+      'No hay Zebra en este equipo. Instala Browser Print o configura ZEBRA_HOST en el servidor.'
+    );
+  }
+  var payload = Object.assign({}, body || {}, { soloZpl: true });
+  var r = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!r.ok) throw new Error(await etApiError(r));
+  var j = await r.json();
+  await zbEnviar(j.zpl);
+  return Object.assign({}, j, { destino: ZB.device.name, modo: 'browser_print' });
+}
+
 async function cargarConfigEtiquetas() {
-  var estado = document.getElementById('zbEstado');
   try {
     var r = await fetch('/api/etiqueta/config');
     if (!r.ok) throw new Error(await etApiError(r));
     var j = await r.json();
     var imp = j.impresora || {};
+    ZB.servidor = imp;
     var cols = j.columnas || imp.columnas || 4;
     var rollo = document.getElementById('zbRollo');
     if (rollo) rollo.value = String(cols);
-    if (estado) {
-      estado.textContent =
-        imp.modo === 'red'
-          ? 'Impresora: red ' + (imp.host || '') + ':' + (imp.puerto || 9100) + ' · rollo ' + cols
-          : 'Impresora: ' + (imp.impresora || '—') + ' · rollo ' + cols;
-    }
-    var span = document.getElementById('etImpresora');
-    if (span) {
-      span.textContent =
-        imp.modo === 'red'
-          ? 'Destino: red ' + (imp.host || '') + ':' + (imp.puerto || 9100)
-          : 'Destino: ' + (imp.impresora || 'cola Windows');
-    }
+    renderZb();
   } catch (e) {
-    if (estado) estado.textContent = 'Sin impresora: ' + (e.message || e);
+    var estado = document.getElementById('zbEstado');
+    if (estado) {
+      estado.className = 'zb-estado mal';
+      estado.textContent = 'Config servidor: ' + (e.message || e);
+    }
   }
   if (!ET.etiquetas.length || ET.esMuestra) {
     await mostrarMuestraEtiquetas();
@@ -4603,6 +4801,8 @@ async function cambiarRolloEtiquetas(valor) {
       body: JSON.stringify({ columnas: Number(valor) || 4 }),
     });
     if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    if (j.impresora) ZB.servidor = j.impresora;
     await cargarConfigEtiquetas();
   } catch (e) {
     alert('No se pudo cambiar el rollo: ' + (e.message || e));
@@ -4610,13 +4810,26 @@ async function cambiarRolloEtiquetas(valor) {
 }
 
 async function calibrarEtiquetas() {
-  if (!confirm('¿Imprimir regla de calibración en la Zebra?')) return;
+  if (!ZB.device) await zbDetectar();
+  if (!confirm('¿Imprimir regla de calibración en ' + zbDestinoTexto() + '?')) return;
   showSpinner('Calibrando…');
   try {
-    var r = await fetch('/api/etiqueta/calibrar', { method: 'POST' });
-    if (!r.ok) throw new Error(await etApiError(r));
-    var j = await r.json();
-    alert('Calibración enviada a ' + (j.destino || 'impresora'));
+    if (ZB.modo === 'servidor') {
+      var rs = await fetch('/api/etiqueta/calibrar', { method: 'POST' });
+      if (!rs.ok) throw new Error(await etApiError(rs));
+      var js = await rs.json();
+      alert('Calibración enviada a ' + (js.destino || 'impresora'));
+    } else {
+      if (!ZB.device) throw new Error('No hay Zebra en este equipo');
+      var r = await fetch('/api/etiqueta/calibrar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ soloZpl: true }),
+      });
+      if (!r.ok) throw new Error(await etApiError(r));
+      await zbEnviar((await r.json()).zpl);
+      alert('Calibración enviada a ' + ZB.device.name);
+    }
   } catch (e) {
     alert('Calibración: ' + (e.message || e));
   } finally {
@@ -4655,13 +4868,9 @@ async function buscarEtiqueta() {
     ET.etiquetas = j.etiquetas || [];
     ET.codigo = codigo;
     ET.esMuestra = false;
-    var imp = j.impresora || {};
-    var span = document.getElementById('etImpresora');
-    if (span) {
-      span.textContent =
-        imp.modo === 'red'
-          ? 'Destino: red ' + (imp.host || '') + ':' + (imp.puerto || 9100)
-          : 'Destino: ' + (imp.impresora || '—');
+    if (j.impresora) {
+      ZB.servidor = j.impresora;
+      renderZb();
     }
     renderEtiquetas();
     if (document.getElementById('etAutoImprimir').checked) {
@@ -4983,18 +5192,12 @@ async function imprimirEtiquetasOpl() {
   }
   showSpinner('Imprimiendo por OPL…');
   try {
-    var r = await fetch('/api/etiqueta/pendientes/imprimir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        fecha: (document.getElementById('etlFecha') || {}).value || '',
-        modo: modo,
-        opls: [...ETL.oplsSel],
-        copias: 1,
-      }),
+    var j = await imprimirEtiquetasApi('/api/etiqueta/pendientes/imprimir', {
+      fecha: (document.getElementById('etlFecha') || {}).value || '',
+      modo: modo,
+      opls: [...ETL.oplsSel],
+      copias: 1,
     });
-    if (!r.ok) throw new Error(await etApiError(r));
-    var j = await r.json();
     var hora = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
       minute: '2-digit',
@@ -5088,13 +5291,10 @@ async function imprimirLoteEtiquetas() {
   }
   showSpinner('Imprimiendo lote…');
   try {
-    var r = await fetch('/api/etiqueta/imprimir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigos: codigos, copias: copias }),
+    var j = await imprimirEtiquetasApi('/api/etiqueta/imprimir', {
+      codigos: codigos,
+      copias: copias,
     });
-    if (!r.ok) throw new Error(await etApiError(r));
-    var j = await r.json();
     var hora = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
       minute: '2-digit',
@@ -5146,13 +5346,10 @@ async function imprimirEtiquetasActuales() {
   var copias = copiasEtiqueta();
   showSpinner('Imprimiendo…');
   try {
-    var r = await fetch('/api/etiqueta/imprimir', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codigos: codigos, copias: copias }),
+    var j = await imprimirEtiquetasApi('/api/etiqueta/imprimir', {
+      codigos: codigos,
+      copias: copias,
     });
-    if (!r.ok) throw new Error(await etApiError(r));
-    var j = await r.json();
     var hora = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
       minute: '2-digit',
