@@ -229,16 +229,23 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b3,
-      y: 108,
-      h: 24,
+      y: 100,
+      h: 20,
       texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 140,
-      h: 22,
-      texto: `F.B: ${fb}   F.V: ${fv}`,
+      y: 128,
+      h: 20,
+      texto: `F.B: ${fb}`,
+    },
+    {
+      tipo: 'texto',
+      x: b3,
+      y: 154,
+      h: 20,
+      texto: `F.V: ${fv}`,
     },
     // Bloque 4 — cliente / OPL / dirección
     {
