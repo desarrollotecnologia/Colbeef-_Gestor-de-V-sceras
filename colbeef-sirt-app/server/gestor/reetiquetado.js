@@ -537,7 +537,7 @@ export function muestraCuatroManillas() {
     cliente: 'LOZANO GALVIS',
     opl: 'TRANSCARNES',
     destino: 'San Francisco',
-    direccion: 'San Francisco',
+    direccion: 'Cll 58 # 12-104 Barrio Reposo',
     enCava: true,
     en_cava: true,
     especie: 'Bovino',
