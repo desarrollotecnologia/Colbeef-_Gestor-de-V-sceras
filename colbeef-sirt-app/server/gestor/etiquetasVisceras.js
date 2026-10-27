@@ -189,7 +189,7 @@ export function layoutEtiqueta(et) {
     ...(qrTexto
       ? [{ tipo: 'qr', x: bQr, y: 18, h: 160, mag: 3, texto: qrTexto }]
       : []),
-    // Bloque 3 — cava / zona / despacho (como Canales; CAM no pisa Cliente)
+    // Bloque 3 — destino grande (reemplaza Cava) / zona / despacho
     {
       tipo: 'texto',
       x: b3,
@@ -210,7 +210,7 @@ export function layoutEtiqueta(et) {
       y: 42,
       h: 42,
       w: 54,
-      texto: `Cava: ${zplTxt(et.ubicacion) || '-'}`,
+      texto: corto(et.destino || et.zona || '-', 22),
     },
     {
       tipo: 'texto',
@@ -226,7 +226,7 @@ export function layoutEtiqueta(et) {
       h: 22,
       texto: `Despacho: ${fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-'}`,
     },
-    // Bloque 4 — cliente (misma caja que Canales)
+    // Bloque 4 — cliente (sin Destino: ya va grande en el bloque 3)
     {
       tipo: 'texto',
       x: b4,
@@ -260,16 +260,9 @@ export function layoutEtiqueta(et) {
       x: b4,
       y: 98,
       h: 17,
-      texto: corto(`Destino ${et.destino || '-'}`, c4),
-    },
-    {
-      tipo: 'texto',
-      x: b4,
-      y: 121,
-      h: 17,
       texto: corto(et.direccion || '', c4),
     },
-    { tipo: 'texto', x: b4, y: 144, h: 17, texto: 'Especie Bovino' },
+    { tipo: 'texto', x: b4, y: 121, h: 17, texto: 'Especie Bovino' },
   ];
   return elementos.filter((e) => e.texto);
 }
