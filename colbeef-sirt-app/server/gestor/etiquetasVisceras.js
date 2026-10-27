@@ -140,8 +140,9 @@ function fechaDmy(iso) {
 /**
  * Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho).
  *
- * Bloque 1 como Canales (puesto y animal grandes/alargados) → QR después
- * de ese texto (si no, el ^A0R con w alto tapa el QR) → cava → cliente.
+ * Misma composición que Despacho Canales (b1 / b3 / b4 y tamaños),
+ * con el QR en el hueco que allá queda vacío entre barras y cava.
+ * Canales: b1=520, b3=920, b4=1340 — aquí b3/b4 corren un poco por el QR.
  */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
@@ -149,33 +150,23 @@ export function layoutEtiqueta(et) {
     .replace(/\^/g, ' ')
     .replace(/~/g, ' ')
     .trim();
-  // Mismos tamaños de Canales (h/w). b1 un poco antes para dejar sitio al QR.
-  const b1 = 380;
-  const puestoTxt = corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 18);
-  const animalTxt = zplTxt(et.codigoAnimal || et.codigo_animal);
-  const wPuesto = 64;
-  const wAnimal = 60;
-  // El texto rotado ocupa ~chars*w a lo largo; el QR va justo después.
-  const finBloque1 = b1 + Math.max(
-    String(puestoTxt).length * wPuesto,
-    String(animalTxt).length * wAnimal,
-    (11 * String(codigo || '').length + 35) * 2
-  );
-  const bQr = Math.min(finBloque1 + 24, 1180);
-  const b3 = Math.max(bQr + 170, 1000);
-  const b4 = Math.min(Math.max(b3 + 380, 1380), 1580);
+  const b1 = 520;
+  const bQr = 900;
+  const b3 = 1080;
+  const b4 = 1500;
   const c4 = 40;
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
     : zplTxt(et.tipo);
   const elementos = [
+    // Bloque 1 — igual que Canales (puesto y animal grandes / alargados)
     {
       tipo: 'texto',
       x: b1,
       y: 4,
       h: 48,
-      w: wPuesto,
-      texto: puestoTxt,
+      w: 64,
+      texto: corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 22),
     },
     { tipo: 'barras', x: b1, y: 56, h: 46, modulo: 2, texto: codigo },
     {
@@ -183,21 +174,22 @@ export function layoutEtiqueta(et) {
       x: b1,
       y: 106,
       h: 46,
-      w: wAnimal,
-      texto: animalTxt,
+      w: 60,
+      texto: zplTxt(et.codigoAnimal || et.codigo_animal),
     },
-    // Tipo de pieza más legible (Cabeza / Patas / VB / VR)
     {
       tipo: 'texto',
       x: b1,
-      y: 156,
-      h: 24,
-      w: 28,
+      y: 154,
+      h: 22,
+      w: 26,
       texto: corto(tipoLabel, 22),
     },
+    // QR en el hueco después del código de barras (antes de cava)
     ...(qrTexto
-      ? [{ tipo: 'qr', x: bQr, y: 22, h: 150, mag: 3, texto: qrTexto }]
+      ? [{ tipo: 'qr', x: bQr, y: 28, h: 130, mag: 2, texto: qrTexto }]
       : []),
+    // Bloque 3 — cava / zona / despacho (como Canales; CAM no pisa Cliente)
     {
       tipo: 'texto',
       x: b3,
@@ -207,7 +199,7 @@ export function layoutEtiqueta(et) {
     },
     {
       tipo: 'texto',
-      x: b3 + 280,
+      x: b3 + 300,
       y: 6,
       h: 28,
       texto: zplTxt(et.cam || tipoCorto(et.tipo)),
@@ -216,24 +208,25 @@ export function layoutEtiqueta(et) {
       tipo: 'texto',
       x: b3,
       y: 42,
-      h: 40,
-      w: 50,
+      h: 42,
+      w: 54,
       texto: `Cava: ${zplTxt(et.ubicacion) || '-'}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 96,
+      y: 98,
       h: 24,
-      texto: `Zona: ${corto(et.zona || '-', 24)}`,
+      texto: `Zona: ${corto(et.zona || '-', 26)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 132,
+      y: 134,
       h: 22,
       texto: `Despacho: ${fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-'}`,
     },
+    // Bloque 4 — cliente (misma caja que Canales)
     {
       tipo: 'texto',
       x: b4,
