@@ -6,8 +6,9 @@
  * Rollo de 4 manillas por pasada (o 2 para rollos viejos).
  *
  * Opción 1 (despacho corto): puesto/turno, barras, animal, tipo,
- * cava abreviada (sin riel), zona, cliente, OPL, destino.
- * Logo preimpreso en el rollo; sin QR.
+ * cava abreviada (sin riel), zona, cliente, OPL, destino + QR
+ * con el código de la pieza (igual que la etiqueta SIRT).
+ * Logo preimpreso en el rollo.
  */
 import net from 'net';
 import fs from 'fs';
@@ -139,7 +140,12 @@ function fechaDmy(iso) {
 /** Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho). */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
+  const qrTexto = String(et.qrPayload || et.qr_payload || codigo || '')
+    .replace(/\^/g, ' ')
+    .replace(/~/g, ' ')
+    .trim();
   const b1 = 520;
+  const bQr = 740;
   const b3 = 920;
   const b4 = 1340;
   const c4 = 40;
@@ -165,6 +171,10 @@ export function layoutEtiqueta(et) {
       texto: zplTxt(et.codigoAnimal || et.codigo_animal),
     },
     { tipo: 'texto', x: b1, y: 156, h: 16, texto: tipoLabel },
+    // QR SIRT: código + tipo + Bovino + GSMI + Pie + Sexo + Lote + F.B + F.V
+    ...(qrTexto
+      ? [{ tipo: 'qr', x: bQr, y: 18, h: 155, mag: 3, texto: qrTexto }]
+      : []),
     {
       tipo: 'texto',
       x: b3,
@@ -279,6 +289,10 @@ function campos(layout, xTira, cfg) {
       out.push(
         `^FO${foX},${foY}^BY${e.modulo},3,${h}^BCR,${h},N,N,N,A^FD${e.texto}^FS`
       );
+    } else if (e.tipo === 'qr') {
+      const mag = Math.max(2, Math.min(Number(e.mag || 4), 10));
+      // ^BQR = QR rotado 90° (misma orientación que el texto de la tira)
+      out.push(`^FO${foX},${foY}^BQR,2,${mag}^FDQA,${e.texto}^FS`);
     } else {
       const w = Number(e.w || h);
       out.push(`^FO${foX},${foY}^A0R,${h},${w}^FD${e.texto}^FS`);

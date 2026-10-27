@@ -677,6 +677,43 @@ app.post('/api/etiqueta/calibrar', async (_req, res) => {
   }
 });
 
+app.get('/api/etiqueta/pendientes', async (req, res) => {
+  try {
+    const opls = req.query.opls
+      ? String(req.query.opls)
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : null;
+    res.json(
+      await reetiquetado.listarPendientesEtiquetas({
+        fecha: String(req.query.fecha || req.query.date || ''),
+        modo: String(req.query.modo || 'normal'),
+        opls,
+      })
+    );
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/pendientes/imprimir', async (req, res) => {
+  try {
+    const out = await reetiquetado.imprimirPendientesEtiquetas({
+      fecha: req.body?.fecha || req.body?.date || '',
+      modo: req.body?.modo || 'normal',
+      opls: req.body?.opls || null,
+      copias: req.body?.copias || 1,
+    });
+    auditRest(req, 'etiquetaPendientesImprimir', 'reetiquetado', out.modo || '', {
+      n: out.juegos || 0,
+    });
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
 app.get('/api/crudas/excel', async (req, res) => {
   try {
     const out = await gestor.generarExcelCrudas({ general: req.query.modo === 'general' });

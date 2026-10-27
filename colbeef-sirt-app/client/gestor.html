@@ -248,6 +248,12 @@
     .et-tira{position:relative;flex:none;width:1053px;height:98.5px;background:#fff;border:1px solid #cbd5e1;border-radius:4px;box-shadow:var(--sombra);font-family:Arial,Helvetica,sans-serif;color:#000;overflow:hidden;}
     .et-tira .et-txt{position:absolute;white-space:nowrap;line-height:1;font-weight:600;}
     .et-tira .et-barras{position:absolute;background:repeating-linear-gradient(90deg,#000 0 2px,#fff 2px 3px,#000 3px 4px,#fff 4px 7px,#000 7px 10px,#fff 10px 12px);}
+    .et-tira .et-qr{position:absolute;background:
+      linear-gradient(#000,#000) 0 0/28% 28%,
+      linear-gradient(#000,#000) 100% 0/28% 28%,
+      linear-gradient(#000,#000) 0 100%/28% 28%,
+      repeating-conic-gradient(#000 0% 25%,#fff 0% 50%) 50%/20% 20%;
+      background-repeat:no-repeat;border:1px solid #000;box-sizing:border-box;}
     .et-tira .et-logo{position:absolute;top:0;bottom:0;right:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#cbd5e1;font-size:30px;font-weight:800;border-left:1px dashed #e2e8f0;}
     .et-tira .et-logo small{font-size:9px;font-weight:600;}
     .et-tira .et-linea{position:absolute;background:#000;}
@@ -260,6 +266,16 @@
     .etl-ayuda{color:var(--gris);font-size:0.84rem;margin:0 0 0.8rem;line-height:1.4;}
     .etl-box textarea{width:100%;min-height:110px;padding:0.65rem 0.8rem;border:2px solid var(--vc);border-radius:10px;font-family:ui-monospace,Consolas,monospace;font-size:0.9rem;resize:vertical;box-sizing:border-box;}
     .etl-acciones{display:flex;justify-content:flex-end;align-items:center;gap:0.8rem;flex-wrap:wrap;margin-top:0.75rem;font-size:0.88rem;}
+    .etl-fila{display:flex;align-items:center;gap:0.6rem;padding:0.45rem 0.7rem;border-bottom:1px solid #eef2f7;font-size:0.87rem;}
+    .etl-fila.todos{background:#f8fafc;font-weight:800;color:var(--vp);border-bottom:2px solid #dbe7f5;}
+    .etl-fila.opl{font-weight:700;background:#f1f8f2;}
+    .etl-fila.cli{padding-left:2.2rem;}
+    .etl-fila .etl-nom{flex:1;}
+    .etl-fila .etl-cant{font-size:0.78rem;color:var(--gris);white-space:nowrap;}
+    #etlBtnTempranas.active{background:#dc2626;border-color:#dc2626;color:#fff;}
+    #etlBtnAdicionales.active{background:#1e3a5f;border-color:#1e3a5f;color:#fff;}
+    .badge-adi-etl{display:inline-block;font-size:0.68rem;background:#1e3a5f;color:#fff;border-radius:4px;padding:0 5px;margin-left:0.3rem;vertical-align:middle;}
+    .badge-temprana{display:inline-block;font-size:0.68rem;background:#dc2626;color:#fff;border-radius:4px;padding:0 5px;margin-left:0.3rem;vertical-align:middle;}
 
     /* ── INFORME: INPUTS ── */
     .inf-input{padding:0.7rem 1rem;border-radius:10px;border:2px solid var(--vc);font-size:0.95rem;width:100%;transition:border-color 0.2s;}
@@ -951,7 +967,7 @@
     <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
     <h2 style="color:var(--vp);margin-bottom:0.4rem;">🏷️ Reetiquetado de Paquete Visceral</h2>
     <p style="color:var(--gris);font-size:0.88rem;margin-bottom:1.2rem;">
-      Etiqueta de despacho (opción 1): puesto/turno, animal, tipo, cava y destino.
+      Etiqueta de despacho (opción 1): puesto/turno, animal, tipo, cava, destino y <strong>QR</strong> del código de la pieza.
       Rollo de <strong>4 manillas</strong> · mismo formato de tira que Despacho Canales · Zebra ZT231.
       Pistolea una pieza (<code>2610-09188-6493</code>) o el animal (<code>2610-09188</code>) para las 4.
     </p>
@@ -969,10 +985,33 @@
     </div>
 
     <div class="etl-box">
-      <h3>🖨️ Imprimir lote (varios animales)</h3>
+      <h3>🖨️ Etiquetas por OPL (varios animales de una vez)</h3>
       <p class="etl-ayuda">
-        Pega varios códigos (uno por línea). Cada animal imprime sus 4 piezas en una pasada del rollo.
-        Ejemplo: 10 animales = 10 pasadas · 40 etiquetas. <strong>Copias</strong> repite cada juego.
+        Igual que Canales: el lote <strong>normal</strong> no incluye tempranas ni adicionales.
+        Tempranas = puestos NSF / 6505 / ARIR / LHMV / WMERCAN <em>o</em> marcador <code>TEMP1</code> / temp 1.
+        Usa los botones aparte. Cada animal = 4 manillas en una pasada del rollo.
+      </p>
+      <div class="etl-filtros" style="display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem;font-size:0.85rem;">
+        <label>Fecha <input type="date" id="etlFecha"></label>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="cargarEtiquetasOpl(true)">🔄 Cargar OPL</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="etlBtnTempranas" onclick="etlToggleTempranas()">⏱ Tempranas</button>
+        <button type="button" class="btn btn-secondary btn-sm" id="etlBtnAdicionales" onclick="etlToggleAdicionales()">➕ Adicionales</button>
+        <span id="etlModoTxt" style="color:var(--gris);font-size:0.8rem;">Modo: lote normal</span>
+      </div>
+      <div id="etlLista" class="etl-lista" style="max-height:320px;overflow:auto;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:0.7rem;">
+        <div class="empty-state">Pulsa «Cargar OPL» para ver los juegos pendientes en cava.</div>
+      </div>
+      <div class="etl-acciones">
+        <span id="etlResumen" style="color:var(--gris);flex:1;"></span>
+        <button type="button" class="btn btn-secondary btn-sm" onclick="etlPasarATextarea()" title="Copia los códigos marcados al cuadro de abajo">⬇️ A lote manual</button>
+        <button type="button" class="btn btn-primary btn-sm" id="etlBtnImprimir" onclick="imprimirEtiquetasOpl()" disabled>🖨️ Imprimir</button>
+      </div>
+    </div>
+
+    <div class="etl-box" style="border-color:#e2e8f0;">
+      <h3>✏️ Lote manual (pegar códigos)</h3>
+      <p class="etl-ayuda">
+        Alternativa: pega varios animales (uno por línea). Útil para reimpresiones o una lista corta.
       </p>
       <textarea id="etLoteCodigos" placeholder="2610-09188&#10;2610-09189&#10;2610-09190"></textarea>
       <div class="etl-acciones">
@@ -1558,6 +1597,12 @@ function _hideAll() {
 function showReetiquetado() {
   _hideAll();
   document.getElementById('viewEtiquetas').classList.add('active');
+  var fechaEl = document.getElementById('etlFecha');
+  if (fechaEl && !fechaEl.value) {
+    try {
+      fechaEl.value = typeof getFechaGlobalISO === 'function' ? getFechaGlobalISO() : '';
+    } catch (_) {}
+  }
   cargarConfigEtiquetas();
   setTimeout(function () {
     var el = document.getElementById('etCodigo');
@@ -4476,6 +4521,21 @@ function tiraEtiquetaHtml(layout) {
           ';"></div>'
         );
       }
+      if (el.tipo === 'qr') {
+        return (
+          '<div class="et-qr" title="' +
+          escapeHtml(el.texto || '') +
+          '" style="left:' +
+          px(el.x) +
+          ';top:' +
+          px(el.y) +
+          ';width:' +
+          px(el.h) +
+          ';height:' +
+          px(el.h) +
+          ';"></div>'
+        );
+      }
       var sx = el.w && el.h ? Number(el.w) / Number(el.h) : 1;
       var stretch =
         sx !== 1
@@ -4673,6 +4733,296 @@ function renderEtiquetas() {
         );
       })
       .join('');
+}
+
+var ETL = {
+  datos: null,
+  oplsSel: new Set(),
+  abiertos: new Set(),
+  soloTempranas: false,
+  soloAdicionales: false,
+};
+
+function etlModoActual() {
+  if (ETL.soloTempranas) return 'tempranas';
+  if (ETL.soloAdicionales) return 'adicionales';
+  return 'normal';
+}
+
+function etlActualizarModoTxt() {
+  var el = document.getElementById('etlModoTxt');
+  var btnT = document.getElementById('etlBtnTempranas');
+  var btnA = document.getElementById('etlBtnAdicionales');
+  if (btnT) btnT.classList.toggle('active', !!ETL.soloTempranas);
+  if (btnA) btnA.classList.toggle('active', !!ETL.soloAdicionales);
+  if (!el) return;
+  var corte = (ETL.datos && ETL.datos.corteAdicional) || '15:30';
+  if (ETL.soloTempranas) el.textContent = 'Modo: solo TEMPRANAS (catálogo NSF/6505/ARIR/LHMV/WMERCAN + TEMP1 / temp 1)';
+  else if (ETL.soloAdicionales) el.textContent = 'Modo: solo ADICIONALES (≥ ' + corte + ')';
+  else el.textContent = 'Modo: lote NORMAL (sin tempranas ni adicionales)';
+}
+
+function etlToggleTempranas() {
+  ETL.soloTempranas = !ETL.soloTempranas;
+  if (ETL.soloTempranas) ETL.soloAdicionales = false;
+  etlActualizarModoTxt();
+  cargarEtiquetasOpl(true);
+}
+
+function etlToggleAdicionales() {
+  ETL.soloAdicionales = !ETL.soloAdicionales;
+  if (ETL.soloAdicionales) ETL.soloTempranas = false;
+  etlActualizarModoTxt();
+  cargarEtiquetasOpl(true);
+}
+
+async function cargarEtiquetasOpl(forzar) {
+  var fechaEl = document.getElementById('etlFecha');
+  if (fechaEl && !fechaEl.value) {
+    try {
+      fechaEl.value = typeof getFechaGlobalISO === 'function' ? getFechaGlobalISO() : '';
+    } catch (_) {}
+  }
+  var fecha = (fechaEl && fechaEl.value) || '';
+  var modo = etlModoActual();
+  showSpinner('Cargando pendientes por OPL…');
+  try {
+    var url =
+      '/api/etiqueta/pendientes?modo=' +
+      encodeURIComponent(modo) +
+      (fecha ? '&fecha=' + encodeURIComponent(fecha) : '');
+    var r = await fetch(url);
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    ETL.datos = j;
+    if (forzar || !ETL.oplsSel.size) {
+      ETL.oplsSel = new Set((j.opls || []).map(function (o) {
+        return o.opl;
+      }));
+    }
+    etlActualizarModoTxt();
+    renderEtiquetasOpl();
+  } catch (e) {
+    ETL.datos = null;
+    var box = document.getElementById('etlLista');
+    if (box) {
+      box.innerHTML =
+        '<div class="empty-state">Error: ' + escapeHtml(e.message || String(e)) + '</div>';
+    }
+    document.getElementById('etlBtnImprimir').disabled = true;
+  } finally {
+    hideSpinner();
+  }
+}
+
+function renderEtiquetasOpl() {
+  var d = ETL.datos;
+  var box = document.getElementById('etlLista');
+  var resumen = document.getElementById('etlResumen');
+  var btn = document.getElementById('etlBtnImprimir');
+  if (!d) {
+    box.innerHTML = '<div class="empty-state">Pulsa «Cargar OPL».</div>';
+    btn.disabled = true;
+    return;
+  }
+  var opls = d.opls || [];
+  var modo = d.modo || 'normal';
+  var badge =
+    modo === 'tempranas'
+      ? ' <span class="badge-temprana">TEMPRANAS</span>'
+      : modo === 'adicionales'
+        ? ' <span class="badge-adi-etl">≥ ' + escapeHtml(d.corteAdicional || '15:30') + '</span>'
+        : '';
+  if (!opls.length) {
+    box.innerHTML =
+      '<div class="empty-state">' +
+      escapeHtml(d.mensaje || 'Sin pendientes en este modo.') +
+      '</div>';
+    resumen.textContent = d.mensaje || '';
+    btn.disabled = true;
+    btn.textContent = '🖨️ Imprimir';
+    return;
+  }
+  var marcados = opls.filter(function (o) {
+    return ETL.oplsSel.has(o.opl);
+  });
+  var juegosSel = marcados.reduce(function (a, o) {
+    return a + (o.total || 0);
+  }, 0);
+  var html =
+    '<label class="etl-fila todos"><input type="checkbox" id="etlTodos" ' +
+    (marcados.length === opls.length ? 'checked' : '') +
+    ' onchange="etlToggleTodos(this.checked)"><span class="etl-nom">Seleccionar todos' +
+    badge +
+    '</span><span class="etl-cant">' +
+    opls.length +
+    ' OPL · ' +
+    (d.totalJuegos || 0) +
+    ' juegos · ~' +
+    (d.totalEtiquetasEstimadas || 0) +
+    ' etiquetas</span></label>';
+  opls.forEach(function (o, i) {
+    var sel = ETL.oplsSel.has(o.opl);
+    var abierto = ETL.abiertos.has(o.opl);
+    html +=
+      '<div class="etl-fila opl"><input type="checkbox" ' +
+      (sel ? 'checked' : '') +
+      ' onchange="etlToggleOpl(' +
+      i +
+      ', this.checked)"><span class="etl-nom">' +
+      escapeHtml(o.opl) +
+      (o.tempranas ? ' <span class="badge-temprana">' + o.tempranas + '</span>' : '') +
+      (o.adicionales ? ' <span class="badge-adi-etl">' + o.adicionales + '</span>' : '') +
+      '</span><span class="etl-cant">' +
+      (o.clientes || []).length +
+      ' cliente(s) · ' +
+      o.total +
+      ' juegos</span><button type="button" class="btn btn-secondary btn-sm" onclick="etlAbrir(' +
+      i +
+      ')">' +
+      (abierto ? '▲' : '▼') +
+      '</button></div>';
+    if (!abierto) return;
+    (o.clientes || []).forEach(function (c) {
+      html +=
+        '<div class="etl-fila cli"><span class="etl-nom">' +
+        escapeHtml(c.cliente) +
+        ' <small style="color:var(--gris)">' +
+        escapeHtml((c.puestos || []).join(', ')) +
+        '</small></span><span class="etl-cant">' +
+        c.total +
+        ' juegos</span></div>';
+    });
+  });
+  box.innerHTML = html;
+  var todos = document.getElementById('etlTodos');
+  if (todos) todos.indeterminate = marcados.length > 0 && marcados.length < opls.length;
+  resumen.innerHTML = juegosSel
+    ? '<strong>' +
+      juegosSel +
+      '</strong> juego(s) seleccionados · ~' +
+      juegosSel * 4 +
+      ' etiquetas · ' +
+      juegosSel +
+      ' pasadas del rollo'
+    : 'Marca uno o más OPL';
+  btn.disabled = !juegosSel;
+  btn.textContent = juegosSel
+    ? '🖨️ Imprimir ' +
+      juegosSel +
+      (modo === 'tempranas' ? ' tempranas' : modo === 'adicionales' ? ' adicionales' : ' juegos')
+    : '🖨️ Imprimir';
+}
+
+function etlToggleTodos(marcar) {
+  ETL.oplsSel = marcar
+    ? new Set((ETL.datos.opls || []).map(function (o) {
+        return o.opl;
+      }))
+    : new Set();
+  renderEtiquetasOpl();
+}
+
+function etlToggleOpl(i, marcar) {
+  var o = ETL.datos.opls[i];
+  if (marcar) ETL.oplsSel.add(o.opl);
+  else ETL.oplsSel.delete(o.opl);
+  renderEtiquetasOpl();
+}
+
+function etlAbrir(i) {
+  var o = ETL.datos.opls[i];
+  if (ETL.abiertos.has(o.opl)) ETL.abiertos.delete(o.opl);
+  else ETL.abiertos.add(o.opl);
+  renderEtiquetasOpl();
+}
+
+function etlCodigosSeleccionados() {
+  if (!ETL.datos) return [];
+  return (ETL.datos.opls || [])
+    .filter(function (o) {
+      return ETL.oplsSel.has(o.opl);
+    })
+    .flatMap(function (o) {
+      return o.codigos || [];
+    });
+}
+
+function etlPasarATextarea() {
+  var codigos = etlCodigosSeleccionados();
+  if (!codigos.length) {
+    alert('Marca al menos un OPL.');
+    return;
+  }
+  document.getElementById('etLoteCodigos').value = codigos.join('\n');
+  contarLoteEtiquetas();
+  alert('Se copiaron ' + codigos.length + ' animal(es) al lote manual.');
+}
+
+async function imprimirEtiquetasOpl() {
+  var codigos = etlCodigosSeleccionados();
+  if (!codigos.length) return;
+  var modo = etlModoActual();
+  var corte = (ETL.datos && ETL.datos.corteAdicional) || '15:30';
+  var tipo =
+    modo === 'tempranas' ? ' tempranas' : modo === 'adicionales' ? ' adicionales (≥ ' + corte + ')' : '';
+  if (
+    !confirm(
+      '¿Imprimir ' +
+        codigos.length +
+        ' juego(s)' +
+        tipo +
+        '?\n≈ ' +
+        codigos.length * 4 +
+        ' etiquetas · ' +
+        codigos.length +
+        ' pasadas del rollo de 4.'
+    )
+  ) {
+    return;
+  }
+  showSpinner('Imprimiendo por OPL…');
+  try {
+    var r = await fetch('/api/etiqueta/pendientes/imprimir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        fecha: (document.getElementById('etlFecha') || {}).value || '',
+        modo: modo,
+        opls: [...ETL.oplsSel],
+        copias: 1,
+      }),
+    });
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    var hora = new Date().toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    (j.codigosAnimales || codigos).forEach(function (c) {
+      ET.historial.unshift({
+        hora: hora,
+        copias: 1,
+        e: { codigoBarras: c, tipo: 'Juego ' + (j.modo || modo), ubicacion: '—' },
+      });
+    });
+    ET.historial = ET.historial.slice(0, 200);
+    renderHistorialEtiquetas();
+    alert(
+      '🖨️ ' +
+        (j.juegos || codigos.length) +
+        ' juego(s) · ' +
+        (j.impresas || 0) +
+        ' etiqueta(s) → ' +
+        (j.destino || 'impresora')
+    );
+    await cargarEtiquetasOpl(true);
+  } catch (e) {
+    alert('OPL: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+  }
 }
 
 function leerCodigosLote() {
