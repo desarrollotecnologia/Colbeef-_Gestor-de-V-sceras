@@ -137,15 +137,22 @@ function fechaDmy(iso) {
   return m ? `${m[3]}-${m[2]}-${m[1]}` : '';
 }
 
-/** Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho). */
+/**
+ * Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho).
+ *
+ * Orden: QR (zona libre del inicio) → bloque 1 (puesto/barras/animal) →
+ * cava/zona → cliente. El texto rotado crece a lo largo de la tira; el QR
+ * NO puede ir entre puesto y cava o queda debajo de «CLG / MxM/».
+ */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
   const qrTexto = String(et.qrPayload || et.qr_payload || codigo || '')
     .replace(/\^/g, ' ')
     .replace(/~/g, ' ')
     .trim();
-  const b1 = 520;
-  const bQr = 740;
+  // Hueco libre ~0–250 (antes de Canales b1=520). QR ahí; luego bloque 1.
+  const bQr = 70;
+  const b1 = 280;
   const b3 = 920;
   const b4 = 1340;
   const c4 = 40;
@@ -153,34 +160,34 @@ export function layoutEtiqueta(et) {
     ? `${zplTxt(et.tipo)} CRUDAS`
     : zplTxt(et.tipo);
   const elementos = [
+    // QR SIRT primero (no se solapa con puesto/barras)
+    ...(qrTexto
+      ? [{ tipo: 'qr', x: bQr, y: 22, h: 150, mag: 3, texto: qrTexto }]
+      : []),
     {
       tipo: 'texto',
       x: b1,
       y: 4,
-      h: 48,
-      w: 64,
-      texto: corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 22),
+      h: 42,
+      w: 52,
+      texto: corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 18),
     },
-    { tipo: 'barras', x: b1, y: 56, h: 46, modulo: 2, texto: codigo },
+    { tipo: 'barras', x: b1, y: 54, h: 44, modulo: 2, texto: codigo },
     {
       tipo: 'texto',
       x: b1,
-      y: 106,
-      h: 46,
-      w: 60,
+      y: 104,
+      h: 40,
+      w: 48,
       texto: zplTxt(et.codigoAnimal || et.codigo_animal),
     },
-    { tipo: 'texto', x: b1, y: 156, h: 16, texto: tipoLabel },
-    // QR SIRT: código + tipo + Bovino + GSMI + Pie + Sexo + Lote + F.B + F.V
-    ...(qrTexto
-      ? [{ tipo: 'qr', x: bQr, y: 18, h: 155, mag: 3, texto: qrTexto }]
-      : []),
+    { tipo: 'texto', x: b1, y: 152, h: 16, texto: corto(tipoLabel, 22) },
     {
       tipo: 'texto',
       x: b3,
       y: 8,
       h: 24,
-      texto: zplTxt(et.cuarto || et.tipo || 'Paquete Visceral'),
+      texto: corto(et.cuarto || et.tipo || 'Paquete Visceral', 22),
     },
     {
       tipo: 'texto',
@@ -193,21 +200,21 @@ export function layoutEtiqueta(et) {
       tipo: 'texto',
       x: b3,
       y: 42,
-      h: 42,
-      w: 54,
+      h: 40,
+      w: 50,
       texto: `Cava: ${zplTxt(et.ubicacion) || '-'}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 98,
+      y: 96,
       h: 24,
-      texto: `Zona: ${corto(et.zona || '-', 26)}`,
+      texto: `Zona: ${corto(et.zona || '-', 24)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 134,
+      y: 132,
       h: 22,
       texto: `Despacho: ${fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-'}`,
     },
