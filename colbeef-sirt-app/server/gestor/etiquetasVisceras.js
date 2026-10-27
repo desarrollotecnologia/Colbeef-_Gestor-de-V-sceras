@@ -247,34 +247,46 @@ export function layoutEtiqueta(et) {
       h: 20,
       texto: `F.V: ${fv}`,
     },
-    // Bloque 4 — cliente / OPL / dirección
+    // Bloque 4 — cliente / OPL / zona + dirección
     {
       tipo: 'texto',
       x: b4,
-      y: 10,
-      h: 20,
+      y: 6,
+      h: 18,
       texto: corto(`Cliente ${et.cliente || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 42,
-      h: 20,
+      y: 32,
+      h: 18,
       texto: corto(`OPL ${et.opl || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 74,
+      y: 58,
       h: 18,
+      texto: corto(`Zona ${et.destino || et.zona || '-'}`, c4),
+    },
+    {
+      tipo: 'texto',
+      x: b4,
+      y: 84,
+      h: 17,
       texto: corto(et.direccion || '', 44),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 108,
-      h: 18,
-      texto: corto(et.direccion && String(et.direccion).length > 44 ? String(et.direccion).slice(44, 88) : '', 44),
+      y: 112,
+      h: 17,
+      texto: corto(
+        et.direccion && String(et.direccion).length > 44
+          ? String(et.direccion).slice(44, 88)
+          : '',
+        44
+      ),
     },
   ];
   return elementos.filter((e) => e.texto);
