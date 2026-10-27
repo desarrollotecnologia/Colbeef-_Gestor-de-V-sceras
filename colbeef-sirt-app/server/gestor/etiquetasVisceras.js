@@ -191,9 +191,9 @@ export function layoutEtiqueta(et) {
       w: 24,
       texto: corto(tipoLabel, 22),
     },
-    // QR SIRT (mismo payload; un poco más arriba / menos alto para no rozar borde)
+    // QR SIRT (mismo payload; alineado arriba con el resto de campos)
     ...(qrTexto
-      ? [{ tipo: 'qr', x: bQr, y: 12, h: 150, mag: 3, texto: qrTexto }]
+      ? [{ tipo: 'qr', x: bQr, y: 2, h: 148, mag: 3, texto: qrTexto }]
       : []),
     // Bloque 3 — zona + dirección en grande + pie / sexo / fechas
     // y máximo ~155 para no recortar en el borde de la manilla (~197 dots).
