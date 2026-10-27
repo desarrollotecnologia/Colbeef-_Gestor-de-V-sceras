@@ -140,11 +140,8 @@ function fechaDmy(iso) {
 /**
  * Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho).
  *
- * Orden real (como SIRT / hueco de la manilla):
- * bloque 1 (puesto + barras + animal) → QR en el espacio después del
- * código de barras → cava/zona → cliente → logo.
- * El texto ^A0R crece a lo largo: w del puesto/animal se mantiene
- * parecido al largo del barcode para no tapar el QR.
+ * Bloque 1 como Canales (puesto y animal grandes/alargados) → QR después
+ * de ese texto (si no, el ^A0R con w alto tapa el QR) → cava → cliente.
  */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
@@ -152,11 +149,21 @@ export function layoutEtiqueta(et) {
     .replace(/\^/g, ' ')
     .replace(/~/g, ' ')
     .trim();
-  // Canales: b1=520, b3=920 (hueco vacío). Aquí el QR llena ese hueco.
-  const b1 = 400;
-  const bQr = 780;
-  const b3 = 1000;
-  const b4 = 1420;
+  // Mismos tamaños de Canales (h/w). b1 un poco antes para dejar sitio al QR.
+  const b1 = 380;
+  const puestoTxt = corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 18);
+  const animalTxt = zplTxt(et.codigoAnimal || et.codigo_animal);
+  const wPuesto = 64;
+  const wAnimal = 60;
+  // El texto rotado ocupa ~chars*w a lo largo; el QR va justo después.
+  const finBloque1 = b1 + Math.max(
+    String(puestoTxt).length * wPuesto,
+    String(animalTxt).length * wAnimal,
+    (11 * String(codigo || '').length + 35) * 2
+  );
+  const bQr = Math.min(finBloque1 + 24, 1180);
+  const b3 = Math.max(bQr + 170, 1000);
+  const b4 = Math.min(Math.max(b3 + 380, 1380), 1580);
   const c4 = 40;
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
@@ -166,21 +173,28 @@ export function layoutEtiqueta(et) {
       tipo: 'texto',
       x: b1,
       y: 4,
-      h: 40,
-      w: 32,
-      texto: corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 16),
+      h: 48,
+      w: wPuesto,
+      texto: puestoTxt,
     },
-    { tipo: 'barras', x: b1, y: 52, h: 44, modulo: 2, texto: codigo },
+    { tipo: 'barras', x: b1, y: 56, h: 46, modulo: 2, texto: codigo },
     {
       tipo: 'texto',
       x: b1,
-      y: 102,
-      h: 36,
-      w: 30,
-      texto: zplTxt(et.codigoAnimal || et.codigo_animal),
+      y: 106,
+      h: 46,
+      w: wAnimal,
+      texto: animalTxt,
     },
-    { tipo: 'texto', x: b1, y: 148, h: 16, texto: corto(tipoLabel, 20) },
-    // QR justo después del código de barras (espacio libre antes de cava)
+    // Tipo de pieza más legible (Cabeza / Patas / VB / VR)
+    {
+      tipo: 'texto',
+      x: b1,
+      y: 156,
+      h: 24,
+      w: 28,
+      texto: corto(tipoLabel, 22),
+    },
     ...(qrTexto
       ? [{ tipo: 'qr', x: bQr, y: 22, h: 150, mag: 3, texto: qrTexto }]
       : []),
