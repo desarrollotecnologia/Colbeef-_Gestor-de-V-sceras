@@ -4701,32 +4701,47 @@ async function zbDetectar() {
   }
   ZB.devices = [];
   ZB.device = null;
-  try {
-    var r = await zbFetch('/available');
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    var j = await r.json();
-    ZB.devices = (j.printer || j.deviceList || []).filter(function (d) {
-      return !d.deviceType || d.deviceType === 'printer';
-    });
-    if (!ZB.devices.length) {
-      var t = await (await zbFetch('/default?type=printer')).text();
-      if (t) ZB.devices = [JSON.parse(t)];
-    }
-    var uid = localStorage.getItem('gestor_zebra_uid');
-    ZB.device = ZB.devices.find(function (d) {
-      return d.uid === uid;
-    }) || ZB.devices[0] || null;
-    if (!ZB.device) {
+  var intentos = 0;
+  while (intentos < 2) {
+    intentos += 1;
+    try {
+      var r = await zbFetch('/available', {}, 5000);
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      var j = await r.json();
+      ZB.devices = (j.printer || j.deviceList || []).filter(function (d) {
+        return !d.deviceType || d.deviceType === 'printer';
+      });
+      if (!ZB.devices.length) {
+        var t = await (await zbFetch('/default?type=printer', {}, 5000)).text();
+        if (t) {
+          try {
+            ZB.devices = [JSON.parse(t)];
+          } catch (_) {}
+        }
+      }
+      var uid = localStorage.getItem('gestor_zebra_uid');
+      ZB.device =
+        ZB.devices.find(function (d) {
+          return d.uid === uid;
+        }) ||
+        ZB.devices[0] ||
+        null;
+      if (ZB.device) {
+        localStorage.setItem('gestor_zebra_uid', ZB.device.uid);
+        break;
+      }
       ZB.error =
-        'Browser Print responde, pero no hay impresora. Revisa cable/USB y el icono de Browser Print.';
+        'Browser Print responde, pero no hay impresora. Revisa cable USB y el icono de Browser Print.';
+    } catch (e) {
+      ZB.devices = [];
+      ZB.device = null;
+      ZB.error =
+        'Zebra Browser Print no responde en este equipo. Ábrelo (bandeja del sistema), permite esta página y pulsa «Buscar».';
+      if (intentos < 2) await new Promise(function (res) { setTimeout(res, 700); });
     }
-  } catch (e) {
-    ZB.devices = [];
-    ZB.device = null;
-    ZB.error =
-      'Zebra Browser Print no responde en este equipo. Ábrelo (bandeja del sistema), permite esta página y pulsa «Buscar».';
   }
   renderZb();
+  return !!ZB.device;
 }
 
 function zbElegir(uid) {
