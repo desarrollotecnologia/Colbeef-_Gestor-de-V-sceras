@@ -80,6 +80,8 @@ export function defaultState() {
     informe: null,
     /** OPLs marcados para Excel multi-hoja de particulares (persiste entre jornadas). */
     oplsParticulares: [],
+    /** Rollo Zebra del reetiquetado: 4 (definitivo) o 2 (rollos viejos). */
+    etiquetasRolloColumnas: 4,
     historialPdf: [],
     fechaInicioOperacion: null,
     /**

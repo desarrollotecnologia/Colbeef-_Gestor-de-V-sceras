@@ -47,6 +47,7 @@ import { iniciarVigilanteMysql } from './gestor/mysqlVigilante.js';
 import { ensureGestorSchema, recordAuditoria } from './gestor/mysqlSchema.js';
 import { migrateGestorStateJsonToMysql } from './gestor/store.js';
 import { seedPlazasCatalogIfNeeded } from './gestor/plazasCatalog.js';
+import * as reetiquetado from './gestor/reetiquetado.js';
 import {
   loginUser,
   logoutUser,
@@ -397,7 +398,12 @@ function parseGestorRange(req) {
 }
 
 function apiError(res, e) {
-  res.status(500).json({ success: false, message: e.message || String(e) });
+  const status = Number(e?.status || e?.statusCode) || 500;
+  res.status(status).json({
+    success: false,
+    message: e.message || String(e),
+    detail: e.message || String(e),
+  });
 }
 
 app.get('/api/dashboard', async (req, res) => {
@@ -593,6 +599,71 @@ app.get('/api/crudas', async (_req, res) => {
   try {
     await gestor.importarExcel(null, 'Estado_Cavas');
     res.json(await gestor.getCrudasDetalle());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+/** Reetiquetado de paquetes viscerales (Zebra ZPL, rollo 4 manillas). */
+app.get('/api/etiqueta', async (req, res) => {
+  try {
+    res.json(await reetiquetado.getEtiqueta(String(req.query.codigo || '')));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/etiqueta/zpl', async (req, res) => {
+  try {
+    const out = await reetiquetado.getEtiquetaZpl(
+      String(req.query.codigo || ''),
+      Number(req.query.copias || 1)
+    );
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${out.filename || 'reetiquetado.zpl'}"`
+    );
+    res.send(out.zpl);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/imprimir', async (req, res) => {
+  try {
+    const out = await reetiquetado.imprimirEtiquetas({
+      codigos: req.body?.codigos || [],
+      copias: req.body?.copias || 1,
+    });
+    auditRest(req, 'etiquetaImprimir', 'reetiquetado', (out.codigos || []).join(','), {
+      n: out.impresas || 0,
+    });
+    res.json(out);
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.get('/api/etiqueta/config', async (_req, res) => {
+  try {
+    res.json(await reetiquetado.getConfigImpresora());
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/rollo', async (req, res) => {
+  try {
+    res.json(await reetiquetado.setRolloColumnas(req.body?.columnas ?? req.body?.rollo));
+  } catch (e) {
+    apiError(res, e);
+  }
+});
+
+app.post('/api/etiqueta/calibrar', async (_req, res) => {
+  try {
+    res.json(await reetiquetado.calibrarImpresora());
   } catch (e) {
     apiError(res, e);
   }

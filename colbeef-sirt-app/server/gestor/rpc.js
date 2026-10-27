@@ -6,6 +6,7 @@
  */
 import * as engine from './engine.js';
 import * as informe from './informe.js';
+import * as reetiquetado from './reetiquetado.js';
 import { recordAuditoria } from './mysqlSchema.js';
 
 const handlers = {
@@ -63,6 +64,11 @@ const handlers = {
   consultarCruceDecomisosPreview: engine.consultarCruceDecomisosPreview,
   consultarDespachosPreview: engine.consultarDespachosPreview,
   getOperacionEnVivo: engine.getOperacionEnVivo,
+  getEtiquetaVisceras: (codigo) => reetiquetado.getEtiqueta(codigo),
+  imprimirEtiquetasVisceras: (payload) => reetiquetado.imprimirEtiquetas(payload || {}),
+  getConfigEtiquetasVisceras: () => reetiquetado.getConfigImpresora(),
+  setRolloEtiquetasVisceras: (columnas) => reetiquetado.setRolloColumnas(columnas),
+  calibrarEtiquetasVisceras: () => reetiquetado.calibrarImpresora(),
 };
 
 /** Métodos que modifican estado o generan documentos — se auditan en MySQL. */
@@ -101,6 +107,7 @@ function moduleForMethod(method) {
   if (/informe/i.test(m)) return 'informe';
   if (/adicional/i.test(m)) return 'adicionales';
   if (/sirt|sincronizar/i.test(m)) return 'sirt';
+  if (/etiqueta|reetiquet/i.test(m)) return 'reetiquetado';
   if (/limpiar|cerrar/i.test(m)) return 'operacion';
   return 'gestor';
 }

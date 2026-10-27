@@ -234,6 +234,29 @@
     .desp-leyenda strong{color:#374151;}
     .empty-state{text-align:center;padding:3rem;color:var(--gris);}
 
+    /* ── REETIQUETADO ── */
+    .et-scan{display:flex;gap:0.8rem;align-items:center;flex-wrap:wrap;margin-bottom:1rem;}
+    .et-scan .search-bar{display:flex;align-items:center;gap:0.5rem;flex:1;min-width:240px;max-width:420px;background:#fff;border:2px solid var(--vc);border-radius:12px;padding:0.35rem 0.7rem;}
+    .et-scan .search-bar input{border:none;outline:none;flex:1;font-size:1.05rem;font-weight:600;letter-spacing:0.03em;background:transparent;font-family:inherit;}
+    .et-opciones{display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;font-size:0.85rem;color:var(--gris);margin-bottom:1.2rem;}
+    .et-opciones input[type=number]{width:60px;padding:0.25rem 0.4rem;border:2px solid var(--vc);border-radius:8px;}
+    .et-opciones select{padding:0.3rem 0.5rem;border:2px solid var(--vc);border-radius:8px;font-family:inherit;}
+    .zb-bar{display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:0.55rem 0.8rem;margin-bottom:1rem;font-size:0.85rem;}
+    .zb-estado{flex:1;min-width:220px;font-weight:600;color:#334155;}
+    .et-grid{display:flex;gap:1.2rem;flex-wrap:wrap;margin-bottom:1.5rem;}
+    .et-card{display:flex;flex-direction:column;gap:0.55rem;min-width:280px;max-width:100%;}
+    .et-label{background:#fff;border:1px solid #cbd5e1;border-radius:8px;padding:0.7rem 0.85rem;box-shadow:var(--sombra);font-family:ui-monospace,Consolas,monospace;}
+    .et-top{display:flex;justify-content:space-between;gap:0.8rem;margin-bottom:0.55rem;border-bottom:2px solid #e2e8f0;padding-bottom:0.45rem;}
+    .et-barras{height:28px;min-width:140px;background:repeating-linear-gradient(90deg,#000 0 2px,#fff 2px 3px,#000 3px 4px,#fff 4px 7px,#000 7px 10px,#fff 10px 12px);border-radius:2px;}
+    .et-ubic{text-align:right;font-weight:700;font-size:0.95rem;line-height:1.25;}
+    .et-cuarto{font-size:0.78rem;color:#64748b;margin-top:0.25rem;}
+    .et-puesto{font-size:1.05rem;font-weight:700;margin-bottom:0.35rem;}
+    .et-animal{font-size:1.35rem;font-weight:800;letter-spacing:0.02em;margin:0.35rem 0 0.15rem;}
+    .et-tipo{font-size:0.9rem;font-weight:600;color:#1e3a5f;}
+    .et-meta{font-size:0.78rem;color:var(--gris);line-height:1.45;}
+    .et-meta strong{color:#1f2937;}
+    .et-aviso{color:#b45309;font-weight:600;}
+
     /* ── INFORME: INPUTS ── */
     .inf-input{padding:0.7rem 1rem;border-radius:10px;border:2px solid var(--vc);font-size:0.95rem;width:100%;transition:border-color 0.2s;}
     .inf-input:focus{outline:none;border-color:var(--vp);}
@@ -513,6 +536,12 @@
         <div class="modulo-nombre">Planilla de Puntos</div>
         <div class="modulo-desc">Distribución de puestos por zona y OPL. Genera planilla visual exportable a PDF.</div>
         <span class="modulo-badge">Activo</span>
+      </div>
+      <div class="modulo-card" onclick="showReetiquetado()">
+        <div class="modulo-icono">🏷️</div>
+        <div class="modulo-nombre">Reetiquetado</div>
+        <div class="modulo-desc">Reimprime etiquetas de despacho del juego visceral (rollo 4 manillas) en la Zebra.</div>
+        <span class="modulo-badge">Etiquetas</span>
       </div>
     </div>
   </div>
@@ -911,6 +940,69 @@
 
     <!-- Resumen totales -->
     <div id="planillaResumen" style="display:flex;justify-content:center;"></div>
+  </div>
+
+  <!-- ═══ REETIQUETADO ═══ -->
+  <div id="viewEtiquetas" class="view-detail">
+    <button class="back-btn" onclick="showDashboard()">← Volver al Dashboard</button>
+    <h2 style="color:var(--vp);margin-bottom:0.4rem;">🏷️ Reetiquetado de Paquete Visceral</h2>
+    <p style="color:var(--gris);font-size:0.88rem;margin-bottom:1.2rem;">
+      Etiqueta de despacho (opción 1): puesto/turno, animal, tipo, cava y destino.
+      Rollo de <strong>4 manillas</strong> · mismo formato de tira que Despacho Canales · Zebra ZT231.
+      Pistolea una pieza (<code>2610-09188-6493</code>) o el animal (<code>2610-09188</code>) para las 4.
+    </p>
+
+    <div class="zb-bar">
+      <span id="zbEstado" class="zb-estado">Cargando impresora…</span>
+      <label title="Rollo físico: 4 es el definitivo; 2 para rollos viejos">Rollo
+        <select id="zbRollo" onchange="cambiarRolloEtiquetas(this.value)">
+          <option value="4">4 manillas</option>
+          <option value="2">2 manillas</option>
+        </select>
+      </label>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="cargarConfigEtiquetas()">🔄 Buscar</button>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="calibrarEtiquetas()" title="Imprime una regla para ubicar las tiras">📏 Calibración</button>
+    </div>
+
+    <div class="et-scan">
+      <div class="search-bar">
+        <span class="s-icon">🔫</span>
+        <input id="etCodigo" type="text" placeholder="Código del animal o de la pieza..." autocomplete="off"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();buscarEtiqueta();}">
+      </div>
+      <button type="button" class="btn btn-secondary btn-sm" onclick="buscarEtiqueta()">🔍 Ver etiqueta</button>
+      <button type="button" class="btn btn-primary btn-sm" id="etBtnImprimir" onclick="imprimirEtiquetasActuales()" disabled>🖨️ Imprimir</button>
+      <button type="button" class="btn btn-secondary btn-sm" id="etBtnZpl" onclick="descargarZplActual()" disabled>⬇️ ZPL</button>
+    </div>
+
+    <div class="et-opciones">
+      <label><input type="checkbox" id="etAutoImprimir"> Imprimir al pistolear</label>
+      <label>Copias <input type="number" id="etCopias" min="1" max="20" value="1"></label>
+      <span id="etImpresora"></span>
+    </div>
+
+    <div class="et-grid" id="etPreview">
+      <div class="empty-state" style="width:100%;">Pistolea un código para ver la etiqueta.</div>
+    </div>
+
+    <h3 style="color:var(--vp);font-size:1rem;margin-bottom:0.6rem;">Impresas en esta sesión</h3>
+    <div class="table-wrap" style="max-height:260px;">
+      <table style="font-size:0.85rem;">
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Código</th>
+            <th>Tipo</th>
+            <th>Cava</th>
+            <th>Puesto / turno</th>
+            <th class="num">Copias</th>
+          </tr>
+        </thead>
+        <tbody id="etHistorial">
+          <tr><td colspan="6" class="empty-state">Aún no se ha impreso nada.</td></tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 
   <!-- ═══ HISTORIAL ═══ -->
@@ -1336,7 +1428,7 @@ function iniciarRefrescoOperacion() {
 // ══════════════════════════════════════════════════════
 function showDashboard() {
   document.getElementById('viewDashboard').style.display='block';
-  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla'].forEach(function(id){
+  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla','viewEtiquetas'].forEach(function(id){
     document.getElementById(id).classList.remove('active');
   });
   loadDashboardData();
@@ -1437,9 +1529,19 @@ function showHistorial() {
 }
 function _hideAll() {
   document.getElementById('viewDashboard').style.display='none';
-  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla'].forEach(function(id){
+  ['viewDecomisos','viewDespachos','viewInforme','viewHistorial','viewCrudas','viewPlanilla','viewEtiquetas'].forEach(function(id){
     document.getElementById(id).classList.remove('active');
   });
+}
+
+function showReetiquetado() {
+  _hideAll();
+  document.getElementById('viewEtiquetas').classList.add('active');
+  cargarConfigEtiquetas();
+  setTimeout(function () {
+    var el = document.getElementById('etCodigo');
+    if (el) el.focus();
+  }, 80);
 }
 
 // ══════════════════════════════════════════════════════
@@ -4294,6 +4396,279 @@ function mostrarResumenGeneralPlanilla() {
       showAlert('planillaAlert', 'error', e.message || 'Error cargando resumen');
     })
     .getResumenTodosOPLs();
+}
+
+// ══════════════════════════════════════════════════════
+// REETIQUETADO (Zebra ZPL · rollo 4 manillas)
+// ══════════════════════════════════════════════════════
+var ET = { etiquetas: [], codigo: '', historial: [] };
+
+function etVal(obj, camel, snake) {
+  if (!obj) return '';
+  if (obj[camel] != null && obj[camel] !== '') return obj[camel];
+  if (obj[snake] != null && obj[snake] !== '') return obj[snake];
+  return '';
+}
+
+async function etApiError(r) {
+  try {
+    var j = await r.json();
+    return j.detail || j.message || ('HTTP ' + r.status);
+  } catch (_) {
+    return 'HTTP ' + r.status;
+  }
+}
+
+async function cargarConfigEtiquetas() {
+  var estado = document.getElementById('zbEstado');
+  try {
+    var r = await fetch('/api/etiqueta/config');
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    var imp = j.impresora || {};
+    var cols = j.columnas || imp.columnas || 4;
+    var rollo = document.getElementById('zbRollo');
+    if (rollo) rollo.value = String(cols);
+    if (estado) {
+      estado.textContent =
+        imp.modo === 'red'
+          ? 'Impresora: red ' + (imp.host || '') + ':' + (imp.puerto || 9100) + ' · rollo ' + cols
+          : 'Impresora: ' + (imp.impresora || '—') + ' · rollo ' + cols;
+    }
+    var span = document.getElementById('etImpresora');
+    if (span) {
+      span.textContent =
+        imp.modo === 'red'
+          ? 'Destino: red ' + (imp.host || '') + ':' + (imp.puerto || 9100)
+          : 'Destino: ' + (imp.impresora || 'cola Windows');
+    }
+  } catch (e) {
+    if (estado) estado.textContent = 'Sin impresora: ' + (e.message || e);
+  }
+}
+
+async function cambiarRolloEtiquetas(valor) {
+  try {
+    var r = await fetch('/api/etiqueta/rollo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columnas: Number(valor) || 4 }),
+    });
+    if (!r.ok) throw new Error(await etApiError(r));
+    await cargarConfigEtiquetas();
+  } catch (e) {
+    alert('No se pudo cambiar el rollo: ' + (e.message || e));
+  }
+}
+
+async function calibrarEtiquetas() {
+  if (!confirm('¿Imprimir regla de calibración en la Zebra?')) return;
+  showSpinner('Calibrando…');
+  try {
+    var r = await fetch('/api/etiqueta/calibrar', { method: 'POST' });
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    alert('Calibración enviada a ' + (j.destino || 'impresora'));
+  } catch (e) {
+    alert('Calibración: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+  }
+}
+
+async function buscarEtiqueta() {
+  var codigo = (document.getElementById('etCodigo').value || '').trim();
+  if (!codigo) return;
+  showSpinner('Consultando SIRT…');
+  try {
+    var r = await fetch('/api/etiqueta?codigo=' + encodeURIComponent(codigo));
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    ET.etiquetas = j.etiquetas || [];
+    ET.codigo = codigo;
+    var imp = j.impresora || {};
+    var span = document.getElementById('etImpresora');
+    if (span) {
+      span.textContent =
+        imp.modo === 'red'
+          ? 'Destino: red ' + (imp.host || '') + ':' + (imp.puerto || 9100)
+          : 'Destino: ' + (imp.impresora || '—');
+    }
+    renderEtiquetas();
+    if (document.getElementById('etAutoImprimir').checked) {
+      await imprimirEtiquetasActuales();
+    }
+  } catch (e) {
+    ET.etiquetas = [];
+    renderEtiquetas();
+    alert('Reetiquetado: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+    var el = document.getElementById('etCodigo');
+    if (el) el.select();
+  }
+}
+
+function renderEtiquetas() {
+  var hay = ET.etiquetas.length > 0;
+  document.getElementById('etBtnImprimir').disabled = !hay;
+  document.getElementById('etBtnZpl').disabled = !hay;
+  var box = document.getElementById('etPreview');
+  if (!hay) {
+    box.innerHTML = '<div class="empty-state" style="width:100%;">Pistolea un código para ver la etiqueta.</div>';
+    return;
+  }
+  box.innerHTML = ET.etiquetas
+    .map(function (e) {
+      var ubic = etVal(e, 'ubicacion', 'ubicacion') || '—';
+      var cam = etVal(e, 'cam', 'cam') || '';
+      var puesto = etVal(e, 'puestoTurno', 'puesto_turno') || '—';
+      var animal = etVal(e, 'codigoAnimal', 'codigo_animal') || '';
+      var tipo = etVal(e, 'tipo', 'tipo') || '';
+      var barras = etVal(e, 'codigoBarras', 'codigo_barras') || '';
+      var cava = etVal(e, 'cava', 'cava') || '';
+      var fecha = etVal(e, 'fechaProgramacion', 'fecha_programacion') || '';
+      var enCava = e.enCava != null ? e.enCava : e.en_cava;
+      var cruda = e.cruda ? ' · <span class="et-aviso">CRUDAS</span>' : '';
+      return (
+        '<div class="et-card">' +
+        '<div class="et-label">' +
+        '<div class="et-top">' +
+        '<div><div class="et-barras" title="' +
+        escapeHtml(barras) +
+        '"></div><div class="et-cuarto">' +
+        escapeHtml(tipo) +
+        cruda +
+        '</div></div>' +
+        '<div class="et-ubic">' +
+        escapeHtml(ubic) +
+        '<br>' +
+        escapeHtml(cam) +
+        '</div></div>' +
+        '<div class="et-puesto">' +
+        escapeHtml(puesto) +
+        '</div>' +
+        '<div class="et-barras" title="' +
+        escapeHtml(barras) +
+        '"></div>' +
+        '<div class="et-animal">' +
+        escapeHtml(animal) +
+        '</div>' +
+        '<div class="et-tipo">' +
+        escapeHtml(tipo) +
+        '</div></div>' +
+        '<div class="et-meta">Código: <strong>' +
+        escapeHtml(barras) +
+        '</strong><br>' +
+        escapeHtml(cava || 'Sin cava') +
+        (fecha ? ' · programada ' + escapeHtml(fecha) : '') +
+        '<br>' +
+        (enCava ? '' : '<span class="et-aviso">⚠ No está en cava (ya salió o sin ubicación)</span><br>') +
+        (etVal(e, 'turno', 'turno')
+          ? ''
+          : '<span class="et-aviso">⚠ Sin programación de despacho: no lleva turno</span>') +
+        '</div></div>'
+      );
+    })
+    .join('');
+}
+
+function copiasEtiqueta() {
+  var n = parseInt(document.getElementById('etCopias').value, 10);
+  return Math.max(1, Math.min(isNaN(n) ? 1 : n, 20));
+}
+
+async function imprimirEtiquetasActuales() {
+  if (!ET.etiquetas.length) return;
+  // Si se pistoleó el animal (sin sufijo), un solo código trae las 4 y llena el rollo.
+  var escaneado = String(ET.codigo || '').replace(/\s+/g, '');
+  var codigos;
+  if (escaneado && !/-\d{2,6}$/i.test(escaneado) && ET.etiquetas.length > 1) {
+    codigos = [escaneado];
+  } else {
+    codigos = ET.etiquetas.map(function (e) {
+      return etVal(e, 'codigoBarras', 'codigo_barras') || etVal(e, 'codigoAnimal', 'codigo_animal');
+    });
+  }
+  var copias = copiasEtiqueta();
+  showSpinner('Imprimiendo…');
+  try {
+    var r = await fetch('/api/etiqueta/imprimir', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ codigos: codigos, copias: copias }),
+    });
+    if (!r.ok) throw new Error(await etApiError(r));
+    var j = await r.json();
+    var hora = new Date().toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    ET.etiquetas.forEach(function (e) {
+      ET.historial.unshift({ hora: hora, copias: copias, e: e });
+    });
+    ET.historial = ET.historial.slice(0, 200);
+    renderHistorialEtiquetas();
+    alert(
+      '🖨️ ' +
+        (j.impresas || codigos.length) +
+        ' etiqueta(s) enviada(s) a ' +
+        (j.destino || 'impresora') +
+        (j.columnas ? ' · rollo ' + j.columnas : '')
+    );
+    if (window.ColbeefUsage) {
+      ColbeefUsage.track('etiqueta_print', codigos.join(','), 'Reetiquetado');
+    }
+  } catch (e) {
+    alert('No se pudo imprimir: ' + (e.message || e));
+  } finally {
+    hideSpinner();
+    var el = document.getElementById('etCodigo');
+    if (el) el.focus();
+  }
+}
+
+function renderHistorialEtiquetas() {
+  var body = document.getElementById('etHistorial');
+  if (!ET.historial.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty-state">Aún no se ha impreso nada.</td></tr>';
+    return;
+  }
+  body.innerHTML = ET.historial
+    .map(function (h) {
+      var e = h.e || {};
+      return (
+        '<tr>' +
+        '<td>' +
+        escapeHtml(h.hora) +
+        '</td>' +
+        '<td><code style="font-weight:600">' +
+        escapeHtml(etVal(e, 'codigoBarras', 'codigo_barras')) +
+        '</code></td>' +
+        '<td>' +
+        escapeHtml(etVal(e, 'tipo', 'tipo')) +
+        '</td>' +
+        '<td>' +
+        escapeHtml(etVal(e, 'ubicacion', 'ubicacion') || '—') +
+        '</td>' +
+        '<td>' +
+        escapeHtml(etVal(e, 'puestoTurno', 'puesto_turno') || '—') +
+        '</td>' +
+        '<td class="num">' +
+        escapeHtml(String(h.copias || 1)) +
+        '</td></tr>'
+      );
+    })
+    .join('');
+}
+
+function descargarZplActual() {
+  var codigo = ET.codigo || (document.getElementById('etCodigo').value || '').trim();
+  if (!codigo) return;
+  var copias = copiasEtiqueta();
+  window.location.href =
+    '/api/etiqueta/zpl?codigo=' + encodeURIComponent(codigo) + '&copias=' + copias;
 }
 </script>
 <div id="uxConnCorner" class="ux-conn-corner" role="status" aria-live="polite">
