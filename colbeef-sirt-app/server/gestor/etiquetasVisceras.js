@@ -140,9 +140,9 @@ function fechaDmy(iso) {
 /**
  * Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho).
  *
- * Misma composición que Despacho Canales (b1 / b3 / b4 y tamaños),
- * con el QR en el hueco que allá queda vacío entre barras y cava.
- * Canales: b1=520, b3=920, b4=1340 — aquí b3/b4 corren un poco por el QR.
+ * Estructura Canales (b1 → QR → b3 → b4 → logo). Cara impresa:
+ * puesto/turno, barras, animal, tipo, despacho, cliente, OPL, dirección,
+ * pie, especie, sexo, F.B, F.V. El QR lleva el payload SIRT completo.
  */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
@@ -158,8 +158,14 @@ export function layoutEtiqueta(et) {
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
     : zplTxt(et.tipo);
+  const pie = zplTxt(et.pie || et.pesoPie || '-');
+  const sexo = zplTxt(et.sexoQr || et.sexo || '-');
+  const fb = zplTxt(et.fechaBeneficioDmy || '-');
+  const fv = zplTxt(et.fechaVencimientoDmy || '-');
+  const especie = zplTxt(et.especie || 'Bovino') || 'Bovino';
+  const despacho = fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-';
   const elementos = [
-    // Bloque 1 — igual que Canales (puesto y animal grandes / alargados)
+    // Bloque 1 — identificación (como Canales)
     {
       tipo: 'texto',
       x: b1,
@@ -185,84 +191,84 @@ export function layoutEtiqueta(et) {
       w: 26,
       texto: corto(tipoLabel, 22),
     },
-    // QR en el hueco después del código de barras (antes de cava)
+    // QR SIRT (mismo payload de siempre)
     ...(qrTexto
       ? [{ tipo: 'qr', x: bQr, y: 18, h: 160, mag: 3, texto: qrTexto }]
       : []),
-    // Bloque 3 — destino grande (reemplaza Cava) / zona / despacho
+    // Bloque 3 — despacho + datos de beneficio / pieza
     {
       tipo: 'texto',
       x: b3,
-      y: 8,
-      h: 24,
-      texto: corto(et.cuarto || et.tipo || 'Paquete Visceral', 22),
+      y: 6,
+      h: 22,
+      texto: corto(tipoLabel, 22),
     },
     {
       tipo: 'texto',
       x: b3 + 300,
       y: 6,
-      h: 28,
+      h: 26,
       texto: zplTxt(et.cam || tipoCorto(et.tipo)),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 42,
-      h: 42,
-      w: 54,
-      texto: corto(et.destino || et.zona || '-', 22),
+      y: 36,
+      h: 28,
+      w: 36,
+      texto: `Despacho: ${despacho}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 98,
+      y: 72,
+      h: 28,
+      w: 36,
+      texto: `Pie: ${corto(pie, 14)}`,
+    },
+    {
+      tipo: 'texto',
+      x: b3,
+      y: 108,
       h: 24,
-      texto: `Zona: ${corto(et.zona || '-', 26)}`,
+      texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 134,
+      y: 140,
       h: 22,
-      texto: `Despacho: ${fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-'}`,
+      texto: `F.B: ${fb}   F.V: ${fv}`,
     },
-    // Bloque 4 — cliente (sin Destino: ya va grande en el bloque 3)
+    // Bloque 4 — cliente / OPL / dirección
     {
       tipo: 'texto',
       x: b4,
-      y: 6,
-      h: 17,
+      y: 10,
+      h: 20,
       texto: corto(`Cliente ${et.cliente || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 29,
-      h: 17,
-      texto: corto(`Puesto ${et.puesto || '-'}`, c4),
-    },
-    {
-      tipo: 'texto',
-      x: b4,
-      y: 52,
-      h: 17,
-      texto: corto(`Turno ${et.turno || '-'}`, c4),
-    },
-    {
-      tipo: 'texto',
-      x: b4,
-      y: 75,
-      h: 17,
+      y: 42,
+      h: 20,
       texto: corto(`OPL ${et.opl || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 98,
-      h: 17,
-      texto: corto(et.direccion || '', c4),
+      y: 74,
+      h: 18,
+      texto: corto(et.direccion || '', 44),
     },
-    { tipo: 'texto', x: b4, y: 121, h: 17, texto: 'Especie Bovino' },
+    {
+      tipo: 'texto',
+      x: b4,
+      y: 108,
+      h: 18,
+      texto: corto(et.direccion && String(et.direccion).length > 44 ? String(et.direccion).slice(44, 88) : '', 44),
+    },
   ];
   return elementos.filter((e) => e.texto);
 }
