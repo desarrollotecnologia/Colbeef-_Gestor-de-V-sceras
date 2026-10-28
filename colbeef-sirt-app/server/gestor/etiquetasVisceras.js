@@ -196,39 +196,26 @@ export function layoutEtiqueta(et) {
       ? [{ tipo: 'qr', x: bQr, y: 2, h: 148, mag: 3, texto: qrTexto }]
       : []),
     // Bloque 3 — zona + dirección en grande + F.B / F.V
+    // (sin tipo/CAB: ya va bajo el código de barras en el bloque 1)
     {
       tipo: 'texto',
       x: b3,
-      y: 2,
-      h: 18,
-      texto: corto(tipoLabel, 22),
-    },
-    {
-      tipo: 'texto',
-      x: b3 + 300,
-      y: 2,
-      h: 22,
-      texto: zplTxt(et.cam || tipoCorto(et.tipo)),
-    },
-    {
-      tipo: 'texto',
-      x: b3,
-      y: 26,
-      h: 36,
-      w: 44,
+      y: 4,
+      h: 38,
+      w: 48,
       texto: corto(et.destino || et.zona || '-', 20),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 68,
+      y: 50,
       h: 18,
       texto: corto(et.direccion || '', 36),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 96,
+      y: 76,
       h: 16,
       texto: corto(
         et.direccion && String(et.direccion).length > 36
@@ -240,14 +227,14 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b3,
-      y: 122,
+      y: 106,
       h: 16,
       texto: `F.B: ${fb}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 144,
+      y: 130,
       h: 16,
       texto: `F.V: ${fv}`,
     },
