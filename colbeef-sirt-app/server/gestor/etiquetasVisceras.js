@@ -140,9 +140,9 @@ function fechaDmy(iso) {
 /**
  * Elementos de la tira en coordenadas a lo largo (x=largo, y=ancho).
  *
- * Estructura Canales (b1 → QR → b3 → b4 → logo). Cara impresa:
- * puesto/turno, barras, animal, tipo, despacho, cliente, OPL, dirección,
- * pie, especie, sexo, F.B, F.V. El QR lleva el payload SIRT completo.
+ * Alto útil de manilla = ANCHO_DOTS (197). Todo el contenido se centra en
+ * ese alto con margen ~22 arriba/abajo para que, al cortar el rollo, no
+ * se meta en la manilla vecina ni se recorte.
  */
 export function layoutEtiqueta(et) {
   const codigo = zplTxt(et.codigoBarras || et.codigo_barras);
@@ -155,6 +155,9 @@ export function layoutEtiqueta(et) {
   const b3 = 1200;
   const b4 = 1560;
   const c4 = 40;
+  // Banda centrada en el alto de la manilla (margen seguro al cortar).
+  const y0 = 22;
+  const yMax = ANCHO_DOTS - 22; // ~175
   const tipoLabel = et.cruda
     ? `${zplTxt(et.tipo)} CRUDAS`
     : zplTxt(et.tipo);
@@ -165,57 +168,65 @@ export function layoutEtiqueta(et) {
   const especie = zplTxt(et.especie || 'Bovino') || 'Bovino';
   const despacho = fechaDmy(et.fechaProgramacion || et.fecha_programacion) || '-';
   const elementos = [
-    // Bloque 1 — identificación (como Canales)
+    // Bloque 1 — identificación (centrado en alto)
     {
       tipo: 'texto',
       x: b1,
-      y: 2,
-      h: 46,
-      w: 62,
+      y: y0,
+      h: 40,
+      w: 56,
       texto: corto(et.puestoTurno || et.puesto_turno || 'SIN PUESTO', 22),
     },
-    { tipo: 'barras', x: b1, y: 52, h: 44, modulo: 2, texto: codigo },
+    { tipo: 'barras', x: b1, y: y0 + 46, h: 40, modulo: 2, texto: codigo },
     {
       tipo: 'texto',
       x: b1,
-      y: 100,
-      h: 42,
-      w: 56,
+      y: y0 + 92,
+      h: 38,
+      w: 52,
       texto: zplTxt(et.codigoAnimal || et.codigo_animal),
     },
     {
       tipo: 'texto',
       x: b1,
-      y: 146,
-      h: 20,
-      w: 24,
+      y: y0 + 136,
+      h: 18,
+      w: 22,
       texto: corto(tipoLabel, 22),
     },
-    // QR SIRT (mismo payload; alineado arriba con el resto de campos)
+    // QR centrado en el mismo alto útil
     ...(qrTexto
-      ? [{ tipo: 'qr', x: bQr, y: 2, h: 148, mag: 3, texto: qrTexto }]
+      ? [
+          {
+            tipo: 'qr',
+            x: bQr,
+            y: y0,
+            h: Math.min(150, yMax - y0),
+            mag: 3,
+            texto: qrTexto,
+          },
+        ]
       : []),
-    // Bloque 3 — zona + dirección en grande + F.B / F.V
-    // (sin tipo/CAB: ya va bajo el código de barras en el bloque 1)
+    // Bloque 3 — zona + dirección + F.B / F.V
     {
       tipo: 'texto',
       x: b3,
-      y: 4,
-      h: 38,
-      w: 48,
+      y: y0,
+      h: 36,
+      w: 46,
       texto: corto(et.destino || et.zona || '-', 20),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 50,
+      y: y0 + 44,
       h: 18,
       texto: corto(et.direccion || '', 36),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 76,
+      y: y0 + 68,
       h: 16,
       texto: corto(
         et.direccion && String(et.direccion).length > 36
@@ -227,43 +238,43 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b3,
-      y: 106,
+      y: y0 + 100,
       h: 16,
       texto: `F.B: ${fb}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 130,
+      y: y0 + 124,
       h: 16,
       texto: `F.V: ${fv}`,
     },
-    // Bloque 4 — cliente / OPL / despacho + pie / sexo debajo
+    // Bloque 4 — cliente / OPL / despacho + pie / sexo
     {
       tipo: 'texto',
       x: b4,
-      y: 4,
+      y: y0,
       h: 17,
       texto: corto(`Cliente ${et.cliente || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 28,
+      y: y0 + 26,
       h: 17,
       texto: corto(`OPL ${et.opl || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 52,
+      y: y0 + 52,
       h: 17,
       texto: corto(`Despacho ${despacho}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: 82,
+      y: y0 + 84,
       h: 22,
       w: 28,
       texto: `Pie: ${corto(pie, 14)}`,
@@ -271,7 +282,7 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b4,
-      y: 112,
+      y: y0 + 114,
       h: 18,
       texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
     },
