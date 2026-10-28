@@ -195,8 +195,7 @@ export function layoutEtiqueta(et) {
     ...(qrTexto
       ? [{ tipo: 'qr', x: bQr, y: 2, h: 148, mag: 3, texto: qrTexto }]
       : []),
-    // Bloque 3 — zona + dirección en grande + pie / sexo / fechas
-    // y máximo ~155 para no recortar en el borde de la manilla (~197 dots).
+    // Bloque 3 — zona + dirección en grande + F.B / F.V
     {
       tipo: 'texto',
       x: b3,
@@ -214,48 +213,45 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b3,
-      y: 24,
-      h: 34,
-      w: 42,
+      y: 26,
+      h: 36,
+      w: 44,
       texto: corto(et.destino || et.zona || '-', 20),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 62,
+      y: 68,
       h: 18,
       texto: corto(et.direccion || '', 36),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 86,
-      h: 22,
-      w: 28,
-      texto: `Pie: ${corto(pie, 14)}`,
-    },
-    {
-      tipo: 'texto',
-      x: b3,
-      y: 112,
+      y: 96,
       h: 16,
-      texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
+      texto: corto(
+        et.direccion && String(et.direccion).length > 36
+          ? String(et.direccion).slice(36, 80)
+          : '',
+        36
+      ),
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 132,
-      h: 15,
+      y: 122,
+      h: 16,
       texto: `F.B: ${fb}`,
     },
     {
       tipo: 'texto',
       x: b3,
-      y: 150,
-      h: 15,
+      y: 144,
+      h: 16,
       texto: `F.V: ${fv}`,
     },
-    // Bloque 4 — cliente / OPL / despacho (también subido)
+    // Bloque 4 — cliente / OPL / despacho + pie / sexo debajo
     {
       tipo: 'texto',
       x: b4,
@@ -280,14 +276,17 @@ export function layoutEtiqueta(et) {
     {
       tipo: 'texto',
       x: b4,
-      y: 76,
-      h: 16,
-      texto: corto(
-        et.direccion && String(et.direccion).length > 36
-          ? String(et.direccion).slice(36, 80)
-          : '',
-        44
-      ),
+      y: 82,
+      h: 22,
+      w: 28,
+      texto: `Pie: ${corto(pie, 14)}`,
+    },
+    {
+      tipo: 'texto',
+      x: b4,
+      y: 112,
+      h: 18,
+      texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
     },
   ];
   return elementos.filter((e) => e.texto);
