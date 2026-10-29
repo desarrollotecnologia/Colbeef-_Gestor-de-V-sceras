@@ -738,7 +738,7 @@ app.get('/api/etiqueta/pendientes', async (req, res) => {
       await reetiquetado.listarPendientesEtiquetas({
         fecha: String(req.query.fecha || req.query.date || ''),
         modo: String(req.query.modo || 'normal'),
-        orden: String(req.query.orden || 'puesto'),
+        orden: String(req.query.orden || 'codigo'),
         soloNuevas,
         opls,
       })
@@ -754,7 +754,7 @@ app.post('/api/etiqueta/pendientes/imprimir', async (req, res) => {
     const out = await reetiquetado.imprimirPendientesEtiquetas({
       fecha: req.body?.fecha || req.body?.date || '',
       modo: req.body?.modo || 'normal',
-      orden: req.body?.orden || 'puesto',
+      orden: req.body?.orden || 'codigo',
       soloNuevas: Boolean(req.body?.soloNuevas || req.body?.solo_nuevas),
       opls: req.body?.opls || null,
       copias: req.body?.copias || 1,

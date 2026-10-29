@@ -1010,7 +1010,8 @@
         <button type="button" class="btn btn-secondary btn-sm" id="etlBtnAdicionales" onclick="etlToggleAdicionales()">➕ Adicionales</button>
         <label>Orden
           <select id="etlOrden" onchange="cargarEtiquetasOpl(false)">
-            <option value="puesto" selected>Por puesto / destino</option>
+            <option value="codigo" selected>Por código de animal</option>
+            <option value="puesto">Por puesto / destino</option>
             <option value="cliente">Por cliente</option>
           </select>
         </label>
@@ -5275,7 +5276,7 @@ async function cargarEtiquetasOpl(forzar) {
   }
   var fecha = (fechaEl && fechaEl.value) || '';
   var modo = etlModoActual();
-  var orden = ((document.getElementById('etlOrden') || {}).value || 'puesto');
+  var orden = ((document.getElementById('etlOrden') || {}).value || 'codigo');
   var soloNuevas = !!(document.getElementById('etlSoloNuevas') || {}).checked;
   showSpinner('Cargando pendientes por OPL…');
   try {
@@ -5497,8 +5498,10 @@ async function imprimirEtiquetasOpl() {
   var corte = (ETL.datos && ETL.datos.corteAdicional) || '15:30';
   var tipo =
     modo === 'tempranas' ? ' tempranas' : modo === 'adicionales' ? ' adicionales (≥ ' + corte + ')' : '';
-  var orden = ((document.getElementById('etlOrden') || {}).value || 'puesto');
+  var orden = ((document.getElementById('etlOrden') || {}).value || 'codigo');
   var soloNuevas = !!(document.getElementById('etlSoloNuevas') || {}).checked;
+  var ordenTxt =
+    orden === 'cliente' ? 'por cliente' : orden === 'puesto' ? 'por puesto' : 'por código';
   if (
     !confirm(
       '¿Imprimir ' +
@@ -5508,7 +5511,7 @@ async function imprimirEtiquetasOpl() {
         '?\n≈ ' +
         codigos.length * 4 +
         ' etiquetas · orden ' +
-        (orden === 'cliente' ? 'por cliente' : 'por puesto') +
+        ordenTxt +
         (soloNuevas ? ' · solo nuevas' : '')
     )
   ) {

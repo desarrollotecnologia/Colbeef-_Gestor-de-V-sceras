@@ -92,21 +92,32 @@ export async function limpiarEtiquetasImpresas(fecha, codigos = null) {
   };
 }
 
+function cmpCodigoAnimal(a, b) {
+  return String(a.codigo || '').localeCompare(String(b.codigo || ''), 'es', {
+    numeric: true,
+    sensitivity: 'base',
+  });
+}
+
 function ordenarFilasEtiqueta(filas, orden) {
-  const modo = String(orden || 'puesto').toLowerCase() === 'cliente' ? 'cliente' : 'puesto';
+  const modo = String(orden || 'codigo').toLowerCase();
   return [...filas].sort((a, b) => {
     if (modo === 'cliente') {
       return (
         String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
         String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es') ||
-        String(a.codigo || '').localeCompare(String(b.codigo || ''))
+        cmpCodigoAnimal(a, b)
       );
     }
-    return (
-      String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es') ||
-      String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
-      String(a.codigo || '').localeCompare(String(b.codigo || ''))
-    );
+    if (modo === 'puesto') {
+      return (
+        String(a.puesto || '').localeCompare(String(b.puesto || ''), 'es') ||
+        String(a.propietario || '').localeCompare(String(b.propietario || ''), 'es') ||
+        cmpCodigoAnimal(a, b)
+      );
+    }
+    // codigo (default): menor → mayor
+    return cmpCodigoAnimal(a, b);
   });
 }
 
@@ -711,14 +722,14 @@ function esTempranaPuesto(puesto) {
 /**
  * Pendientes en cava para imprimir por OPL.
  * modo: normal | tempranas | adicionales
- * orden: puesto (puesto→cliente→código) | cliente
+ * orden: codigo (default) | puesto | cliente
  * soloNuevas: excluye ya marcadas como impresas ese día
  */
 export async function listarPendientesEtiquetas({
   fecha = '',
   modo = 'normal',
   opls = null,
-  orden = 'puesto',
+  orden = 'codigo',
   soloNuevas = false,
 } = {}) {
   const out = await consultarJuegosAsignadosDelDia(fecha ? { date: fecha, from: fecha, to: fecha } : {});
@@ -733,7 +744,8 @@ export async function listarPendientesEtiquetas({
     ? new Set(opls.map((o) => String(o || '').trim().toUpperCase()).filter(Boolean))
     : null;
   const impresasMap = await getEtiquetasImpresas(out.fecha);
-  const ordenNorm = String(orden || 'puesto').toLowerCase() === 'cliente' ? 'cliente' : 'puesto';
+  const o = String(orden || 'codigo').toLowerCase();
+  const ordenNorm = o === 'cliente' || o === 'puesto' ? o : 'codigo';
 
   let enCava = (out.filas || [])
     .filter((f) => String(f.estado || '') === 'En cava')
@@ -846,11 +858,15 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
   const oplsSel = Array.isArray(payload.opls) && payload.opls.length
     ? new Set(payload.opls.map((o) => String(o || '').trim().toUpperCase()))
     : null;
+  // Mantener el orden de lista.codigos (p. ej. por código de animal), no reordenar por OPL
   let codigos = lista.codigos || [];
   if (oplsSel) {
-    codigos = (lista.opls || [])
-      .filter((o) => oplsSel.has(String(o.opl || '').toUpperCase()))
-      .flatMap((o) => o.codigos || []);
+    const permitidos = new Set(
+      (lista.opls || [])
+        .filter((o) => oplsSel.has(String(o.opl || '').toUpperCase()))
+        .flatMap((o) => o.codigos || [])
+    );
+    codigos = codigos.filter((c) => permitidos.has(c));
   }
   if (!codigos.length) {
     const err = new Error(
