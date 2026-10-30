@@ -5228,11 +5228,44 @@ function renderEtiquetas() {
 
 var ETL = {
   datos: null,
-  oplsSel: new Set(),
+  /** Códigos de animal marcados para imprimir (vacío al cargar). */
+  codigosSel: new Set(),
   abiertos: new Set(),
   soloTempranas: false,
   soloAdicionales: false,
 };
+
+function etlNormCod(c) {
+  return String(c || '')
+    .trim()
+    .toUpperCase();
+}
+
+function etlCodigosDe(lista) {
+  return (lista || []).map(etlNormCod).filter(Boolean);
+}
+
+function etlCuentaSel(codigos) {
+  var n = 0;
+  etlCodigosDe(codigos).forEach(function (c) {
+    if (ETL.codigosSel.has(c)) n += 1;
+  });
+  return n;
+}
+
+function etlMarcarCodigos(codigos, marcar) {
+  etlCodigosDe(codigos).forEach(function (c) {
+    if (marcar) ETL.codigosSel.add(c);
+    else ETL.codigosSel.delete(c);
+  });
+}
+
+function etlOplsConSeleccion() {
+  if (!ETL.datos) return [];
+  return (ETL.datos.opls || []).filter(function (o) {
+    return etlCuentaSel(o.codigos) > 0;
+  });
+}
 
 function etlModoActual() {
   if (ETL.soloTempranas) return 'tempranas';
@@ -5291,10 +5324,21 @@ async function cargarEtiquetasOpl(forzar) {
     if (!r.ok) throw new Error(await etApiError(r));
     var j = await r.json();
     ETL.datos = j;
-    if (forzar || !ETL.oplsSel.size) {
-      ETL.oplsSel = new Set((j.opls || []).map(function (o) {
-        return o.opl;
-      }));
+    var validos = new Set();
+    (j.opls || []).forEach(function (o) {
+      etlCodigosDe(o.codigos).forEach(function (c) {
+        validos.add(c);
+      });
+    });
+    if (forzar) {
+      // Al recargar no dejar todo marcado: el usuario elige OPL / clientes
+      ETL.codigosSel = new Set();
+    } else {
+      ETL.codigosSel = new Set(
+        [...ETL.codigosSel].filter(function (c) {
+          return validos.has(c);
+        })
+      );
     }
     etlActualizarModoTxt();
     renderEtiquetasOpl();
@@ -5339,15 +5383,14 @@ function renderEtiquetasOpl() {
     btn.textContent = '🖨️ Imprimir';
     return;
   }
-  var marcados = opls.filter(function (o) {
-    return ETL.oplsSel.has(o.opl);
+  var totalCodigos = 0;
+  opls.forEach(function (o) {
+    totalCodigos += (o.codigos || []).length;
   });
-  var juegosSel = marcados.reduce(function (a, o) {
-    return a + (o.total || 0);
-  }, 0);
+  var juegosSel = ETL.codigosSel.size;
   var html =
     '<label class="etl-fila todos"><input type="checkbox" id="etlTodos" ' +
-    (marcados.length === opls.length ? 'checked' : '') +
+    (juegosSel > 0 && juegosSel === totalCodigos ? 'checked' : '') +
     ' onchange="etlToggleTodos(this.checked)"><span class="etl-nom">Seleccionar todos' +
     badge +
     '</span><span class="etl-cant">' +
@@ -5360,11 +5403,15 @@ function renderEtiquetasOpl() {
     (d.yaImpresas ? ' · ' + d.yaImpresas + ' ya impresas ocultas/marcadas' : '') +
     '</span></label>';
   opls.forEach(function (o, i) {
-    var sel = ETL.oplsSel.has(o.opl);
+    var nOpl = etlCuentaSel(o.codigos);
+    var totOpl = (o.codigos || []).length;
+    var selAll = totOpl > 0 && nOpl === totOpl;
     var abierto = ETL.abiertos.has(o.opl);
     html +=
-      '<div class="etl-fila opl"><input type="checkbox" ' +
-      (sel ? 'checked' : '') +
+      '<div class="etl-fila opl"><input type="checkbox" id="etlOpl' +
+      i +
+      '" ' +
+      (selAll ? 'checked' : '') +
       ' onchange="etlToggleOpl(' +
       i +
       ', this.checked)"><span class="etl-nom">' +
@@ -5375,6 +5422,8 @@ function renderEtiquetasOpl() {
       '</span><span class="etl-cant">' +
       (o.clientes || []).length +
       ' cliente(s) · ' +
+      nOpl +
+      '/' +
       o.total +
       ' juegos</span><button type="button" class="btn btn-secondary btn-sm" onclick="etlAbrir(' +
       i +
@@ -5382,20 +5431,42 @@ function renderEtiquetasOpl() {
       (abierto ? '▲' : '▼') +
       '</button></div>';
     if (!abierto) return;
-    (o.clientes || []).forEach(function (c) {
+    (o.clientes || []).forEach(function (c, ci) {
+      var nCli = etlCuentaSel(c.codigos);
+      var totCli = (c.codigos || []).length;
+      var selCli = totCli > 0 && nCli === totCli;
       html +=
-        '<div class="etl-fila cli"><span class="etl-nom">' +
+        '<label class="etl-fila cli"><input type="checkbox" id="etlCli' +
+        i +
+        '_' +
+        ci +
+        '" ' +
+        (selCli ? 'checked' : '') +
+        ' onchange="etlToggleCliente(' +
+        i +
+        ', ' +
+        ci +
+        ', this.checked)"><span class="etl-nom">' +
         escapeHtml(c.cliente) +
         ' <small style="color:var(--gris)">' +
         escapeHtml((c.puestos || []).join(', ')) +
         '</small></span><span class="etl-cant">' +
+        nCli +
+        '/' +
         c.total +
-        ' juegos</span></div>';
+        ' juegos</span></label>';
     });
   });
   box.innerHTML = html;
   var todos = document.getElementById('etlTodos');
-  if (todos) todos.indeterminate = marcados.length > 0 && marcados.length < opls.length;
+  if (todos) todos.indeterminate = juegosSel > 0 && juegosSel < totalCodigos;
+  opls.forEach(function (o, i) {
+    var el = document.getElementById('etlOpl' + i);
+    if (!el) return;
+    var nOpl = etlCuentaSel(o.codigos);
+    var totOpl = (o.codigos || []).length;
+    el.indeterminate = nOpl > 0 && nOpl < totOpl;
+  });
   resumen.innerHTML = juegosSel
     ? '<strong>' +
       juegosSel +
@@ -5404,7 +5475,7 @@ function renderEtiquetasOpl() {
       ' etiquetas · ' +
       juegosSel +
       ' pasadas del rollo'
-    : 'Marca uno o más OPL';
+    : 'Marca un OPL o abre ▼ y elige clientes';
   btn.disabled = !juegosSel;
   btn.textContent = juegosSel
     ? '🖨️ Imprimir ' +
@@ -5414,18 +5485,24 @@ function renderEtiquetasOpl() {
 }
 
 function etlToggleTodos(marcar) {
-  ETL.oplsSel = marcar
-    ? new Set((ETL.datos.opls || []).map(function (o) {
-        return o.opl;
-      }))
-    : new Set();
+  (ETL.datos.opls || []).forEach(function (o) {
+    etlMarcarCodigos(o.codigos, marcar);
+  });
   renderEtiquetasOpl();
 }
 
 function etlToggleOpl(i, marcar) {
   var o = ETL.datos.opls[i];
-  if (marcar) ETL.oplsSel.add(o.opl);
-  else ETL.oplsSel.delete(o.opl);
+  etlMarcarCodigos(o.codigos, marcar);
+  if (marcar) ETL.abiertos.add(o.opl);
+  renderEtiquetasOpl();
+}
+
+function etlToggleCliente(i, ci, marcar) {
+  var o = ETL.datos.opls[i];
+  var c = (o.clientes || [])[ci];
+  if (!c) return;
+  etlMarcarCodigos(c.codigos, marcar);
   renderEtiquetasOpl();
 }
 
@@ -5438,19 +5515,16 @@ function etlAbrir(i) {
 
 function etlCodigosSeleccionados() {
   if (!ETL.datos) return [];
-  return (ETL.datos.opls || [])
-    .filter(function (o) {
-      return ETL.oplsSel.has(o.opl);
-    })
-    .flatMap(function (o) {
-      return o.codigos || [];
-    });
+  // Respeta el orden del backend (p. ej. por código)
+  return (ETL.datos.codigos || []).filter(function (c) {
+    return ETL.codigosSel.has(etlNormCod(c));
+  });
 }
 
 function etlPasarATextarea() {
   var codigos = etlCodigosSeleccionados();
   if (!codigos.length) {
-    alert('Marca al menos un OPL.');
+    alert('Marca al menos un OPL o un cliente.');
     return;
   }
   document.getElementById('etLoteCodigos').value = codigos.join('\n');
@@ -5524,7 +5598,10 @@ async function imprimirEtiquetasOpl() {
       modo: modo,
       orden: orden,
       soloNuevas: soloNuevas,
-      opls: [...ETL.oplsSel],
+      opls: etlOplsConSeleccion().map(function (o) {
+        return o.opl;
+      }),
+      codigos: codigos,
       copias: 1,
     });
     var hora = new Date().toLocaleTimeString('es-CO', {

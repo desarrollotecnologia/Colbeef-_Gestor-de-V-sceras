@@ -757,6 +757,7 @@ app.post('/api/etiqueta/pendientes/imprimir', async (req, res) => {
       orden: req.body?.orden || 'codigo',
       soloNuevas: Boolean(req.body?.soloNuevas || req.body?.solo_nuevas),
       opls: req.body?.opls || null,
+      codigos: req.body?.codigos || null,
       copias: req.body?.copias || 1,
       soloZpl,
     });

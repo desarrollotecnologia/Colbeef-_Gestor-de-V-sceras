@@ -858,9 +858,18 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
   const oplsSel = Array.isArray(payload.opls) && payload.opls.length
     ? new Set(payload.opls.map((o) => String(o || '').trim().toUpperCase()))
     : null;
+  const codigosSel = Array.isArray(payload.codigos) && payload.codigos.length
+    ? new Set(
+        payload.codigos
+          .map((c) => String(c || '').trim().toUpperCase())
+          .filter(Boolean)
+      )
+    : null;
   // Mantener el orden de lista.codigos (p. ej. por código de animal), no reordenar por OPL
   let codigos = lista.codigos || [];
-  if (oplsSel) {
+  if (codigosSel) {
+    codigos = codigos.filter((c) => codigosSel.has(String(c || '').trim().toUpperCase()));
+  } else if (oplsSel) {
     const permitidos = new Set(
       (lista.opls || [])
         .filter((o) => oplsSel.has(String(o.opl || '').toUpperCase()))
