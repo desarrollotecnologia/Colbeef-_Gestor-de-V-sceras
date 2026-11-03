@@ -626,7 +626,7 @@ export async function imprimirEtiquetas({
   }
   const datos = [];
   const slotsAnimal = [];
-  for (const c of lista.slice(0, 200)) {
+  for (const c of lista) {
     const piezas = await buscarEtiquetas(c);
     datos.push(...piezas);
     const animal = codigoBase(c) || String(c).trim().toUpperCase();
@@ -890,8 +890,10 @@ export async function imprimirPendientesEtiquetas(payload = {}) {
     err.status = 400;
     throw err;
   }
-  const max = Number(process.env.GESTOR_ETQ_MAX_JUEGOS_LOTE || 80);
-  if (codigos.length > max) {
+  // Tope opcional: solo si GESTOR_ETQ_MAX_JUEGOS_LOTE > 0 (0 / vacío = sin límite)
+  const maxRaw = process.env.GESTOR_ETQ_MAX_JUEGOS_LOTE;
+  const max = maxRaw === undefined || maxRaw === '' ? 0 : Number(maxRaw);
+  if (Number.isFinite(max) && max > 0 && codigos.length > max) {
     const err = new Error(
       `Son ${codigos.length} juegos (${codigos.length * 4} etiquetas). Máximo ${max} por envío: imprime por partes.`
     );
