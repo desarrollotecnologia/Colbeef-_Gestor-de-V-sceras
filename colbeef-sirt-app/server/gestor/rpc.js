@@ -41,6 +41,7 @@ const handlers = {
   getCrudasDetalle: engine.getCrudasDetalle,
   consolidarDatos: engine.consolidarDatos,
   prepararPlanillaDesdeSIRT: engine.prepararPlanillaDesdeSIRT,
+  cargarPlanillaCongelada: engine.cargarPlanillaCongelada,
   getListaOPLsParaPlanilla: engine.getListaOPLsParaPlanilla,
   getOplsParticulares: engine.getOplsParticulares,
   setOplsParticulares: engine.setOplsParticulares,
@@ -95,6 +96,7 @@ const AUDIT_METHODS = new Set([
   'eliminarPlaza',
   'consolidarDatos',
   'prepararPlanillaDesdeSIRT',
+  'cargarPlanillaCongelada',
   'setOplsParticulares',
 ]);
 

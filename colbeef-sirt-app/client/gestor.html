@@ -3821,6 +3821,31 @@ function showPlanilla() {
   _hideAll();
   document.getElementById('viewPlanilla').classList.add('active');
   setPlanillaVista(_planillaVista);
+  // Si la fecha del encabezado ya tiene foto congelada, mostrarla al entrar.
+  intentarCargarPlanillaCongelada();
+}
+
+function _msgPlanillaOk(res) {
+  var base =
+    '✅ ' +
+    (res.totalJuegos != null ? res.totalJuegos : res.procesados) +
+    ' juegos · turno ' +
+    (res.turnoOperacion || res.turno || '—') +
+    (res.fechaConsulta ? ' · ' + res.fechaConsulta : '');
+  if (res.origen === 'congelada') return base + ' · foto congelada';
+  return base;
+}
+
+function intentarCargarPlanillaCongelada() {
+  var filtro = leerFechaGlobal();
+  google.script.run
+    .withSuccessHandler(function(res) {
+      if (!res || !res.success) return;
+      showAlert('planillaAlert', 'success', _msgPlanillaOk(res));
+      cargarOPLsPlanilla();
+    })
+    .withFailureHandler(function() {})
+    .cargarPlanillaCongelada(filtro);
 }
 
 function procesarPlanilla() {
@@ -3839,13 +3864,7 @@ function procesarPlanilla() {
         showAlert('planillaAlert', 'error', res ? res.message : 'Error consolidando');
         return;
       }
-      var msg =
-        '✅ ' +
-        (res.totalJuegos != null ? res.totalJuegos : res.procesados) +
-        ' juegos · turno ' +
-        (res.turnoOperacion || res.turno || '—') +
-        (res.fechaConsulta ? ' · ' + res.fechaConsulta : '');
-      showAlert('planillaAlert', 'success', msg);
+      showAlert('planillaAlert', 'success', _msgPlanillaOk(res));
       cargarOPLsPlanilla();
     })
     .withFailureHandler(function(e) {

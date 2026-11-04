@@ -73,6 +73,12 @@ export function defaultState() {
     /** Metas congeladas por "fecha|turno" (sobreviven al cambio de día y a consultar otras fechas). */
     oplBaselinesPorDia: {},
     despachoKpiBaselinesPorDia: {},
+    /**
+     * Foto de Planilla de Puntos por "fecha|turno".
+     * Sobrevive al cambio de día: mañana se consulta la fecha y se restaura
+     * la distribución tal como quedó al procesar ese día.
+     */
+    planillaPorDia: {},
     oplProgreso: [],
     historicoOpl: [],
     consolidado: [],
@@ -109,6 +115,7 @@ function normalizeState(raw) {
   if (!s.plazasMap || typeof s.plazasMap !== 'object') s.plazasMap = {};
   if (!Array.isArray(s.oplsParticulares)) s.oplsParticulares = [];
   if (!s.etiquetasImpresas || typeof s.etiquetasImpresas !== 'object') s.etiquetasImpresas = {};
+  if (!s.planillaPorDia || typeof s.planillaPorDia !== 'object') s.planillaPorDia = {};
   delete s.oplTotalsSubproducto;
   return s;
 }

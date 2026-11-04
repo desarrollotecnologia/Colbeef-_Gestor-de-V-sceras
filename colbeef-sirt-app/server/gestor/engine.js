@@ -987,6 +987,66 @@ function recortarBaselinesPorDia(mapa) {
   });
 }
 
+function mapaPlanillaPorDia(s) {
+  if (!s.planillaPorDia || typeof s.planillaPorDia !== 'object') {
+    s.planillaPorDia = {};
+  }
+  return s.planillaPorDia;
+}
+
+/** Foto de Planilla de Puntos por fecha|turno (sobrevive al cambio de día). */
+function guardarPlanillaCongelada(s, pack, fechaIso) {
+  const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
+  if (!dia || !pack?.consolidado?.length) return;
+  const turno = String(pack.turno || s.resumenDespachos?.turno || '').trim();
+  const mapa = mapaPlanillaPorDia(s);
+  mapa[claveBaselineDia(dia, turno)] = {
+    consolidado: JSON.parse(JSON.stringify(pack.consolidado)),
+    totalJuegos: Number(pack.totalJuegos || 0),
+    turno,
+    fechaIso: dia,
+    fechaTxt: String(pack.fechaHoy || isoToDdMmYyyy(dia) || '').trim(),
+    guardadoEn: new Date().toISOString(),
+  };
+  recortarBaselinesPorDia(mapa);
+}
+
+function obtenerPlanillaCongelada(s, fechaIso, turno = '') {
+  const dia = String(fechaIso || '').trim();
+  if (!dia) return null;
+  const mapa = mapaPlanillaPorDia(s);
+  const t = String(turno || '').trim();
+  if (t) {
+    const exact = mapa[claveBaselineDia(dia, t)];
+    if (exact?.consolidado?.length) return exact;
+  }
+  const claves = Object.keys(mapa)
+    .filter((k) => k === dia || k.startsWith(`${dia}|`))
+    .sort();
+  for (let i = claves.length - 1; i >= 0; i -= 1) {
+    const snap = mapa[claves[i]];
+    if (snap?.consolidado?.length) return snap;
+  }
+  return null;
+}
+
+function restaurarPlanillaCongeladaEnEstado(s, snap, fechaIso) {
+  if (!snap?.consolidado?.length) return;
+  s.consolidado = JSON.parse(JSON.stringify(snap.consolidado));
+  const dia = String(fechaIso || snap.fechaIso || '').trim();
+  if (dia) s.lastSyncRange = { from: dia, to: dia };
+  const rd = s.resumenDespachos && typeof s.resumenDespachos === 'object' ? s.resumenDespachos : {};
+  s.resumenDespachos = {
+    ...rd,
+    turno: String(snap.turno || rd.turno || '').trim(),
+    fechaStr:
+      `${snap.fechaTxt || isoToDdMmYyyy(dia)} · turno ${snap.turno || '—'} (congelada)`,
+    totalJuegos: Number(snap.totalJuegos || rd.totalJuegos || 0),
+    resultado: Array.isArray(rd.resultado) ? rd.resultado : [],
+    historicoGuardadoFlag: rd.historicoGuardadoFlag || '',
+  };
+}
+
 function mapaBaselinesOpl(s) {
   if (!s.oplBaselinesPorDia || typeof s.oplBaselinesPorDia !== 'object') {
     s.oplBaselinesPorDia = {};
@@ -3000,7 +3060,8 @@ function construirConsolidadoPlanillaSync(s) {
 
   asegurarPlazasMap(s);
   const mapaOPL = cargarMapaOPL(s);
-  const fechaHoy = fmtDateOnly();
+  const fechaIsoOp = String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim();
+  const fechaHoy = fechaIsoOp ? isoToDdMmYyyy(fechaIsoOp) : fmtDateOnly();
   const consolidado = [];
   let totalJuegos = 0;
 
@@ -3102,9 +3163,12 @@ function consolidarDesdeResumenDespachos(s) {
 
 export async function consolidarDatos() {
   const s = await loadState();
+  const fechaIso =
+    String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
   const pack = consolidarDesdeResumenDespachos(s);
   if (pack) {
     s.consolidado = pack.consolidado;
+    guardarPlanillaCongelada(s, pack, fechaIso);
     await saveState(s);
     return {
       success: true,
@@ -3120,9 +3184,12 @@ export async function consolidarDatos() {
     await importarExcel(null, 'Estado_Cavas');
   }
   const s2 = await loadState();
+  const fechaIso2 =
+    String(s2.lastSyncRange?.from || s2.lastSyncRange?.to || '').trim() || hoyIsoLocal();
   const pack2 = consolidarDesdeResumenDespachos(s2);
   if (pack2) {
     s2.consolidado = pack2.consolidado;
+    guardarPlanillaCongelada(s2, pack2, fechaIso2);
     await saveState(s2);
     return {
       success: true,
@@ -3141,16 +3208,83 @@ export async function consolidarDatos() {
   };
 }
 
+/**
+ * Restaura la foto congelada de Planilla para una fecha (sin tocar SIRT).
+ * Sirve para consultar días pasados tal como quedaron al procesar.
+ *
+ * Si piden el día de hoy y aún no hay foto pero sí hay consolidado vivo,
+ * lo congela al vuelo (cubre la sesión ya procesada antes de este cambio).
+ */
+export async function cargarPlanillaCongelada(range = {}) {
+  const filtro = normalizarRangoFechas(range || {});
+  if (!filtroSirtValido(filtro)) {
+    return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
+  }
+  const s = await loadState();
+  let snap = obtenerPlanillaCongelada(s, filtro.from);
+  if (!snap && filtro.from === hoyIsoLocal() && s.consolidado?.length) {
+    const turno =
+      String(s.resumenDespachos?.turno || '').trim() ||
+      resolverTurnoOperacion(filtro, s.despachosCavas || []);
+    let totalJuegos = 0;
+    s.consolidado.forEach((fila) => {
+      const n = Number(fila[7] || 0);
+      if (n > 0) totalJuegos += n;
+    });
+    guardarPlanillaCongelada(
+      s,
+      {
+        consolidado: s.consolidado,
+        totalJuegos,
+        turno,
+        fechaHoy: isoToDdMmYyyy(filtro.from),
+      },
+      filtro.from
+    );
+    await saveState(s);
+    snap = obtenerPlanillaCongelada(s, filtro.from, turno);
+  }
+  if (!snap) {
+    return {
+      success: false,
+      message:
+        'No hay planilla congelada para esa fecha. Procese la planilla el día de operación para guardarla.',
+    };
+  }
+  restaurarPlanillaCongeladaEnEstado(s, snap, filtro.from);
+  await saveState(s);
+  return {
+    success: true,
+    procesados: snap.totalJuegos,
+    totalJuegos: snap.totalJuegos,
+    turno: snap.turno,
+    turnoOperacion: snap.turno,
+    fechaConsulta: filtro.from,
+    origen: 'congelada',
+    guardadoEn: snap.guardadoEn || null,
+  };
+}
+
 /** Sincroniza SIRT, despachos y planilla para la fecha de operación. */
 /**
  * Sincroniza la fecha solicitada y deja listo el consolidado usado por Planilla.
  * Evita que la planilla opere con datos de una sesión o turno anterior.
+ *
+ * Días pasados: si ya hay foto congelada, la restaura (como Canales al consultar
+ * una fecha). El día de hoy siempre se recalcula en vivo y actualiza la foto.
  */
 export async function prepararPlanillaDesdeSIRT(range = {}) {
   const filtro = normalizarRangoFechas(range || {});
   if (!filtroSirtValido(filtro)) {
     return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
   }
+  const hoy = hoyIsoLocal();
+  const esPasado = filtro.from < hoy;
+  if (esPasado) {
+    const frozen = await cargarPlanillaCongelada(filtro);
+    if (frozen.success) return frozen;
+  }
+
   const s0 = await loadState();
   s0.lastSyncRange = filtro;
   await saveState(s0);
@@ -3169,6 +3303,7 @@ export async function prepararPlanillaDesdeSIRT(range = {}) {
     fechaConsulta: filtro.from,
     turnoOperacion: desp.turno || cons.turno,
     totalPuestos: desp.totalPuestos,
+    origen: cons.origen || 'despachos-programados',
   };
 }
 
@@ -3426,12 +3561,28 @@ export async function generarExcelParticulares(
 export async function generarPlanillaPuntos(opl) {
   const s = await loadState();
   asegurarPlazasMap(s);
+  const fechaIso =
+    String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim() || hoyIsoLocal();
   const pack = construirConsolidadoPlanillaSync(s);
   if (pack) {
     s.consolidado = pack.consolidado;
+    // Solo refresca la foto del día operativo actual; días pasados se leen congelados.
+    if (fechaIso === hoyIsoLocal()) {
+      guardarPlanillaCongelada(s, pack, fechaIso);
+    }
     await saveState(s);
   } else if (!s.consolidado?.length) {
-    return { success: false, message: "No hay datos. Ejecute 'Procesar Planilla' para la fecha de operación." };
+    const snap = obtenerPlanillaCongelada(s, fechaIso);
+    if (snap) {
+      restaurarPlanillaCongeladaEnEstado(s, snap, fechaIso);
+      await saveState(s);
+    } else {
+      return {
+        success: false,
+        message:
+          "No hay datos. Ejecute 'Procesar Planilla' para la fecha de operación.",
+      };
+    }
   }
   const zonasMap = {};
   let totalOPL = 0;

@@ -46,6 +46,16 @@ function estadoDeJornada(dia) {
   s.plazasMap = { 6505: 'ZONA X' };
   s.historicoOpl = [{ fecha: dia }];
   s.historialPdf = [{ id: 'pdf-1' }];
+  s.planillaPorDia = {
+    [`${dia}|MxM`]: {
+      consolidado: [['6505', 'Visceras Rojas', '', '6505', '6505', 'ZONA X', 'CAVA WO', 10, '01/09/2026', 'MxM']],
+      totalJuegos: 10,
+      turno: 'MxM',
+      fechaIso: dia,
+      fechaTxt: '01/09/2026',
+      guardadoEn: '2026-09-01T12:00:00.000Z',
+    },
+  };
   return s;
 }
 
@@ -67,6 +77,10 @@ console.log('=== 1) guarda de día: jornada de ayer ===');
   comprobar('conserva las plazas', Object.keys(s.plazasMap).length === 1);
   comprobar('conserva el histórico', s.historicoOpl.length === 1);
   comprobar('conserva el historial de PDF', s.historialPdf.length === 1);
+  comprobar(
+    'conserva la planilla congelada',
+    s.planillaPorDia['2026-08-31|MxM'] && s.planillaPorDia['2026-08-31|MxM'].totalJuegos === 10
+  );
 }
 
 console.log('');
