@@ -82,6 +82,13 @@ import {
   buildExcelCrudasBuffer,
   buildExcelCrudasGeneralBuffer,
 } from './crudasExcel.js';
+import {
+  upsertPlanillaHistorial,
+  getPlanillaHistorial,
+  listPlanillaHistorial,
+  migratePlanillaPorDiaToMysql,
+  resumenOplDesdeConsolidado,
+} from './planillaHistorial.js';
 import { loadState, saveState, defaultState } from './store.js';
 
 function cargarMapaOPL(state) {
@@ -994,24 +1001,51 @@ function mapaPlanillaPorDia(s) {
   return s.planillaPorDia;
 }
 
-/** Foto de Planilla de Puntos por fecha|turno (sobrevive al cambio de día). */
-function guardarPlanillaCongelada(s, pack, fechaIso) {
+/**
+ * Caché local (gestor_state) + historial MySQL.
+ * No deja que una foto chica pise una grande. `pack.force` sobrescribe.
+ */
+function guardarPlanillaCongeladaLocal(s, pack, fechaIso) {
   const dia = String(fechaIso || s.lastSyncRange?.from || '').trim();
-  if (!dia || !pack?.consolidado?.length) return;
+  if (!dia || !pack?.consolidado?.length) return null;
   const turno = String(pack.turno || s.resumenDespachos?.turno || '').trim();
   const mapa = mapaPlanillaPorDia(s);
-  mapa[claveBaselineDia(dia, turno)] = {
+  const clave = claveBaselineDia(dia, turno);
+  const nuevoTotal = Number(pack.totalJuegos || 0);
+  const previo = mapa[clave];
+  if (
+    previo?.consolidado?.length &&
+    !pack.force &&
+    Number(previo.totalJuegos || 0) > nuevoTotal
+  ) {
+    return previo;
+  }
+  const snap = {
     consolidado: JSON.parse(JSON.stringify(pack.consolidado)),
-    totalJuegos: Number(pack.totalJuegos || 0),
+    totalJuegos: nuevoTotal,
     turno,
     fechaIso: dia,
     fechaTxt: String(pack.fechaHoy || isoToDdMmYyyy(dia) || '').trim(),
+    resumenOpl: resumenOplDesdeConsolidado(pack.consolidado),
     guardadoEn: new Date().toISOString(),
   };
+  mapa[clave] = snap;
   recortarBaselinesPorDia(mapa);
+  return snap;
 }
 
-function obtenerPlanillaCongelada(s, fechaIso, turno = '') {
+async function persistirPlanillaHistorial(s, pack, fechaIso) {
+  const snap = guardarPlanillaCongeladaLocal(s, pack, fechaIso);
+  if (!snap) return { ok: false, skipped: true, reason: 'sin-snap' };
+  try {
+    return await upsertPlanillaHistorial(snap, { force: Boolean(pack.force) });
+  } catch (e) {
+    console.warn('[planilla-historial] no se pudo guardar en MySQL:', e.message);
+    return { ok: false, skipped: true, reason: e.message };
+  }
+}
+
+function obtenerPlanillaCongeladaLocal(s, fechaIso, turno = '') {
   const dia = String(fechaIso || '').trim();
   if (!dia) return null;
   const mapa = mapaPlanillaPorDia(s);
@@ -1020,14 +1054,34 @@ function obtenerPlanillaCongelada(s, fechaIso, turno = '') {
     const exact = mapa[claveBaselineDia(dia, t)];
     if (exact?.consolidado?.length) return exact;
   }
-  const claves = Object.keys(mapa)
+  let mejor = null;
+  Object.keys(mapa)
     .filter((k) => k === dia || k.startsWith(`${dia}|`))
-    .sort();
-  for (let i = claves.length - 1; i >= 0; i -= 1) {
-    const snap = mapa[claves[i]];
-    if (snap?.consolidado?.length) return snap;
+    .forEach((k) => {
+      const snap = mapa[k];
+      if (!snap?.consolidado?.length) return;
+      if (!mejor || Number(snap.totalJuegos || 0) > Number(mejor.totalJuegos || 0)) {
+        mejor = snap;
+      }
+    });
+  return mejor;
+}
+
+function elegirMejorSnap(a, b) {
+  if (!a?.consolidado?.length) return b || null;
+  if (!b?.consolidado?.length) return a;
+  return Number(a.totalJuegos || 0) >= Number(b.totalJuegos || 0) ? a : b;
+}
+
+async function resolverPlanillaHistorial(s, fechaIso, turno = '') {
+  const local = obtenerPlanillaCongeladaLocal(s, fechaIso, turno);
+  let mysqlSnap = null;
+  try {
+    mysqlSnap = await getPlanillaHistorial(fechaIso, turno);
+  } catch (e) {
+    console.warn('[planilla-historial] lectura MySQL falló:', e.message);
   }
-  return null;
+  return elegirMejorSnap(mysqlSnap, local);
 }
 
 function restaurarPlanillaCongeladaEnEstado(s, snap, fechaIso) {
@@ -1040,11 +1094,22 @@ function restaurarPlanillaCongeladaEnEstado(s, snap, fechaIso) {
     ...rd,
     turno: String(snap.turno || rd.turno || '').trim(),
     fechaStr:
-      `${snap.fechaTxt || isoToDdMmYyyy(dia)} · turno ${snap.turno || '—'} (congelada)`,
+      `${snap.fechaTxt || isoToDdMmYyyy(dia)} · turno ${snap.turno || '—'} (historial)`,
     totalJuegos: Number(snap.totalJuegos || rd.totalJuegos || 0),
     resultado: Array.isArray(rd.resultado) ? rd.resultado : [],
     historicoGuardadoFlag: rd.historicoGuardadoFlag || '',
   };
+  guardarPlanillaCongeladaLocal(
+    s,
+    {
+      consolidado: snap.consolidado,
+      totalJuegos: snap.totalJuegos,
+      turno: snap.turno,
+      fechaHoy: snap.fechaTxt,
+      force: true,
+    },
+    dia
+  );
 }
 
 function mapaBaselinesOpl(s) {
@@ -3168,7 +3233,7 @@ export async function consolidarDatos() {
   const pack = consolidarDesdeResumenDespachos(s);
   if (pack) {
     s.consolidado = pack.consolidado;
-    guardarPlanillaCongelada(s, pack, fechaIso);
+    await persistirPlanillaHistorial(s, pack, fechaIso);
     await saveState(s);
     return {
       success: true,
@@ -3189,7 +3254,7 @@ export async function consolidarDatos() {
   const pack2 = consolidarDesdeResumenDespachos(s2);
   if (pack2) {
     s2.consolidado = pack2.consolidado;
-    guardarPlanillaCongelada(s2, pack2, fechaIso2);
+    await persistirPlanillaHistorial(s2, pack2, fechaIso2);
     await saveState(s2);
     return {
       success: true,
@@ -3209,11 +3274,9 @@ export async function consolidarDatos() {
 }
 
 /**
- * Restaura la foto congelada de Planilla para una fecha (sin tocar SIRT).
- * Sirve para consultar días pasados tal como quedaron al procesar.
- *
+ * Restaura el historial de Planilla para una fecha (MySQL o caché local).
  * Si piden el día de hoy y aún no hay foto pero sí hay consolidado vivo,
- * lo congela al vuelo (cubre la sesión ya procesada antes de este cambio).
+ * lo persiste al vuelo.
  */
 export async function cargarPlanillaCongelada(range = {}) {
   const filtro = normalizarRangoFechas(range || {});
@@ -3221,7 +3284,16 @@ export async function cargarPlanillaCongelada(range = {}) {
     return { success: false, message: 'Indique una fecha válida (AAAA-MM-DD).' };
   }
   const s = await loadState();
-  let snap = obtenerPlanillaCongelada(s, filtro.from);
+  // Migra una vez lo que hubiera en el JSON local hacia MySQL.
+  if (Object.keys(s.planillaPorDia || {}).length) {
+    try {
+      await migratePlanillaPorDiaToMysql(s.planillaPorDia);
+    } catch (e) {
+      console.warn('[planilla-historial] migración local→MySQL:', e.message);
+    }
+  }
+
+  let snap = await resolverPlanillaHistorial(s, filtro.from);
   if (!snap && filtro.from === hoyIsoLocal() && s.consolidado?.length) {
     const turno =
       String(s.resumenDespachos?.turno || '').trim() ||
@@ -3231,7 +3303,7 @@ export async function cargarPlanillaCongelada(range = {}) {
       const n = Number(fila[7] || 0);
       if (n > 0) totalJuegos += n;
     });
-    guardarPlanillaCongelada(
+    await persistirPlanillaHistorial(
       s,
       {
         consolidado: s.consolidado,
@@ -3242,13 +3314,13 @@ export async function cargarPlanillaCongelada(range = {}) {
       filtro.from
     );
     await saveState(s);
-    snap = obtenerPlanillaCongelada(s, filtro.from, turno);
+    snap = await resolverPlanillaHistorial(s, filtro.from, turno);
   }
   if (!snap) {
     return {
       success: false,
       message:
-        'No hay planilla congelada para esa fecha. Procese la planilla el día de operación para guardarla.',
+        'No hay historial de planilla para esa fecha. Procese la planilla el día de operación para guardarla en MySQL.',
     };
   }
   restaurarPlanillaCongeladaEnEstado(s, snap, filtro.from);
@@ -3260,9 +3332,28 @@ export async function cargarPlanillaCongelada(range = {}) {
     turno: snap.turno,
     turnoOperacion: snap.turno,
     fechaConsulta: filtro.from,
-    origen: 'congelada',
+    origen: snap.origen === 'mysql' ? 'historial-mysql' : 'congelada',
     guardadoEn: snap.guardadoEn || null,
+    resumenOpl: snap.resumenOpl || resumenOplDesdeConsolidado(snap.consolidado),
   };
+}
+
+/** Lista resúmenes del historial de planilla (MySQL). */
+export async function getHistorialPlanillaPuntos(range = {}) {
+  const filtro = normalizarRangoFechas(range || {});
+  try {
+    const items = await listPlanillaHistorial({
+      from: filtro.from,
+      to: filtro.to || filtro.from,
+      date: range?.date,
+    });
+    if (!items) {
+      return { success: false, message: 'MySQL del gestor no está disponible.', historial: [] };
+    }
+    return { success: true, historial: items };
+  } catch (e) {
+    return { success: false, message: e.message || 'Error leyendo historial', historial: [] };
+  }
 }
 
 /** Sincroniza SIRT, despachos y planilla para la fecha de operación. */
@@ -3280,7 +3371,8 @@ export async function prepararPlanillaDesdeSIRT(range = {}) {
   }
   const hoy = hoyIsoLocal();
   const esPasado = filtro.from < hoy;
-  if (esPasado) {
+  const forzarVivo = Boolean(range?.force || range?.forzar || range?.refresh);
+  if (esPasado && !forzarVivo) {
     const frozen = await cargarPlanillaCongelada(filtro);
     if (frozen.success) return frozen;
   }
@@ -3566,13 +3658,13 @@ export async function generarPlanillaPuntos(opl) {
   const pack = construirConsolidadoPlanillaSync(s);
   if (pack) {
     s.consolidado = pack.consolidado;
-    // Solo refresca la foto del día operativo actual; días pasados se leen congelados.
+    // Solo refresca el historial del día operativo actual; días pasados se leen de MySQL.
     if (fechaIso === hoyIsoLocal()) {
-      guardarPlanillaCongelada(s, pack, fechaIso);
+      await persistirPlanillaHistorial(s, pack, fechaIso);
     }
     await saveState(s);
   } else if (!s.consolidado?.length) {
-    const snap = obtenerPlanillaCongelada(s, fechaIso);
+    const snap = await resolverPlanillaHistorial(s, fechaIso);
     if (snap) {
       restaurarPlanillaCongeladaEnEstado(s, snap, fechaIso);
       await saveState(s);

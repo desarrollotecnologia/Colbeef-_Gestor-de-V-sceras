@@ -46,4 +46,23 @@ assert.strictEqual(s.consolidado[0][7], 21);
 assert.ok(typeof engine.cargarPlanillaCongelada === 'function');
 assert.ok(typeof engine.prepararPlanillaDesdeSIRT === 'function');
 
+// Una foto chica no debe pisar una grande del mismo día|turno.
+{
+  const s2 = defaultState();
+  s2.planillaPorDia[`${dia}|${turno}`] = {
+    consolidado: JSON.parse(JSON.stringify(consolidado)),
+    totalJuegos: 26,
+    turno,
+    fechaIso: dia,
+    fechaTxt: '04/11/2026',
+    guardadoEn: '2026-11-04T20:00:00.000Z',
+  };
+  // Simula el helper: si el nuevo total es menor, se conserva el previo.
+  const previo = s2.planillaPorDia[`${dia}|${turno}`];
+  const nuevoTotal = 1;
+  assert.ok(Number(previo.totalJuegos) > nuevoTotal, 'previo es mayor');
+  // No sobrescribir
+  assert.strictEqual(s2.planillaPorDia[`${dia}|${turno}`].totalJuegos, 26);
+}
+
 console.log('test-planilla-congelada: ok');

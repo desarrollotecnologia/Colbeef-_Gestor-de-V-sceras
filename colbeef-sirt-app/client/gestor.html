@@ -3832,7 +3832,9 @@ function _msgPlanillaOk(res) {
     ' juegos · turno ' +
     (res.turnoOperacion || res.turno || '—') +
     (res.fechaConsulta ? ' · ' + res.fechaConsulta : '');
-  if (res.origen === 'congelada') return base + ' · foto congelada';
+  if (res.origen === 'historial-mysql' || res.origen === 'congelada') {
+    return base + ' · historial';
+  }
   return base;
 }
 

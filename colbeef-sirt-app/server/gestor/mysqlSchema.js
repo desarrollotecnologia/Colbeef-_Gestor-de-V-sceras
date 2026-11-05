@@ -102,6 +102,9 @@ export async function ensureGestorSchema() {
   const { ensurePdfHistorialTable } = await import('./pdfHistorial.js');
   await ensurePdfHistorialTable();
 
+  const { ensurePlanillaHistorialTable } = await import('./planillaHistorial.js');
+  await ensurePlanillaHistorialTable();
+
   return { ok: true, version: SCHEMA_VERSION };
 }
 

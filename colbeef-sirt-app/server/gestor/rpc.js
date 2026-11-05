@@ -42,6 +42,7 @@ const handlers = {
   consolidarDatos: engine.consolidarDatos,
   prepararPlanillaDesdeSIRT: engine.prepararPlanillaDesdeSIRT,
   cargarPlanillaCongelada: engine.cargarPlanillaCongelada,
+  getHistorialPlanillaPuntos: engine.getHistorialPlanillaPuntos,
   getListaOPLsParaPlanilla: engine.getListaOPLsParaPlanilla,
   getOplsParticulares: engine.getOplsParticulares,
   setOplsParticulares: engine.setOplsParticulares,
