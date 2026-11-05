@@ -249,42 +249,53 @@ export function layoutEtiqueta(et) {
       h: 16,
       texto: `F.V: ${fv}`,
     },
-    // Bloque 4 — cliente / OPL / despacho + pie / sexo
+    // Bloque 4 — cliente / OPL / despacho + pie / sexo / consecutivo
     {
       tipo: 'texto',
       x: b4,
       y: y0,
-      h: 17,
+      h: 16,
       texto: corto(`Cliente ${et.cliente || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: y0 + 26,
-      h: 17,
+      y: y0 + 22,
+      h: 16,
       texto: corto(`OPL ${et.opl || '-'}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: y0 + 52,
-      h: 17,
+      y: y0 + 44,
+      h: 16,
       texto: corto(`Despacho ${despacho}`, c4),
     },
     {
       tipo: 'texto',
       x: b4,
-      y: y0 + 84,
-      h: 22,
-      w: 28,
+      y: y0 + 70,
+      h: 20,
+      w: 26,
       texto: `Pie: ${corto(pie, 14)}`,
     },
     {
       tipo: 'texto',
       x: b4,
-      y: y0 + 114,
-      h: 18,
+      y: y0 + 96,
+      h: 16,
       texto: `Sexo: ${corto(sexo, 8)}  ·  ${corto(especie, 12)}`,
+    },
+    {
+      tipo: 'texto',
+      x: b4,
+      y: y0 + 120,
+      h: 17,
+      w: 22,
+      texto: corto(
+        `Consecutivo ${zplTxt(et.consecutivo || '') || '-'}`,
+        c4
+      ),
     },
   ];
   return elementos.filter((e) => e.texto);

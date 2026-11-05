@@ -150,6 +150,8 @@ const SQL_ETIQUETA = `
     anim.sexo,
     anim.peso_pie,
     anim.identificacion_animal,
+    anim.secuencia,
+    anim.es_emergencia,
     faena.lote,
     faena.fecha_beneficio
   FROM trazabilidad_proceso.parte_producto pp
@@ -193,7 +195,27 @@ const SQL_ETIQUETA = `
     SELECT
       NULLIF(TRIM(p.sexo::text), '') AS sexo,
       p.peso_animal_pie AS peso_pie,
-      NULLIF(TRIM(p.identificacion::text), '') AS identificacion_animal
+      NULLIF(TRIM(p.identificacion::text), '') AS identificacion_animal,
+      p.secuencia,
+      EXISTS (
+        SELECT 1
+        FROM trazabilidad_proceso.parte_producto pp_e
+        JOIN trazabilidad_proceso.tipo_parte_producto tpp_e
+          ON tpp_e.id = pp_e.id_tipo_parte_producto
+        JOIN trazabilidad_proceso.parte_producto_empresa ppe_e
+          ON ppe_e.id_producto::text = pp_e.id_producto::text
+         AND ppe_e.id_parte_producto = pp_e.id
+        JOIN trazabilidad_proceso.parte_producto_empresa_local ppel_e
+          ON ppel_e.id_parte_producto_empresa = ppe_e.id
+        LEFT JOIN organizaciones.sucursal s_e ON s_e.id = ppel_e.id_local
+        LEFT JOIN trazabilidad_proceso.destino de_e ON de_e.id = s_e.id_destino
+        WHERE pp_e.id_producto::text = p.id::text
+          AND UPPER(COALESCE(tpp_e.nombre, '')) LIKE '%VISCERAS%BLANC%'
+          AND (
+            UPPER(COALESCE(s_e.nombre, '')) LIKE '%EMERGENCIA%'
+            OR UPPER(COALESCE(de_e.nombre, '')) LIKE '%EMERGENCIA%'
+          )
+      ) AS es_emergencia
     FROM trazabilidad_proceso.producto p
     WHERE p.id::text = pp.id_producto::text
     LIMIT 1
@@ -211,6 +233,18 @@ const SQL_ETIQUETA = `
   WHERE pp.id_producto::text = $1
   ORDER BY tpp.nombre
 `;
+
+const MES_ABR = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+
+/** Consecutivo etiqueta original: MES + secuencia (+ E si VB en CAVA EMERGENCIA). */
+export function armarConsecutivo(secuencia, fechaBeneficioIso, esEmergencia = false) {
+  const seq = secuencia == null || secuencia === '' ? '' : String(secuencia).trim();
+  if (!seq) return '';
+  const m = String(fechaBeneficioIso || '').match(/^(\d{4})-(\d{2})/);
+  const mes = m ? MES_ABR[Number(m[2]) - 1] || '' : '';
+  const suf = esEmergencia ? 'E' : '';
+  return mes ? `${mes} ${seq}${suf}` : `${seq}${suf}`;
+}
 
 let rolloColumnasMem = null;
 let gsmiColProducto = undefined; // null = no hay; string = nombre columna; undefined = aún no explorado
@@ -416,6 +450,10 @@ function armarDatos(row, mapaOpl, extras = {}) {
   const pie = pesoPieQr(row.peso_pie);
   const sexo = sexoQr(row.sexo);
   const lote = String(row.lote || '').trim();
+  const esEmergencia = Boolean(row.es_emergencia);
+  const secuencia =
+    row.secuencia == null || row.secuencia === '' ? '' : String(row.secuencia).trim();
+  const consecutivo = armarConsecutivo(secuencia, fechaBeneficio, esEmergencia);
   const datos = {
     codigoBarras,
     codigo_barras: codigoBarras,
@@ -450,6 +488,10 @@ function armarDatos(row, mapaOpl, extras = {}) {
     sexo,
     sexoQr: sexo,
     lote,
+    secuencia,
+    esEmergencia,
+    es_emergencia: esEmergencia,
+    consecutivo,
     fechaBeneficio,
     fechaBeneficioDmy: fechaDmy(fechaBeneficio),
     fechaVencimiento,
@@ -557,6 +599,10 @@ export function muestraCuatroManillas() {
     sexo: 'M',
     sexoQr: 'M',
     lote: '38833',
+    secuencia: '23',
+    esEmergencia: true,
+    consecutivo: 'OCT 23E',
+    fechaBeneficio: '2026-10-23',
     fechaBeneficioDmy: '23-10-2026',
     fechaVencimientoDmy: '27-10-2026',
   };
