@@ -4149,6 +4149,8 @@ export async function consultarJuegosAsignadosDelDia(range) {
         codigo: base,
         propietario: '',
         puesto: '',
+        destino: '',
+        observacion: '',
         opl: '',
         registro: '',
         tipos: new Set(),
@@ -4162,6 +4164,8 @@ export async function consultarJuegosAsignadosDelDia(range) {
     if (reg && (!a.registro || reg < a.registro)) a.registro = reg;
     a.propietario = a.propietario || String(fila[COLS_DESPACHO_CAVA.prop] ?? '').trim();
     a.puesto = a.puesto || String(fila[COLS_DESPACHO_CAVA.puesto] ?? '').trim();
+    a.destino = a.destino || String(fila[8] ?? '').trim();
+    a.observacion = a.observacion || String(fila[12] ?? '').trim();
     a.opl = a.opl || claveOplDesdeFila(fila, mapaOPL);
     if (enCava) a.enCava = true;
     else {
@@ -4181,6 +4185,8 @@ export async function consultarJuegosAsignadosDelDia(range) {
         propietario: a.propietario,
         opl: a.opl,
         puesto: a.puesto,
+        destino: a.destino,
+        observacion: a.observacion,
         horaAsignacion: a.registro ? a.registro.replace('T', ' ').slice(0, 16) : '',
         adicional,
         tipoSalida: adicional ? 'adicional' : 'normal',
