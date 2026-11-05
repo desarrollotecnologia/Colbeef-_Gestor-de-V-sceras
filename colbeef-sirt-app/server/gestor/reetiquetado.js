@@ -12,6 +12,8 @@ import {
 import {
   detectarTurnoPorFechaISO,
   codigoBase,
+  parsePuestoOperacion,
+  formatearCodigoSucursal,
 } from './engineUtils.js';
 import { loadState, saveState } from './store.js';
 import * as etiquetas from './etiquetasVisceras.js';
@@ -735,32 +737,32 @@ export async function getConfigImpresora() {
   };
 }
 
-/**
- * OPL cuya impresión TEMP1 va por el botón Tempranas (como Canales).
- * Override: GESTOR_TEMPRANAS_IMPRIMIR_OPL=TRANSCARNES
- */
-function oplTempranasImpresion() {
-  return (
-    String(process.env.GESTOR_TEMPRANAS_IMPRIMIR_OPL || 'TRANSCARNES')
-      .trim()
-      .toUpperCase() || 'TRANSCARNES'
-  );
-}
+const TEMPRANAS_SET = new Set(
+  PUESTOS_TEMPRANAS.map((p) => {
+    const u = String(p || '').trim().toUpperCase();
+    if (/^\d+$/.test(u)) return String(parseInt(u, 10));
+    return u;
+  })
+);
 
-/** Marcador operativo TEMP1 / TEMP 1 / temp 1 (no TEMP2 ni TEMP genérico). */
-function tieneMarcadorTemp1(...textos) {
-  return textos.some((t) => /\bTEMP\s*1\b/i.test(String(t || '')));
+/** Marcador operativo TEMP1 / TEMP 1 / temp 1 en ruta o puesto SIRT. */
+function tieneMarcadorTemp1(texto) {
+  return /\bTEMP\s*1\b/i.test(String(texto || ''));
 }
 
 /**
- * Temprana para impresión separada (igual Canales):
- * solo TRANSCARNES + destino/ruta/obs con TEMP1 / temp 1.
- * Otros OPL con TEMP1 quedan en el lote normal.
+ * Temprana para imprimir:
+ * - puestos del catálogo PUESTOS_TEMPRANAS (NSF, 6505, ARIR, LHMV, WMERCAN), o
+ * - únicamente rutas/puestos que traen TEMP1 / temp 1 (no TEMP2 ni TEMP genérico).
  */
-function esTempranaImpresionSeparada(fila) {
-  const opl = String(fila?.opl || '').trim().toUpperCase();
-  if (opl !== oplTempranasImpresion()) return false;
-  return tieneMarcadorTemp1(fila?.destino, fila?.puesto, fila?.observacion, fila?.observaciones);
+function esTempranaPuesto(puesto) {
+  const po = parsePuestoOperacion(puesto);
+  const cod = formatearCodigoSucursal(po.codigo || String(puesto || '').split('/')[0] || '');
+  const key = /^\d+$/.test(cod) ? String(parseInt(cod, 10)) : String(cod).toUpperCase();
+  if (key && TEMPRANAS_SET.has(key)) return true;
+  const u = String(puesto || '').toUpperCase();
+  if (TEMPRANAS_SET.has(u)) return true;
+  return tieneMarcadorTemp1(puesto);
 }
 
 /**
@@ -794,22 +796,15 @@ export async function listarPendientesEtiquetas({
   let enCava = (out.filas || [])
     .filter((f) => String(f.estado || '') === 'En cava')
     .map((f) => {
-      const row = {
+      const temprana = esTempranaPuesto(f.puesto);
+      const adicional = Boolean(f.adicional);
+      const cod = String(f.codigo || '').trim().toUpperCase();
+      return {
         codigo: f.codigo,
         propietario: f.propietario,
         opl: f.opl || OPL_DEFAULT,
         puesto: f.puesto,
-        destino: f.destino || '',
-        observacion: f.observacion || f.observaciones || '',
         horaAsignacion: f.horaAsignacion || '',
-        adicional: Boolean(f.adicional),
-      };
-      // Si es TEMP1 Transcarnes, gana Tempranas (no se duplica en Adicionales).
-      const temprana = esTempranaImpresionSeparada(row);
-      const adicional = temprana ? false : row.adicional;
-      const cod = String(f.codigo || '').trim().toUpperCase();
-      return {
-        ...row,
         adicional,
         temprana,
         yaImpresa: Boolean(impresasMap[cod]),
@@ -818,7 +813,7 @@ export async function listarPendientesEtiquetas({
     });
 
   if (modoNorm === 'tempranas') {
-    enCava = enCava.filter((f) => f.temprana);
+    enCava = enCava.filter((f) => f.temprana && !f.adicional);
   } else if (modoNorm === 'adicionales') {
     enCava = enCava.filter((f) => f.adicional);
   } else {
@@ -888,7 +883,6 @@ export async function listarPendientesEtiquetas({
     soloNuevas: Boolean(soloNuevas),
     corteAdicional: out.corteAdicional,
     puestosTempranas: [...PUESTOS_TEMPRANAS],
-    oplTempranasImpresion: oplTempranasImpresion(),
     totalJuegos,
     totalConImpresas,
     yaImpresas,

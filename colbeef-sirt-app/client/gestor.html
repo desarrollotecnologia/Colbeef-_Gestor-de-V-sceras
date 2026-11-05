@@ -1000,7 +1000,7 @@
       <h3>🖨️ Etiquetas por OPL (varios animales de una vez)</h3>
       <p class="etl-ayuda">
         Igual que Canales: el lote <strong>normal</strong> no incluye tempranas ni adicionales.
-        Tempranas = solo <strong>TRANSCARNES</strong> con marcador <code>TEMP1</code> / temp 1 (obs, destino o ruta).
+        Tempranas = puestos NSF / 6505 / ARIR / LHMV / WMERCAN <em>o</em> marcador <code>TEMP1</code> / temp 1.
         Usa los botones aparte. Cada animal = 4 manillas en una pasada del rollo.
       </p>
       <div class="etl-filtros" style="display:flex;gap:0.7rem;align-items:center;flex-wrap:wrap;margin-bottom:0.75rem;font-size:0.85rem;">
@@ -5302,7 +5302,7 @@ function etlActualizarModoTxt() {
   if (btnA) btnA.classList.toggle('active', !!ETL.soloAdicionales);
   if (!el) return;
   var corte = (ETL.datos && ETL.datos.corteAdicional) || '15:30';
-  if (ETL.soloTempranas) el.textContent = 'Modo: solo TEMPRANAS (TRANSCARNES + TEMP1 / temp 1)';
+  if (ETL.soloTempranas) el.textContent = 'Modo: solo TEMPRANAS (catálogo NSF/6505/ARIR/LHMV/WMERCAN + TEMP1 / temp 1)';
   else if (ETL.soloAdicionales) el.textContent = 'Modo: solo ADICIONALES (≥ ' + corte + ')';
   else el.textContent = 'Modo: lote NORMAL (sin tempranas ni adicionales)';
 }
