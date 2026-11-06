@@ -817,7 +817,8 @@ export async function listarPendientesEtiquetas({
   } else if (modoNorm === 'adicionales') {
     enCava = enCava.filter((f) => f.adicional);
   } else {
-    enCava = enCava.filter((f) => !f.temprana && !f.adicional);
+    // Cargar OPL: normales + tempranas. Solo adicionales van aparte.
+    enCava = enCava.filter((f) => !f.adicional);
   }
   if (oplFiltro) {
     enCava = enCava.filter((f) => oplFiltro.has(String(f.opl || '').toUpperCase()));
@@ -895,7 +896,7 @@ export async function listarPendientesEtiquetas({
         ? `Tempranas en cava: ${totalJuegos} juego(s)`
         : modoNorm === 'adicionales'
           ? `Adicionales (≥ ${out.corteAdicional}) en cava: ${totalJuegos} juego(s)`
-          : `Lote normal en cava (sin tempranas ni adicionales): ${totalJuegos} juego(s)`,
+          : `Lote en cava (incluye tempranas, sin adicionales): ${totalJuegos} juego(s)`,
   };
 }
 
