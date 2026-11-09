@@ -4137,6 +4137,12 @@ export async function consultarJuegosAsignadosDelDia(range) {
   const corteLabel = getSalidaAdicionalCorteLabel();
   const corteIso = `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
 
+  const PARTES_CORTO = {
+    Cabeza: 'C',
+    'Patas y Manos': 'P',
+    'Visceras Blancas': 'VB',
+    'Visceras Rojas': 'VR',
+  };
   const porAnimal = new Map();
   const agregar = (fila, enCava) => {
     const id = String(fila[COLS_DESPACHO_CAVA.id] ?? '').trim();
@@ -4152,6 +4158,8 @@ export async function consultarJuegosAsignadosDelDia(range) {
         opl: '',
         registro: '',
         tipos: new Set(),
+        tiposEnCava: new Set(),
+        tiposSalidos: new Set(),
         enCava: false,
         ultimaSalida: '',
       });
@@ -4163,8 +4171,11 @@ export async function consultarJuegosAsignadosDelDia(range) {
     a.propietario = a.propietario || String(fila[COLS_DESPACHO_CAVA.prop] ?? '').trim();
     a.puesto = a.puesto || String(fila[COLS_DESPACHO_CAVA.puesto] ?? '').trim();
     a.opl = a.opl || claveOplDesdeFila(fila, mapaOPL);
-    if (enCava) a.enCava = true;
-    else {
+    if (enCava) {
+      a.enCava = true;
+      a.tiposEnCava.add(tipo);
+    } else {
+      a.tiposSalidos.add(tipo);
       const f = String(fila[0] ?? '').trim();
       if (f > a.ultimaSalida) a.ultimaSalida = f;
     }
@@ -4176,6 +4187,19 @@ export async function consultarJuegosAsignadosDelDia(range) {
     .filter((a) => tieneJuegoCompleto(a.tipos))
     .map((a) => {
       const adicional = Boolean(a.registro) && a.registro >= corteIso;
+      // Si una parte ya salió físicamente, cuenta como pistoleada aunque aún figure en prog.
+      const partes = TIPOS_PRODUCTO.map((tipo) => {
+        const salio = a.tiposSalidos.has(tipo);
+        const sigue = a.tiposEnCava.has(tipo) && !salio;
+        return {
+          tipo,
+          corto: PARTES_CORTO[tipo] || tipo.slice(0, 2),
+          estado: salio ? 'despachado' : sigue ? 'en_cava' : 'pendiente',
+        };
+      });
+      const partesListas = partes.filter((p) => p.estado === 'despachado').length;
+      const sigueEnCava = partes.some((p) => p.estado === 'en_cava');
+      const estado = sigueEnCava || partesListas < TIPOS_PRODUCTO.length ? 'En cava' : 'Despachado';
       return {
         codigo: a.codigo,
         propietario: a.propietario,
@@ -4184,8 +4208,14 @@ export async function consultarJuegosAsignadosDelDia(range) {
         horaAsignacion: a.registro ? a.registro.replace('T', ' ').slice(0, 16) : '',
         adicional,
         tipoSalida: adicional ? 'adicional' : 'normal',
-        estado: a.enCava ? 'En cava' : 'Despachado',
-        horaSalida: a.enCava ? '' : a.ultimaSalida.replace('T', ' ').slice(0, 16),
+        estado,
+        horaSalida: estado === 'Despachado' && a.ultimaSalida
+          ? a.ultimaSalida.replace('T', ' ').slice(0, 16)
+          : '',
+        partes,
+        partesListas,
+        partesTotal: TIPOS_PRODUCTO.length,
+        progresoPartes: `${partesListas}/${TIPOS_PRODUCTO.length}`,
       };
     })
     .sort(
@@ -4195,6 +4225,7 @@ export async function consultarJuegosAsignadosDelDia(range) {
         x.codigo.localeCompare(y.codigo)
     );
   const adicionales = filas.filter((f) => f.adicional);
+  const enCava = filas.filter((f) => f.estado === 'En cava');
   return {
     success: true,
     fecha: fechaOp,
@@ -4202,6 +4233,8 @@ export async function consultarJuegosAsignadosDelDia(range) {
     total: filas.length,
     totalNormales: filas.length - adicionales.length,
     totalAdicionales: adicionales.length,
+    totalEnCava: enCava.length,
+    totalDespachados: filas.length - enCava.length,
     adicionalesEnCava: adicionales.filter((f) => f.estado === 'En cava').length,
     filas,
   };

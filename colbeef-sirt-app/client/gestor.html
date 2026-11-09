@@ -215,6 +215,12 @@
     .adicionales-filtros{display:flex;gap:0.4rem;flex-wrap:wrap;margin-bottom:0.55rem;}
     .adicionales-filtros button{padding:0.28rem 0.7rem;font-size:0.78rem;border-radius:4px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;}
     .adicionales-filtros button.active{background:#1e3a5f;color:#fff;border-color:#1e3a5f;}
+    .partes-pistoleo{display:inline-flex;gap:0.22rem;flex-wrap:wrap;align-items:center;}
+    .parte-chip{display:inline-block;min-width:1.55rem;text-align:center;font-size:0.68rem;font-weight:700;border-radius:3px;padding:0.12rem 0.28rem;line-height:1.2;border:1px solid transparent;}
+    .parte-chip.despachado{background:#dcfce7;color:#166534;border-color:#86efac;}
+    .parte-chip.en_cava{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
+    .parte-chip.pendiente{background:#f1f5f9;color:#64748b;border-color:#cbd5e1;}
+    .progreso-partes{font-size:0.7rem;color:#64748b;margin-left:0.2rem;}
     /* Modal detalle puesto (despachos) */
     #modalDetalle .modal-box{max-width:min(1040px,96vw);}
     #modalDetalle .table-wrap{max-height:min(58vh,520px);overflow:auto;}
@@ -671,15 +677,19 @@
           <h4>Asignación de salidas · corte adicionales <span id="corteAdicionalLbl">15:30</span></h4>
           <p style="margin:0 0 0.55rem;font-size:0.78rem;color:#64748b;line-height:1.35;">
             Juegos del día según la <strong>hora en que se les asignó la salida</strong>: hasta las <strong class="lbl-corte-adi-prev">15:29</strong> = normal · desde las <strong class="lbl-corte-adi">15:30</strong> = adicional.
-            El estado indica si el juego sigue en cava o ya salió de planta.
+            En <strong>Partes</strong> se ve el pistoleo (C / P / VB / VR): verde = ya salió · rojo = sigue en cava. Se actualiza solo cada ~15 s mientras el módulo esté abierto; al completar las 4 dejan de aparecer en Pendientes.
           </p>
           <div class="adicionales-kpis">
+            <div>Pendientes<br><strong id="kpiSalPendientes" style="color:#dc2626;">—</strong></div>
+            <div>Despachados<br><strong id="kpiSalDespachados" style="color:#16a34a;">—</strong></div>
             <div>Normales<br><strong id="kpiSalNormales">—</strong></div>
             <div>Adicionales<br><strong id="kpiSalAdicionales" style="color:#1e3a5f;">—</strong></div>
             <div>Total asignado<br><strong id="kpiSalTotal">—</strong></div>
           </div>
           <div class="adicionales-filtros">
-            <button type="button" class="active" id="filtroSalTodas" onclick="filtrarSalidasFisicas('todas')">Todas</button>
+            <button type="button" class="active" id="filtroSalPendientes" onclick="filtrarSalidasFisicas('pendientes')">Pendientes</button>
+            <button type="button" id="filtroSalDespachados" onclick="filtrarSalidasFisicas('despachados')">Despachados</button>
+            <button type="button" id="filtroSalTodas" onclick="filtrarSalidasFisicas('todas')">Todas</button>
             <button type="button" id="filtroSalNormales" onclick="filtrarSalidasFisicas('normales')">Normales</button>
             <button type="button" id="filtroSalAdicionales" onclick="filtrarSalidasFisicas('adicionales')">Solo adicionales</button>
             <button type="button" class="btn btn-secondary" style="padding:0.28rem 0.7rem;font-size:0.78rem;" onclick="cargarVistaSalidasFisicas()">🔄 Actualizar</button>
@@ -692,12 +702,13 @@
                   <th>Código</th>
                   <th>Propietario</th>
                   <th>OPL / Puesto</th>
+                  <th>Partes</th>
                   <th>Estado</th>
                   <th>Tipo</th>
                 </tr>
               </thead>
               <tbody id="tablaSalidasFisicas">
-                <tr><td colspan="6" class="empty-state">Se cargará al abrir el módulo.</td></tr>
+                <tr><td colspan="7" class="empty-state">Se cargará al abrir el módulo.</td></tr>
               </tbody>
             </table>
           </div>
@@ -1499,13 +1510,16 @@ window.onload = function() {
 };
 
 var operacionRefreshTimer = null;
+var despachosAsignadosRefreshTimer = null;
 var oplModalRefreshTimer = null;
 var OPERACION_REFRESH_MS = 45000;
+var DESPACHO_ASIGNADOS_REFRESH_MS = 15000;
 var OPL_MODAL_REFRESH_MS = 30000;
 
 function iniciarRefrescoOperacion() {
   clearInterval(dashboardRefreshTimer);
   clearInterval(operacionRefreshTimer);
+  clearInterval(despachosAsignadosRefreshTimer);
   operacionRefreshTimer = setInterval(function () {
     if (document.getElementById('viewDashboard').style.display !== 'none') {
       loadDashboardData();
@@ -1517,6 +1531,11 @@ function iniciarRefrescoOperacion() {
       refrescarProgresoModalOPL({ silent: true, auto: true });
     }
   }, OPERACION_REFRESH_MS);
+  // Avance de pistoleo por partes: consulta liviana cada 15s mientras Despachos esté abierto.
+  despachosAsignadosRefreshTimer = setInterval(function () {
+    if (!document.getElementById('viewDespachos').classList.contains('active')) return;
+    cargarVistaSalidasFisicas({ silent: true });
+  }, DESPACHO_ASIGNADOS_REFRESH_MS);
 }
 
 // ══════════════════════════════════════════════════════
@@ -1545,10 +1564,8 @@ function cargarDespachosDesdeSirt(opts) {
   opts = opts || {};
   if (state.dashboardVista === 'sesion') {
     cargarDespachosGuardados();
-    if (!opts.silent) {
-      cargarVistaSalidasCava();
-      cargarVistaSalidasFisicas();
-    }
+    cargarVistaSalidasFisicas({ silent: opts.silent });
+    if (!opts.silent) cargarVistaSalidasCava();
     return;
   }
   var filtro = leerFechaGlobal();
@@ -1559,9 +1576,19 @@ function cargarDespachosDesdeSirt(opts) {
   }
   google.script.run
     .withSuccessHandler(function (res) {
-      hideSpinner();
+      if (!opts.silent) hideSpinner();
       if (!res || !res.success) {
-        showAlert('despAlert', 'error', 'Error: ' + (res ? res.message : ''));
+        if (!opts.silent) {
+          showAlert('despAlert', 'error', 'Error: ' + (res ? res.message : ''));
+          var tb = document.getElementById('despTbody');
+          if (tb && /Consultando SIRT/i.test(tb.textContent || '')) {
+            tb.innerHTML =
+              '<tr><td colspan="5" class="empty-state">' +
+              escapeHtml((res && res.message) || 'Sin datos de despacho') +
+              '</td></tr>';
+          }
+        }
+        cargarVistaSalidasFisicas({ silent: true });
         return;
       }
       seleccionarTurno(res.turno);
@@ -1603,14 +1630,14 @@ function cargarDespachosDesdeSirt(opts) {
         );
       }
       loadDashboardData();
-      if (!opts.silent) {
-      cargarVistaSalidasCava();
-      cargarVistaSalidasFisicas();
-    }
+      cargarVistaSalidasFisicas({ silent: opts.silent });
+      if (!opts.silent) cargarVistaSalidasCava();
     })
     .withFailureHandler(function (e) {
-      hideSpinner();
-      showAlert('despAlert', 'error', e && e.message ? e.message : String(e));
+      if (!opts.silent) {
+        hideSpinner();
+        showAlert('despAlert', 'error', e && e.message ? e.message : String(e));
+      }
     })
     .prepararModuloDespachosDesdeSIRT(null, filtro);
 }
@@ -2215,7 +2242,7 @@ function cargarVistaSalidasCava() {
     .consultarSalidasCavaDesdeSIRT(leerFechaGlobal());
 }
 
-window._salidasFisicasCache = { filas: [], filtro: 'todas', corte: '15:30' };
+window._salidasFisicasCache = { filas: [], filtro: 'pendientes', corte: '15:30', totalEnCava: 0, totalDespachados: 0 };
 
 function actualizarEtiquetasCorteAdicional(corte) {
   var m = String(corte || '').match(/^(\d{1,2}):(\d{2})$/);
@@ -2227,32 +2254,79 @@ function actualizarEtiquetasCorteAdicional(corte) {
 }
 
 function filtrarSalidasFisicas(modo) {
-  window._salidasFisicasCache.filtro = modo || 'todas';
-  ['filtroSalTodas', 'filtroSalNormales', 'filtroSalAdicionales'].forEach(function (id) {
+  window._salidasFisicasCache.filtro = modo || 'pendientes';
+  ['filtroSalPendientes', 'filtroSalDespachados', 'filtroSalTodas', 'filtroSalNormales', 'filtroSalAdicionales'].forEach(function (id) {
     var el = document.getElementById(id);
     if (el) el.classList.remove('active');
   });
-  var map = { todas: 'filtroSalTodas', normales: 'filtroSalNormales', adicionales: 'filtroSalAdicionales' };
-  var btn = document.getElementById(map[modo] || 'filtroSalTodas');
+  var map = {
+    pendientes: 'filtroSalPendientes',
+    despachados: 'filtroSalDespachados',
+    todas: 'filtroSalTodas',
+    normales: 'filtroSalNormales',
+    adicionales: 'filtroSalAdicionales',
+  };
+  var btn = document.getElementById(map[modo] || 'filtroSalPendientes');
   if (btn) btn.classList.add('active');
   renderTablaSalidasFisicas();
+}
+
+function htmlPartesPistoleo(f) {
+  var partes = f.partes || [];
+  if (!partes.length) {
+    return '<span class="progreso-partes">' + escapeHtml(f.progresoPartes || '—') + '</span>';
+  }
+  var chips = partes
+    .map(function (p) {
+      var st = p.estado || 'pendiente';
+      var title =
+        escapeHtml(p.tipo || '') +
+        ': ' +
+        (st === 'despachado' ? 'pistoleada' : st === 'en_cava' ? 'en cava' : 'pendiente');
+      return (
+        '<span class="parte-chip ' +
+        st +
+        '" title="' +
+        title +
+        '">' +
+        escapeHtml(p.corto || '') +
+        '</span>'
+      );
+    })
+    .join('');
+  return (
+    '<div class="partes-pistoleo">' +
+    chips +
+    '<span class="progreso-partes">' +
+    escapeHtml(f.progresoPartes || '') +
+    '</span></div>'
+  );
 }
 
 function renderTablaSalidasFisicas() {
   var tbody = document.getElementById('tablaSalidasFisicas');
   if (!tbody) return;
-  var cache = window._salidasFisicasCache || { filas: [], filtro: 'todas' };
+  var cache = window._salidasFisicasCache || { filas: [], filtro: 'pendientes' };
   var filas = cache.filas || [];
-  var filtro = cache.filtro || 'todas';
+  var filtro = cache.filtro || 'pendientes';
+  if (filtro === 'pendientes') filas = filas.filter(function (f) { return f.estado !== 'Despachado'; });
+  if (filtro === 'despachados') filas = filas.filter(function (f) { return f.estado === 'Despachado'; });
   if (filtro === 'normales') filas = filas.filter(function (f) { return !f.adicional; });
   if (filtro === 'adicionales') filas = filas.filter(function (f) { return f.adicional; });
   if (!filas.length) {
-    tbody.innerHTML =
-      '<tr><td colspan="6" class="empty-state">' +
-      (filtro === 'adicionales'
-        ? 'Sin juegos asignados desde las ' + (cache.corte || '15:30') + '.'
-        : 'Sin juegos asignados para la fecha.') +
-      '</td></tr>';
+    var vacio =
+      filtro === 'pendientes'
+        ? cache.totalDespachados > 0
+          ? 'Todos despachados (' +
+            cache.totalDespachados +
+            '). Use «Despachados» o «Todas» para ver el historial.'
+          : 'Sin juegos pendientes en cava para la fecha.'
+        : filtro === 'despachados'
+          ? 'Aún no hay juegos con las 4 partes pistoleadas.'
+          : filtro === 'adicionales'
+            ? 'Sin juegos asignados desde las ' + (cache.corte || '15:30') + '.'
+            : 'Sin juegos asignados para la fecha.';
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">' + vacio + '</td></tr>';
     return;
   }
   var slice = filas.slice(0, SIRT_PREVIEW_MAX);
@@ -2267,7 +2341,10 @@ function renderTablaSalidasFisicas() {
         f.estado === 'Despachado'
           ? '<span style="color:#16a34a;font-weight:600;">Despachado</span>' +
             (f.horaSalida ? '<br><span style="font-size:0.72rem;color:#64748b;">' + escapeHtml(f.horaSalida) + '</span>' : '')
-          : '<span style="color:#dc2626;font-weight:600;">En cava</span>';
+          : '<span style="color:#dc2626;font-weight:600;">En cava</span>' +
+            (f.progresoPartes
+              ? '<br><span style="font-size:0.72rem;color:#64748b;">' + escapeHtml(f.progresoPartes) + ' partes</span>'
+              : '');
       return (
         '<tr class="' +
         (f.adicional ? 'fila-adicional' : '') +
@@ -2282,6 +2359,8 @@ function renderTablaSalidasFisicas() {
         '</strong><br>' +
         escapeHtml(f.puesto || '') +
         '</td><td>' +
+        htmlPartesPistoleo(f) +
+        '</td><td>' +
         estado +
         '</td><td>' +
         badge +
@@ -2291,7 +2370,7 @@ function renderTablaSalidasFisicas() {
     .join('');
   if (filas.length > slice.length) {
     tbody.innerHTML +=
-      '<tr><td colspan="6" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
+      '<tr><td colspan="7" class="empty-state" style="font-size:0.78rem;">Mostrando ' +
       slice.length +
       ' de ' +
       filas.length +
@@ -2299,25 +2378,40 @@ function renderTablaSalidasFisicas() {
   }
 }
 
-function cargarVistaSalidasFisicas() {
+function cargarVistaSalidasFisicas(opts) {
+  opts = opts || {};
   var tbody = document.getElementById('tablaSalidasFisicas');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="empty-state">Consultando juegos asignados…</td></tr>';
+  if (window._cargandoAsignadosFisicas) return;
+  window._cargandoAsignadosFisicas = true;
+  if (!opts.silent && tbody) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-state">Consultando juegos asignados…</td></tr>';
+  }
   google.script.run
     .withSuccessHandler(function (res) {
+      window._cargandoAsignadosFisicas = false;
       if (!res || !res.success) {
-        if (tbody) {
+        if (!opts.silent && tbody) {
           tbody.innerHTML =
-            '<tr><td colspan="6" class="empty-state">' +
+            '<tr><td colspan="7" class="empty-state">' +
             escapeHtml((res && res.message) || 'Error al consultar juegos asignados') +
             '</td></tr>';
         }
         return;
       }
       var corte = res.corteAdicional || '15:30';
+      var filas = res.filas || [];
+      var totalEnCava =
+        res.totalEnCava != null
+          ? res.totalEnCava
+          : filas.filter(function (f) { return f.estado !== 'Despachado'; }).length;
+      var totalDespachados =
+        res.totalDespachados != null ? res.totalDespachados : filas.length - totalEnCava;
       window._salidasFisicasCache = {
-        filas: res.filas || [],
-        filtro: (window._salidasFisicasCache && window._salidasFisicasCache.filtro) || 'todas',
+        filas: filas,
+        filtro: (window._salidasFisicasCache && window._salidasFisicasCache.filtro) || 'pendientes',
         corte: corte,
+        totalEnCava: totalEnCava,
+        totalDespachados: totalDespachados,
       };
       var lbl = document.getElementById('corteAdicionalLbl');
       if (lbl) lbl.textContent = corte;
@@ -2326,15 +2420,18 @@ function cargarVistaSalidasFisicas() {
         var el = document.getElementById(id);
         if (el) el.textContent = v;
       };
+      setKpi('kpiSalPendientes', totalEnCava);
+      setKpi('kpiSalDespachados', totalDespachados);
       setKpi('kpiSalNormales', res.totalNormales != null ? res.totalNormales : 0);
       setKpi('kpiSalAdicionales', res.totalAdicionales != null ? res.totalAdicionales : 0);
       setKpi('kpiSalTotal', res.total != null ? res.total : 0);
       renderTablaSalidasFisicas();
     })
     .withFailureHandler(function (e) {
-      if (tbody) {
+      window._cargandoAsignadosFisicas = false;
+      if (!opts.silent && tbody) {
         tbody.innerHTML =
-          '<tr><td colspan="6" class="empty-state" style="color:#991b1b;">' +
+          '<tr><td colspan="7" class="empty-state" style="color:#991b1b;">' +
           escapeHtml(e && e.message ? e.message : String(e)) +
           '</td></tr>';
       }
