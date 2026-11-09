@@ -131,6 +131,37 @@ function tienePiezaVisceral(tipos) {
   return tipos && tipos.size > 0;
 }
 
+/** Tipos de paquete visceral cubiertos por un decomiso (SAI / vw). */
+function tiposDecomisoSet(dec) {
+  const out = new Set();
+  if (!dec?.tipos) return out;
+  dec.tipos.forEach((t) => {
+    const raw = String(t || '').trim();
+    if (!raw) return;
+    const mapped = TIPOS_PRODUCTO.includes(raw) ? raw : mapTipoProductoNombre(raw);
+    if (TIPOS_PRODUCTO.includes(mapped)) out.add(mapped);
+  });
+  return out;
+}
+
+/**
+ * Despachable para etiquetas / planilla / conteo de juegos:
+ * 4 partes físicas, o las faltantes cubiertas por decomiso de órgano/tipo.
+ */
+function tieneJuegoDespachable(tiposPresentes, tiposDecomisados) {
+  if (tieneJuegoCompleto(tiposPresentes)) return true;
+  if (!tienePiezaVisceral(tiposPresentes)) return false;
+  const faltan = TIPOS_PRODUCTO.filter((t) => !tiposPresentes.has(t));
+  if (!faltan.length) return true;
+  const dec = tiposDecomisados instanceof Set ? tiposDecomisados : new Set(tiposDecomisados || []);
+  return faltan.every((t) => dec.has(t));
+}
+
+function faltantesCubiertosPorDecomiso(tiposPresentes, tiposDecomisados) {
+  const dec = tiposDecomisados instanceof Set ? tiposDecomisados : new Set(tiposDecomisados || []);
+  return TIPOS_PRODUCTO.filter((t) => !tiposPresentes.has(t) && dec.has(t));
+}
+
 /** Bases de animal con cualquier pieza (incluye incompletos) por clave OPL. */
 function agruparAnimalesConPiezasPorClave(rows, cols, getClave, turno = '') {
   const grupos = {};
@@ -329,11 +360,14 @@ function construirResumenDespachosDesdeFilas(
       const maxVal = Math.max(...vals);
       let juegos = 0;
       let animalesIncompletos = 0;
+      let juegosPorDecomiso = 0;
       const tiposFaltantesPorAnimal = [];
       Object.keys(meta.animales).forEach((base) => {
         const tipos = meta.animales[base];
-        if (tieneJuegoCompleto(tipos)) {
+        const decTipos = tiposDecomisoSet(meta.decomisoInfoPorBase?.[base]);
+        if (tieneJuegoDespachable(tipos, decTipos)) {
           juegos++;
+          if (!tieneJuegoCompleto(tipos)) juegosPorDecomiso++;
         } else if (tienePiezaVisceral(tipos)) {
           animalesIncompletos++;
           const faltan = TIPOS_PRODUCTO.filter((t) => !tipos.has(t));
@@ -343,11 +377,12 @@ function construirResumenDespachosDesdeFilas(
       r.Juegos = juegos;
       r.animalesIncompletos = animalesIncompletos;
       r.animalesTotal = juegos + animalesIncompletos;
+      r.juegosPorDecomiso = juegosPorDecomiso;
       totalJuegos += juegos;
       r.animalesDecomiso = meta.basesConDecomiso.size;
       r.decomisoPorTipo = meta.decomisoPorTipo || {};
       r.incompletoPorDecomiso = meta.basesConDecomiso.size > 0;
-      // Incompleto: desbalance de columnas O falta de algún subproducto en un animal.
+      // Incompleto: desbalance de columnas O falta de algún subproducto sin decomiso.
       r.incompletoCantidades = minVal !== maxVal || animalesIncompletos > 0;
       r.incompleto = r.incompletoCantidades;
       if (tiposFaltantesPorAnimal.length === 1) {
@@ -363,7 +398,8 @@ function construirResumenDespachosDesdeFilas(
       r.tieneCruda = Boolean(meta.tieneCruda);
       const juegosPorOpl = {};
       Object.keys(meta.animales).forEach((base) => {
-        if (!tieneJuegoCompleto(meta.animales[base])) return;
+        const decTipos = tiposDecomisoSet(meta.decomisoInfoPorBase?.[base]);
+        if (!tieneJuegoDespachable(meta.animales[base], decTipos)) return;
         const prop = String(meta.baseProp?.[base] || '').trim().toUpperCase();
         const oplKey = prop ? mapaOPL[prop] || OPL_DEFAULT : OPL_DEFAULT;
         juegosPorOpl[oplKey] = (juegosPorOpl[oplKey] || 0) + 1;
@@ -3125,6 +3161,8 @@ function construirConsolidadoPlanillaSync(s) {
 
   asegurarPlazasMap(s);
   const mapaOPL = cargarMapaOPL(s);
+  const mapaDec = construirMapaDecomisosPorAnimal(s.reporteDecomisos || []);
+  const indiceVw = construirIndiceDecomisosVw(s.decomisosVwFilas || []);
   const fechaIsoOp = String(s.lastSyncRange?.from || s.lastSyncRange?.to || '').trim();
   const fechaHoy = fechaIsoOp ? isoToDdMmYyyy(fechaIsoOp) : fmtDateOnly();
   const consolidado = [];
@@ -3162,8 +3200,10 @@ function construirConsolidadoPlanillaSync(s) {
 
   Object.values(grupos).forEach((g) => {
     let juegos = 0;
-    Object.values(g.animales).forEach((tipos) => {
-      if (tieneJuegoCompleto(tipos)) juegos++;
+    Object.keys(g.animales).forEach((base) => {
+      const tipos = g.animales[base];
+      const decTipos = tiposDecomisoSet(decomisoInfoUnificado(mapaDec, indiceVw, base));
+      if (tieneJuegoDespachable(tipos, decTipos)) juegos++;
     });
     if (juegos <= 0) return;
     const sucursal = formatearCodigoSucursal(g.sucursal || codigoPuestoPlanilla(g.puestoFull));
@@ -4124,15 +4164,23 @@ export async function consultarJuegosAsignadosDelDia(range) {
   const filtro = normalizarRangoFechas(range || {});
   const fechaOp = filtroSirtValido(filtro) ? filtro.from : hoyIsoLocal();
   const useRange = { from: fechaOp, to: fechaOp };
-  const [prog, sal, estado, persisted] = await Promise.all([
+  const [prog, sal, estado, persisted, packDec, vwPack] = await Promise.all([
     fetchDespachosCavasRows(useRange),
     fetchDespachosCavaRielRows(useRange),
     fetchEstadoCavasRows({ stockActual: true }),
     loadState(),
+    fetchReporteDecomisosRows(useRange),
+    fetchDecomisosAnimalesVw(useRange),
   ]);
   const s = { lastSyncRange: useRange, despachosCavas: prog, salidasCavaDia: sal, estadoFromRow12: estado };
   const salidas = salidasRealesDelDia(s, fechaOp);
   const mapaOPL = cargarMapaOPL(persisted);
+  const mapaDec = construirMapaDecomisosPorAnimal(
+    packDec?.rows?.length ? packDec.rows : persisted.reporteDecomisos || []
+  );
+  const indiceVw = construirIndiceDecomisosVw(
+    vwPack?.rows?.length ? vwPack.rows : persisted.decomisosVwFilas || []
+  );
   const corte = getSalidaAdicionalCorte();
   const corteLabel = getSalidaAdicionalCorteLabel();
   const corteIso = `${fechaOp}T${String(corte.hora).padStart(2, '0')}:${String(corte.minuto).padStart(2, '0')}:00`;
@@ -4160,6 +4208,7 @@ export async function consultarJuegosAsignadosDelDia(range) {
         tipos: new Set(),
         tiposEnCava: new Set(),
         tiposSalidos: new Set(),
+        tiposDecomisados: new Set(),
         enCava: false,
         ultimaSalida: '',
       });
@@ -4182,13 +4231,26 @@ export async function consultarJuegosAsignadosDelDia(range) {
   };
   prog.forEach((f) => agregar(f, true));
   salidas.forEach((f) => agregar(f, false));
+  porAnimal.forEach((a, base) => {
+    const decTipos = tiposDecomisoSet(decomisoInfoUnificado(mapaDec, indiceVw, base));
+    decTipos.forEach((t) => a.tiposDecomisados.add(t));
+  });
 
   const filas = [...porAnimal.values()]
-    .filter((a) => tieneJuegoCompleto(a.tipos))
+    .filter((a) => tieneJuegoDespachable(a.tipos, a.tiposDecomisados))
     .map((a) => {
       const adicional = Boolean(a.registro) && a.registro >= corteIso;
+      const cubiertosDec = new Set(faltantesCubiertosPorDecomiso(a.tipos, a.tiposDecomisados));
       // Si una parte ya salió físicamente, cuenta como pistoleada aunque aún figure en prog.
+      // Decomiso de órgano completo cubre la parte faltante (no se pistolea).
       const partes = TIPOS_PRODUCTO.map((tipo) => {
+        if (cubiertosDec.has(tipo)) {
+          return {
+            tipo,
+            corto: PARTES_CORTO[tipo] || tipo.slice(0, 2),
+            estado: 'decomiso',
+          };
+        }
         const salio = a.tiposSalidos.has(tipo);
         const sigue = a.tiposEnCava.has(tipo) && !salio;
         return {
@@ -4197,9 +4259,12 @@ export async function consultarJuegosAsignadosDelDia(range) {
           estado: salio ? 'despachado' : sigue ? 'en_cava' : 'pendiente',
         };
       });
-      const partesListas = partes.filter((p) => p.estado === 'despachado').length;
-      const sigueEnCava = partes.some((p) => p.estado === 'en_cava');
-      const estado = sigueEnCava || partesListas < TIPOS_PRODUCTO.length ? 'En cava' : 'Despachado';
+      const aDespachar = partes.filter((p) => p.estado !== 'decomiso');
+      const partesListas = aDespachar.filter((p) => p.estado === 'despachado').length;
+      const sigueEnCava = aDespachar.some((p) => p.estado === 'en_cava');
+      const estado =
+        sigueEnCava || partesListas < aDespachar.length ? 'En cava' : 'Despachado';
+      const porDecomiso = cubiertosDec.size > 0;
       return {
         codigo: a.codigo,
         propietario: a.propietario,
@@ -4212,10 +4277,12 @@ export async function consultarJuegosAsignadosDelDia(range) {
         horaSalida: estado === 'Despachado' && a.ultimaSalida
           ? a.ultimaSalida.replace('T', ' ').slice(0, 16)
           : '',
+        porDecomiso,
+        tiposDecomisados: [...cubiertosDec],
         partes,
         partesListas,
-        partesTotal: TIPOS_PRODUCTO.length,
-        progresoPartes: `${partesListas}/${TIPOS_PRODUCTO.length}`,
+        partesTotal: aDespachar.length,
+        progresoPartes: `${partesListas}/${aDespachar.length}`,
       };
     })
     .sort(
@@ -4235,6 +4302,7 @@ export async function consultarJuegosAsignadosDelDia(range) {
     totalAdicionales: adicionales.length,
     totalEnCava: enCava.length,
     totalDespachados: filas.length - enCava.length,
+    totalPorDecomiso: filas.filter((f) => f.porDecomiso).length,
     adicionalesEnCava: adicionales.filter((f) => f.estado === 'En cava').length,
     filas,
   };

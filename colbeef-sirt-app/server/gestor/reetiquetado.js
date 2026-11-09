@@ -799,6 +799,11 @@ export async function listarPendientesEtiquetas({
       const temprana = esTempranaPuesto(f.puesto);
       const adicional = Boolean(f.adicional);
       const cod = String(f.codigo || '').trim().toUpperCase();
+      const partesAImprimir = Number(f.partesTotal);
+      const nPartes =
+        Number.isFinite(partesAImprimir) && partesAImprimir > 0
+          ? partesAImprimir
+          : Math.max(1, TIPOS_PRODUCTO.length - (Array.isArray(f.tiposDecomisados) ? f.tiposDecomisados.length : 0));
       return {
         codigo: f.codigo,
         propietario: f.propietario,
@@ -807,6 +812,9 @@ export async function listarPendientesEtiquetas({
         horaAsignacion: f.horaAsignacion || '',
         adicional,
         temprana,
+        porDecomiso: Boolean(f.porDecomiso),
+        tiposDecomisados: Array.isArray(f.tiposDecomisados) ? f.tiposDecomisados : [],
+        partesAImprimir: nPartes,
         yaImpresa: Boolean(impresasMap[cod]),
         tipoSalida: adicional ? 'adicional' : temprana ? 'temprana' : 'normal',
       };
@@ -876,6 +884,11 @@ export async function listarPendientesEtiquetas({
     .sort((a, b) => a.opl.localeCompare(b.opl, 'es'));
 
   const totalJuegos = filtradas.length;
+  const totalPorDecomiso = filtradas.filter((f) => f.porDecomiso).length;
+  const totalEtiquetasEstimadas = filtradas.reduce(
+    (n, f) => n + (Number(f.partesAImprimir) || TIPOS_PRODUCTO.length),
+    0
+  );
   return {
     success: true,
     fecha: out.fecha,
@@ -887,7 +900,8 @@ export async function listarPendientesEtiquetas({
     totalJuegos,
     totalConImpresas,
     yaImpresas,
-    totalEtiquetasEstimadas: totalJuegos * 4,
+    totalPorDecomiso,
+    totalEtiquetasEstimadas,
     totalPasadas: totalJuegos,
     opls: oplsOut,
     codigos: filtradas.map((f) => f.codigo),
@@ -896,7 +910,10 @@ export async function listarPendientesEtiquetas({
         ? `Tempranas en cava: ${totalJuegos} juego(s)`
         : modoNorm === 'adicionales'
           ? `Adicionales (≥ ${out.corteAdicional}) en cava: ${totalJuegos} juego(s)`
-          : `Lote en cava (incluye tempranas, sin adicionales): ${totalJuegos} juego(s)`,
+          : `Lote en cava (incluye tempranas, sin adicionales): ${totalJuegos} juego(s)` +
+            (totalPorDecomiso
+              ? ` · ${totalPorDecomiso} con parte(s) cubierta(s) por decomiso`
+              : ''),
   };
 }
 

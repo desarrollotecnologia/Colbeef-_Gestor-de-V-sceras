@@ -220,6 +220,7 @@
     .parte-chip.despachado{background:#dcfce7;color:#166534;border-color:#86efac;}
     .parte-chip.en_cava{background:#fee2e2;color:#991b1b;border-color:#fca5a5;}
     .parte-chip.pendiente{background:#f1f5f9;color:#64748b;border-color:#cbd5e1;}
+    .parte-chip.decomiso{background:#ffedd5;color:#9a3412;border-color:#fdba74;text-decoration:line-through;}
     .progreso-partes{font-size:0.7rem;color:#64748b;margin-left:0.2rem;}
     /* Modal detalle puesto (despachos) */
     #modalDetalle .modal-box{max-width:min(1040px,96vw);}
@@ -2282,7 +2283,13 @@ function htmlPartesPistoleo(f) {
       var title =
         escapeHtml(p.tipo || '') +
         ': ' +
-        (st === 'despachado' ? 'pistoleada' : st === 'en_cava' ? 'en cava' : 'pendiente');
+        (st === 'despachado'
+          ? 'pistoleada'
+          : st === 'en_cava'
+            ? 'en cava'
+            : st === 'decomiso'
+              ? 'decomiso (no imprime)'
+              : 'pendiente');
       return (
         '<span class="parte-chip ' +
         st +
