@@ -32,7 +32,7 @@ const SUF_DEC_TIPO = {
   'Visceras Rojas': 'DEC-VR',
 };
 
-function tiposDecomisoCompletoSet(dec) {
+function tiposDecomisoSet(dec) {
   const out = new Set();
   if (!dec?.tipos) return out;
   dec.tipos.forEach((t) => {
@@ -42,6 +42,75 @@ function tiposDecomisoCompletoSet(dec) {
     if (TIPOS_PRODUCTO.includes(mapped)) out.add(mapped);
   });
   return out;
+}
+
+function partesDecomisoDeTipo(dec, tipo) {
+  const tipoNorm = String(tipo || '').trim();
+  if (!dec || !tipoNorm) return [];
+  return [...new Set(
+    (dec.partes || [])
+      .map((p) => String(p || '').trim())
+      .filter((p) => p && (mapTipoProductoNombre(p) === tipoNorm || p === tipoNorm))
+  )];
+}
+
+function subproductosDecomisoDeTipo(dec, tipo) {
+  const tipoNorm = String(tipo || '').trim();
+  if (!dec || !tipoNorm) return [];
+  return [...new Set(
+    (dec.subproductos || [])
+      .map((s) => String(s || '').trim())
+      .filter((s) => s && (mapTipoProductoNombre(s) === tipoNorm || s === tipoNorm))
+  )];
+}
+
+/** Partes concretas (mano/pata/órgano) distintas del nombre del tipo. */
+function partesEspecificasDeTipo(dec, tipo) {
+  const tipoNorm = String(tipo || '').trim();
+  return partesDecomisoDeTipo(dec, tipo).filter((p) => p !== tipoNorm);
+}
+
+/**
+ * ¿Decomiso del paquete/órgano completo?
+ * - Sin subpartes puntuales en SIRT, o
+ * - La parte declara el tipo entero, o
+ * - El texto trae completa/entero.
+ */
+function esDecomisoTipoCompleto(dec, tipo) {
+  if (!dec || !tiposDecomisoSet(dec).has(String(tipo || '').trim())) return false;
+  const tipoNorm = String(tipo).trim();
+  const partes = partesDecomisoDeTipo(dec, tipo);
+  const especificas = partesEspecificasDeTipo(dec, tipo);
+  if (!especificas.length) return true;
+  if (partes.some((p) => p === tipoNorm)) return true;
+  const blob = especificas.join(' ').toLowerCase();
+  return /\bcompleta\b|\bcompleto\b|\bentera\b|\bentero\b/.test(blob);
+}
+
+/**
+ * Texto Detalle en etiqueta (política operativa):
+ * - Cabeza / VB / VR: solo si el decomiso es del tipo completo → "Decomiso de {tipo}"
+ * - Patas y Manos: sí detalla pata/mano concreta
+ * - Parcial en Cabeza o vísceras: no pone Detalle
+ */
+function textoDetalleEtiqueta(dec, tipo) {
+  if (!dec || !tipo) return '';
+  const tipoNorm = String(tipo).trim();
+  if (!tiposDecomisoSet(dec).has(tipoNorm)) return '';
+
+  if (tipoNorm === 'Patas y Manos') {
+    const especificas = partesEspecificasDeTipo(dec, tipoNorm);
+    if (especificas.length) return `Decomiso de ${especificas.join(', ')}`;
+    const partes = partesDecomisoDeTipo(dec, tipoNorm);
+    if (partes.length) return `Decomiso de ${partes.join(', ')}`;
+    const subs = subproductosDecomisoDeTipo(dec, tipoNorm).filter((s) => s !== tipoNorm);
+    if (subs.length) return `Decomiso de ${subs.join(', ')}`;
+    return `Decomiso de ${tipoNorm}`;
+  }
+
+  // Cabeza, Visceras Blancas, Visceras Rojas: solo completo, sin subparte.
+  if (!esDecomisoTipoCompleto(dec, tipoNorm)) return '';
+  return `Decomiso de ${tipoNorm}`;
 }
 
 /** Decomisos SAI/vw para marcar/sintetizar manillas con Detalle. */
@@ -71,14 +140,16 @@ async function cargarIndiceDecomisosEtiquetas(fechaHint = '') {
   };
 }
 
-function aplicarDecomisoEnDatos(datos, tiposDec, plantillaRow, mapaOpl, gsmi, base, soloTipo = null) {
-  const decSet = tiposDec instanceof Set ? tiposDec : new Set(tiposDec || []);
+function aplicarDecomisoEnDatos(datos, dec, plantillaRow, mapaOpl, gsmi, base, soloTipo = null) {
+  const decSet = tiposDecomisoSet(dec);
   const out = (datos || []).map((d) => {
-    if (decSet.has(d.tipo) && (!soloTipo || d.tipo === soloTipo)) {
+    if ((!soloTipo || d.tipo === soloTipo) && decSet.has(d.tipo)) {
+      const detalle = textoDetalleEtiqueta(dec, d.tipo);
+      if (!detalle) return d;
       return {
         ...d,
-        decomisoCompleto: true,
-        detalleDecomiso: `Decomiso de ${d.tipo}`,
+        decomisoCompleto: esDecomisoTipoCompleto(dec, d.tipo),
+        detalleDecomiso: detalle,
         layout: null,
       };
     }
@@ -90,10 +161,16 @@ function aplicarDecomisoEnDatos(datos, tiposDec, plantillaRow, mapaOpl, gsmi, ba
 
   if (soloTipo) return out;
 
+  // Sintetizar manilla solo si falta en SIRT y el decomiso es del tipo completo
+  // (Cabeza / VB / VR completas). Patas parciales no inventan manilla.
   const presentes = new Set(out.map((d) => d.tipo));
   const plantilla = plantillaRow || {};
   for (const tipo of TIPOS_PRODUCTO) {
     if (!decSet.has(tipo) || presentes.has(tipo)) continue;
+    if (tipo === 'Patas y Manos') continue;
+    if (!esDecomisoTipoCompleto(dec, tipo)) continue;
+    const detalle = textoDetalleEtiqueta(dec, tipo);
+    if (!detalle) continue;
     const suf = SUF_DEC_TIPO[tipo] || 'DEC';
     const codigoBarras = `${base}-${suf}`;
     const rowSynth = {
@@ -107,7 +184,7 @@ function aplicarDecomisoEnDatos(datos, tiposDec, plantillaRow, mapaOpl, gsmi, ba
     };
     const d = armarDatos(rowSynth, mapaOpl, { gsmi });
     d.decomisoCompleto = true;
-    d.detalleDecomiso = `Decomiso de ${tipo}`;
+    d.detalleDecomiso = detalle;
     d.codigoBarras = codigoBarras;
     d.codigo_barras = codigoBarras;
     d.layout = etiquetas.layoutEtiqueta(d);
@@ -668,12 +745,12 @@ export async function buscarEtiquetas(codigo) {
   const { state, mapaDec, indiceVw } = await cargarIndiceDecomisosEtiquetas(fechaHint);
   const mapa = mapaOplDesdeEstado(state);
   const gsmi = await buscarGsmiAnimal(base);
-  const tiposDec = tiposDecomisoCompletoSet(decomisoInfoUnificado(mapaDec, indiceVw, base));
+  const dec = decomisoInfoUnificado(mapaDec, indiceVw, base);
   const datos = filtradas.map((r) => armarDatos(r, mapa, { gsmi }));
-  // Decomiso completo: Detalle solo en esa manilla; si la parte no está en SIRT, se sintetiza.
+  // Detalle solo en la manilla del tipo afectado; texto = parte concreta de SIRT (mano/pata/…).
   return aplicarDecomisoEnDatos(
     datos,
-    tiposDec,
+    dec,
     filtradas[0] || rows[0],
     mapa,
     gsmi,
