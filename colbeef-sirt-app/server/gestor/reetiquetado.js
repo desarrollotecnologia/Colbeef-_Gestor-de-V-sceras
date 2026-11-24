@@ -14,10 +14,110 @@ import {
   codigoBase,
   parsePuestoOperacion,
   formatearCodigoSucursal,
+  construirMapaDecomisosPorAnimal,
+  construirIndiceDecomisosVw,
+  decomisoInfoUnificado,
+  mapTipoProductoNombre,
+  fechaOperativaHoy,
 } from './engineUtils.js';
 import { loadState, saveState } from './store.js';
 import * as etiquetas from './etiquetasVisceras.js';
 import { consultarJuegosAsignadosDelDia } from './engine.js';
+import { fetchReporteDecomisosRows, fetchDecomisosAnimalesVw } from './sirtSync.js';
+
+const SUF_DEC_TIPO = {
+  Cabeza: 'DEC-C',
+  'Patas y Manos': 'DEC-P',
+  'Visceras Blancas': 'DEC-VB',
+  'Visceras Rojas': 'DEC-VR',
+};
+
+function tiposDecomisoCompletoSet(dec) {
+  const out = new Set();
+  if (!dec?.tipos) return out;
+  dec.tipos.forEach((t) => {
+    const raw = String(t || '').trim();
+    if (!raw) return;
+    const mapped = TIPOS_PRODUCTO.includes(raw) ? raw : mapTipoProductoNombre(raw);
+    if (TIPOS_PRODUCTO.includes(mapped)) out.add(mapped);
+  });
+  return out;
+}
+
+/** Decomisos SAI/vw para marcar/sintetizar manillas con Detalle. */
+async function cargarIndiceDecomisosEtiquetas(fechaHint = '') {
+  const state = await loadState().catch(() => null);
+  let reporte = state?.reporteDecomisos || [];
+  let vw = state?.decomisosVwFilas || [];
+  const from =
+    String(fechaHint || '').trim().slice(0, 10) ||
+    String(state?.lastSyncRange?.from || '').trim().slice(0, 10) ||
+    fechaOperativaHoy();
+  const to = String(state?.lastSyncRange?.to || '').trim().slice(0, 10) || from;
+  try {
+    const [packDec, vwPack] = await Promise.all([
+      fetchReporteDecomisosRows({ from, to }),
+      fetchDecomisosAnimalesVw({ from, to }),
+    ]);
+    if (packDec?.rows?.length) reporte = packDec.rows;
+    if (vwPack?.rows?.length) vw = vwPack.rows;
+  } catch (_) {
+    /* usa lo de sesión */
+  }
+  return {
+    state,
+    mapaDec: construirMapaDecomisosPorAnimal(reporte),
+    indiceVw: construirIndiceDecomisosVw(vw),
+  };
+}
+
+function aplicarDecomisoEnDatos(datos, tiposDec, plantillaRow, mapaOpl, gsmi, base, soloTipo = null) {
+  const decSet = tiposDec instanceof Set ? tiposDec : new Set(tiposDec || []);
+  const out = (datos || []).map((d) => {
+    if (decSet.has(d.tipo) && (!soloTipo || d.tipo === soloTipo)) {
+      return {
+        ...d,
+        decomisoCompleto: true,
+        detalleDecomiso: `Decomiso de ${d.tipo}`,
+        layout: null,
+      };
+    }
+    return d;
+  });
+  out.forEach((d) => {
+    if (d.detalleDecomiso) d.layout = etiquetas.layoutEtiqueta(d);
+  });
+
+  if (soloTipo) return out;
+
+  const presentes = new Set(out.map((d) => d.tipo));
+  const plantilla = plantillaRow || {};
+  for (const tipo of TIPOS_PRODUCTO) {
+    if (!decSet.has(tipo) || presentes.has(tipo)) continue;
+    const suf = SUF_DEC_TIPO[tipo] || 'DEC';
+    const codigoBarras = `${base}-${suf}`;
+    const rowSynth = {
+      ...plantilla,
+      tipo,
+      codigo_animal: base,
+      codigo_barras: codigoBarras,
+      id_tipo: 0,
+      observaciones: '',
+      reetiquetado: false,
+    };
+    const d = armarDatos(rowSynth, mapaOpl, { gsmi });
+    d.decomisoCompleto = true;
+    d.detalleDecomiso = `Decomiso de ${tipo}`;
+    d.codigoBarras = codigoBarras;
+    d.codigo_barras = codigoBarras;
+    d.layout = etiquetas.layoutEtiqueta(d);
+    out.push(d);
+  }
+  return out.sort(
+    (a, b) => (ORDEN_TIPO[a.tipo] || 99) - (ORDEN_TIPO[b.tipo] || 99) ||
+      String(a.codigoBarras || '').localeCompare(String(b.codigoBarras || ''))
+  );
+}
 
 const ETIQUETAS_DIAS_GUARDADOS = 15;
 
@@ -563,10 +663,23 @@ export async function buscarEtiquetas(codigo) {
     throw err;
   }
   const filtradas = ordenarTipos(filtrarPorSufijo(rows, sufijo));
-  const state = await loadState().catch(() => null);
+  const fechaHint =
+    fechaProgIso(filtradas[0]?.fecha_beneficio) || fechaProgIso(filtradas[0]?.fecha_prog) || '';
+  const { state, mapaDec, indiceVw } = await cargarIndiceDecomisosEtiquetas(fechaHint);
   const mapa = mapaOplDesdeEstado(state);
   const gsmi = await buscarGsmiAnimal(base);
-  return filtradas.map((r) => armarDatos(r, mapa, { gsmi }));
+  const tiposDec = tiposDecomisoCompletoSet(decomisoInfoUnificado(mapaDec, indiceVw, base));
+  const datos = filtradas.map((r) => armarDatos(r, mapa, { gsmi }));
+  // Decomiso completo: Detalle solo en esa manilla; si la parte no está en SIRT, se sintetiza.
+  return aplicarDecomisoEnDatos(
+    datos,
+    tiposDec,
+    filtradas[0] || rows[0],
+    mapa,
+    gsmi,
+    base,
+    sufijo ? String(filtradas[0]?.tipo || '').trim() || null : null
+  );
 }
 
 function layoutsConCopias(datos, copias) {
@@ -799,11 +912,7 @@ export async function listarPendientesEtiquetas({
       const temprana = esTempranaPuesto(f.puesto);
       const adicional = Boolean(f.adicional);
       const cod = String(f.codigo || '').trim().toUpperCase();
-      const partesAImprimir = Number(f.partesTotal);
-      const nPartes =
-        Number.isFinite(partesAImprimir) && partesAImprimir > 0
-          ? partesAImprimir
-          : Math.max(1, TIPOS_PRODUCTO.length - (Array.isArray(f.tiposDecomisados) ? f.tiposDecomisados.length : 0));
+      // Con decomiso completo igual se imprimen las 4 manillas (la decomisada lleva Detalle).
       return {
         codigo: f.codigo,
         propietario: f.propietario,
@@ -814,7 +923,7 @@ export async function listarPendientesEtiquetas({
         temprana,
         porDecomiso: Boolean(f.porDecomiso),
         tiposDecomisados: Array.isArray(f.tiposDecomisados) ? f.tiposDecomisados : [],
-        partesAImprimir: nPartes,
+        partesAImprimir: TIPOS_PRODUCTO.length,
         yaImpresa: Boolean(impresasMap[cod]),
         tipoSalida: adicional ? 'adicional' : temprana ? 'temprana' : 'normal',
       };

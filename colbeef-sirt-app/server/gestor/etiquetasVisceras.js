@@ -297,6 +297,19 @@ export function layoutEtiqueta(et) {
         c4
       ),
     },
+    // Solo en la manilla de la parte con decomiso completo.
+    ...(et.detalleDecomiso
+      ? [
+          {
+            tipo: 'texto',
+            x: b4,
+            y: y0 + 142,
+            h: 15,
+            w: 18,
+            texto: corto(`Detalle: ${zplTxt(et.detalleDecomiso)}`, c4),
+          },
+        ]
+      : []),
   ];
   return elementos.filter((e) => e.texto);
 }
